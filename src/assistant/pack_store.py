@@ -19,6 +19,7 @@ import time
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
@@ -27,9 +28,9 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
 from assistant.config import Settings
-from assistant.packs import AppPack, PackError, RegistryEntry, ServedPack
+from assistant.packs import REGISTRY_FILES, AppPack, PackError, RegistryEntry, ServedPack
 
-__all__ = ["PackStore", "RegistryEntry", "clamp_pack", "load_registry", "spend_key"]
+__all__ = ["PackStore", "RegistryEntry", "clamp_pack", "load_registry", "registry_path", "spend_key"]
 
 log = logging.getLogger("assistant.packs")
 
@@ -38,6 +39,16 @@ CACHE_SECONDS = 300  # a fetched pack is used for this long before it is fetched
 RETRY_SECONDS = 60  # after a failed fetch (a stored copy, the YAML or nothing used meanwhile), try again after this
 FETCH_SECONDS = 5  # the pack is fetched inside a chat request: never wait long for it
 MAX_PACK_BYTES = 256 * 1024
+# The bot's own maximums for a pack's file caps: they size upload links and PDF renders, which no pack may raise.
+FILE_CAP_MAX = {"image_mb": 20, "pdf_mb": 50, "pdf_pages": 50, "voice_seconds": 600, "per_message": 10}
+
+
+def registry_path(packs_dir: Path) -> Path:
+    """`registry.yaml` or `registry.yml` in the packs folder (the first when neither exists); both is an error."""
+    found = [packs_dir / name for name in REGISTRY_FILES if (packs_dir / name).is_file()]
+    if len(found) > 1:
+        raise PackError(f"{packs_dir}: both {' and '.join(REGISTRY_FILES)}; keep one")
+    return found[0] if found else packs_dir / REGISTRY_FILES[0]
 
 
 def load_registry(path: Path, override: list[RegistryEntry] | None) -> list[RegistryEntry]:
@@ -69,8 +80,9 @@ def load_registry(path: Path, override: list[RegistryEntry] | None) -> list[Regi
 
 
 def clamp_pack(pack: AppPack, settings: Settings) -> AppPack:
-    """The pack within the owner's ceilings: `message_usd_cap` capped at MAX_MESSAGE_USD (logged), and every model it
-    names in ALLOWED_MODELS when that is set (PackError naming the others: such a pack is refused, never trimmed)."""
+    """The pack within the owner's ceilings: `message_usd_cap` capped at MAX_MESSAGE_USD and its file caps at
+    FILE_CAP_MAX (each logged), and every model it names in ALLOWED_MODELS when that is set (PackError naming the
+    others: such a pack is refused, never trimmed)."""
     allowed = settings.allowed_models
     if allowed is not None:
         m = pack.models
@@ -86,7 +98,17 @@ def clamp_pack(pack: AppPack, settings: Settings) -> AppPack:
             settings.max_message_usd,
         )
         pack = pack.model_copy(update={"message_usd_cap": settings.max_message_usd})
+    over = {k: cap for k, cap in FILE_CAP_MAX.items() if getattr(pack.files, k) > cap}
+    if over:
+        for k, cap in over.items():
+            log.warning("pack app=%s files.%s=%s clamped to %s", pack.id, k, getattr(pack.files, k), cap)
+        pack = pack.model_copy(update={"files": pack.files.model_copy(update=over)})
     return pack
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}".lower()
 
 
 def spend_key(app: str, now: datetime | None = None) -> str:
@@ -205,6 +227,10 @@ class PackStore:
             raise PackError(f"not a valid pack ({e.error_count()} errors; {where}: {first['msg']})") from None
         if served.id != entry.id:
             raise PackError(f"the pack's id is {served.id!r}, not {entry.id!r}")
+        # The bot sends the user's token, drafts and charges to api_base: only ever the registered site itself (same
+        # scheme, host and port), never another host, plain http for an https site, or an internal address.
+        if _origin(served.api_base) != _origin(entry.origin):
+            raise PackError(f"api_base must be on {entry.origin}, not {_origin(served.api_base)}")
         try:
             return clamp_pack(served.app_pack(entry.secret_env, entry.site), self._settings)
         except ValidationError as e:  # the served shape is narrower than AppPack's: not expected

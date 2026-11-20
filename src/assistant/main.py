@@ -19,8 +19,8 @@ from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
-from assistant.pack_store import PackStore, load_registry
-from assistant.packs import REGISTRY_FILES, AppPack, PackError, load_packs
+from assistant.pack_store import PackStore, load_registry, registry_path
+from assistant.packs import AppPack, PackError, load_packs
 from assistant.tools import AppTools, McpHttpTools, NoAppTools
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
@@ -90,7 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
             return
         local = load_packs(settings.packs_dir, settings.public_base_url)
-        registry = load_registry(settings.packs_dir / REGISTRY_FILES[0], settings.apps)
+        registry = load_registry(registry_path(settings.packs_dir), settings.apps)
         if not local and not registry:
             raise PackError(f"no app packs in {settings.packs_dir}")
         for key in [*local.values(), *registry]:

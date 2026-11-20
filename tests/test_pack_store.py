@@ -15,8 +15,8 @@ from pydantic import ValidationError
 from assistant.config import Settings
 from assistant.db import migrate
 from assistant.limits import remaining
-from assistant.pack_store import PackStore, RegistryEntry, clamp_pack, load_registry, spend_key
-from assistant.packs import AppPack, PackError, ServedPack, pack_json_schema
+from assistant.pack_store import PackStore, RegistryEntry, clamp_pack, load_registry, registry_path, spend_key
+from assistant.packs import AppPack, PackError, ServedPack, load_packs, pack_json_schema
 
 SITE = "https://shop.example"
 WELL_KNOWN = f"{SITE}/.well-known/app-assistant.json"
@@ -368,3 +368,74 @@ async def test_startup_fails_when_a_registered_apps_secret_is_unset(test_setting
     with pytest.raises(PackError, match="TEST_SHOP_SECRET"):  # the registry alone is enough packs to start
         async with app.router.lifespan_context(app):
             pass
+
+
+# ---- fix round 1: a served pack only calls its own site; caps have a ceiling ----
+
+
+@pytest.mark.parametrize(
+    "api_base",
+    [
+        "https://evil.example/api/assistant",  # another host
+        "http://shop.example/api/assistant",  # http while the site is https
+        "http://169.254.169.254/latest",  # an internal address
+        "http://localhost:9000/api",
+        "https://shop.example:8443/api/assistant",  # another port
+        "https://api.shop.example/assistant",  # a subdomain is another origin
+    ],
+)
+async def test_an_api_base_off_the_registry_site_is_refused(test_settings: Settings, db, caplog, api_base):
+    with caplog.at_level(logging.WARNING, logger="assistant"):
+        assert await store(test_settings, db, App(served(api_base=api_base))).get("shop") is None
+    assert "api_base must be on https://shop.example" in caplog.text
+    async with db.connection() as conn:
+        cur = await conn.execute("select count(*) from remote_packs")
+        assert (await cur.fetchone())[0] == 0
+
+
+async def test_an_api_base_on_the_registry_site_is_accepted(test_settings: Settings, db):
+    for api_base in (f"{SITE}/api/assistant", "https://shop.example/v2/"):
+        pack = await store(test_settings, db, App(served(api_base=api_base))).get("shop")
+        assert pack is not None and pack.api_base == api_base.rstrip("/")
+
+
+async def test_an_api_base_off_site_keeps_the_last_good_copy(test_settings: Settings, db):
+    assert await store(test_settings, db, App()).get("shop") is not None
+    pack = await store(test_settings, db, App(served(api_base="https://evil.example/api"))).get("shop")
+    assert pack is not None and pack.api_base == f"{SITE}/api/assistant"
+
+
+def test_file_caps_are_clamped_to_the_bots_maximums(test_settings: Settings, caplog):
+    big = {"image_mb": 500, "pdf_mb": 10000, "pdf_pages": 100000, "voice_seconds": 9999, "per_message": 99}
+    pack = make_pack().model_copy(update={"files": make_pack().files.model_copy(update=big)})
+    with caplog.at_level(logging.WARNING, logger="assistant"):
+        files = clamp_pack(pack, test_settings).files
+    assert (files.image_mb, files.pdf_mb, files.pdf_pages, files.voice_seconds, files.per_message) == (
+        20,
+        50,
+        50,
+        600,
+        10,
+    )
+    assert "pdf_pages" in caplog.text
+    assert clamp_pack(make_pack(), test_settings).files == make_pack().files  # within: unchanged
+
+
+async def test_a_served_packs_file_caps_are_clamped(test_settings: Settings, db):
+    pack = await store(test_settings, db, App(served(files={"pdf_pages": 100000}))).get("shop")
+    assert pack is not None and pack.files.pdf_pages == 50
+
+
+@pytest.mark.parametrize("name", ["registry.yaml", "registry.yml"])
+def test_either_registry_file_is_read_and_never_a_pack(tmp_path: Path, name: str):
+    (tmp_path / name).write_text("apps:\n  - {id: shop, site: https://shop.example, secret_env: S}\n")
+    assert registry_path(tmp_path) == tmp_path / name
+    assert [e.id for e in load_registry(registry_path(tmp_path), None)] == ["shop"]
+    assert load_packs(tmp_path, "http://testserver") == {}
+
+
+def test_both_registry_files_is_an_error(tmp_path: Path):
+    (tmp_path / "registry.yaml").write_text("apps: []\n")
+    (tmp_path / "registry.yml").write_text("apps: []\n")
+    with pytest.raises(PackError, match="registry.yaml and registry.yml"):
+        registry_path(tmp_path)
