@@ -11,7 +11,6 @@ from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from assistant.api import chat, deps, internal, turn
-from assistant.auth import Session
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, direct_url, migrate, open_pool, open_saver_pool
 from assistant.demo import routes as demo_routes
@@ -20,8 +19,8 @@ from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
 from assistant.pack_store import PackStore, load_registry, registry_path
-from assistant.packs import AppPack, PackError, load_packs
-from assistant.tools import AppTools, McpHttpTools, NoAppTools
+from assistant.packs import PackError, load_packs
+from assistant.tools import tools_for
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
 LOG_FORMAT = "%(levelname)s %(name)s %(message)s"
@@ -112,12 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await set_bucket_cors(app.state.storage, packs, settings)
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
-            def tools_for(pack: AppPack, session: Session) -> AppTools:
-                if pack.mcp_url is None:
-                    return NoAppTools()  # an api_base pack: its REST client comes with the contract (Phase 4)
-                return McpHttpTools(pack, session, http)
-
-            app.state.tools_for = tools_for
+            app.state.tools_for = lambda pack, session: tools_for(pack, session, http)  # REST or MCP, by the pack
             yield
             await turn.drain(
                 settings.shutdown_drain_seconds

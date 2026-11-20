@@ -1,0 +1,1149 @@
+[
+  {
+    "name": "context: the user's profile",
+    "setup": {
+      "context": {
+        "language": "en",
+        "name": "Mai",
+        "voice": "Plain, short sentences, no hype.",
+        "topics": [
+          "release notes"
+        ],
+        "recent_posts": [
+          "We shipped dark mode."
+        ],
+        "patterns": [
+          "Lead with the number."
+        ],
+        "kept_facts": [
+          {
+            "id": "f1",
+            "text": "Sign-ups doubled in March"
+          }
+        ],
+        "credits_left": 12.5,
+        "out_of_credits_message": "You're out of credits. Top up in Billing."
+      }
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "language": "en",
+      "name": "Mai",
+      "voice": "Plain, short sentences, no hype.",
+      "topics": [
+        "release notes"
+      ],
+      "recent_posts": [
+        "We shipped dark mode."
+      ],
+      "patterns": [
+        "Lead with the number."
+      ],
+      "kept_facts": [
+        {
+          "id": "f1",
+          "text": "Sign-ups doubled in March"
+        }
+      ],
+      "credits_left": 12.5,
+      "out_of_credits_message": "You're out of credits. Top up in Billing."
+    },
+    "expect": {
+      "returns": {
+        "language": "en",
+        "name": "Mai",
+        "voice": "Plain, short sentences, no hype.",
+        "topics": [
+          "release notes"
+        ],
+        "recent_posts": [
+          "We shipped dark mode."
+        ],
+        "patterns": [
+          "Lead with the number."
+        ],
+        "kept_facts": [
+          {
+            "id": "f1",
+            "text": "Sign-ups doubled in March"
+          }
+        ],
+        "credits_left": 12.5,
+        "out_of_credits_message": "You're out of credits. Top up in Billing."
+      }
+    }
+  },
+  {
+    "name": "context: only the language",
+    "setup": {
+      "context": {
+        "language": "vi"
+      }
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "language": "vi"
+    },
+    "expect": {
+      "returns": {
+        "name": null,
+        "voice": "",
+        "topics": [],
+        "recent_posts": [],
+        "patterns": [],
+        "kept_facts": [],
+        "credits_left": null,
+        "out_of_credits_message": null,
+        "language": "vi"
+      }
+    }
+  },
+  {
+    "name": "context: an expired token is 401",
+    "setup": {
+      "token": "expired"
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "context: a token signed with another secret is 401",
+    "setup": {
+      "token": "wrong_secret"
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "context: 403 with a sentence",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 403,
+    "response_body": {
+      "error": "forbidden",
+      "message": "Your plan has no assistant."
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": "Your plan has no assistant."
+    }
+  },
+  {
+    "name": "context: without language is refused",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "voice": "Plain."
+    },
+    "expect": {
+      "error": "refused",
+      "message": null
+    }
+  },
+  {
+    "name": "context: an HTML page is refused",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": "<!doctype html><html><body>Sign in</body></html>",
+    "expect": {
+      "error": "refused",
+      "message": null
+    }
+  },
+  {
+    "name": "context: a redirect is not followed",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 302,
+    "response_body": "",
+    "expect": {
+      "error": "refused",
+      "message": null
+    }
+  },
+  {
+    "name": "context: a 5xx is retried once, then unavailable",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 503,
+    "response_body": {
+      "error": "server_error"
+    },
+    "expect": {
+      "error": "unavailable",
+      "message": null,
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: a 5xx keeps the app's sentence",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 500,
+    "response_body": {
+      "error": "We're updating. Back in a minute."
+    },
+    "expect": {
+      "error": "unavailable",
+      "message": "We're updating. Back in a minute.",
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: a 5xx then an answer",
+    "setup": {
+      "context": {
+        "language": "en"
+      },
+      "faults": [
+        {
+          "status": 502,
+          "body": "Bad gateway"
+        }
+      ]
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "language": "en"
+    },
+    "expect": {
+      "returns": {
+        "name": null,
+        "voice": "",
+        "topics": [],
+        "recent_posts": [],
+        "patterns": [],
+        "kept_facts": [],
+        "credits_left": null,
+        "out_of_credits_message": null,
+        "language": "en"
+      },
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: no answer in 20 s, twice",
+    "setup": {
+      "faults": [
+        {
+          "timeout": true
+        },
+        {
+          "timeout": true
+        }
+      ]
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": null,
+    "response_body": null,
+    "expect": {
+      "error": "unavailable",
+      "message": null,
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: a timeout then an answer",
+    "setup": {
+      "context": {
+        "language": "en"
+      },
+      "faults": [
+        {
+          "timeout": true
+        }
+      ]
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "language": "en"
+    },
+    "expect": {
+      "returns": {
+        "name": null,
+        "voice": "",
+        "topics": [],
+        "recent_posts": [],
+        "patterns": [],
+        "kept_facts": [],
+        "credits_left": null,
+        "out_of_credits_message": null,
+        "language": "en"
+      },
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: connection refused, twice",
+    "setup": {
+      "faults": [
+        {
+          "unreachable": true
+        },
+        {
+          "unreachable": true
+        }
+      ]
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": null,
+    "response_body": null,
+    "expect": {
+      "error": "unavailable",
+      "message": null,
+      "attempts": 2
+    }
+  },
+  {
+    "name": "context: 429 is unavailable, not retried",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 429,
+    "response_body": {
+      "error": "rate_limited",
+      "message": "Slow down, try in a minute."
+    },
+    "expect": {
+      "error": "unavailable",
+      "message": "Slow down, try in a minute."
+    }
+  },
+  {
+    "name": "drafts: a single post",
+    "setup": {},
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-1"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "draft_id": "d_1",
+      "edit_url": "https://app.example/drafts/d_1"
+    },
+    "expect": {
+      "returns": {
+        "id": "d_1",
+        "edit_url": "https://app.example/drafts/d_1"
+      }
+    }
+  },
+  {
+    "name": "drafts: a thread with a picture",
+    "setup": {},
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "One.",
+        "thread": [
+          "Two.",
+          "Three."
+        ],
+        "media": [
+          {
+            "url": "https://bot.example.com/files/real/ws_1/t1/f1?sig=abc",
+            "alt": "",
+            "mime": "image/png"
+          }
+        ],
+        "key": "add-2"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-2"
+      },
+      "body": {
+        "text": "One.",
+        "thread": [
+          "Two.",
+          "Three."
+        ],
+        "media": [
+          {
+            "url": "https://bot.example.com/files/real/ws_1/t1/f1?sig=abc",
+            "alt": "",
+            "mime": "image/png"
+          }
+        ]
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "draft_id": "d_1",
+      "edit_url": "https://app.example/drafts/d_1"
+    },
+    "expect": {
+      "returns": {
+        "id": "d_1",
+        "edit_url": "https://app.example/drafts/d_1"
+      }
+    }
+  },
+  {
+    "name": "drafts: a repeated key gets the same draft",
+    "setup": {
+      "done": [
+        {
+          "path": "/drafts",
+          "key": "add-1",
+          "answer": {
+            "draft_id": "d_7",
+            "edit_url": null
+          }
+        }
+      ]
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-1"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "draft_id": "d_7",
+      "edit_url": null
+    },
+    "expect": {
+      "returns": {
+        "id": "d_7",
+        "edit_url": null
+      }
+    }
+  },
+  {
+    "name": "drafts: a key still being saved is 409",
+    "setup": {
+      "in_flight": [
+        {
+          "path": "/drafts",
+          "key": "add-1"
+        }
+      ]
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-1"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 409,
+    "response_body": {
+      "error": "in_flight",
+      "message": "Still saving that. Try again in a moment."
+    },
+    "expect": {
+      "error": "refused",
+      "message": "Still saving that. Try again in a moment."
+    }
+  },
+  {
+    "name": "drafts: an empty text is 400",
+    "setup": {},
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "",
+        "thread": [],
+        "media": [],
+        "key": "add-3"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-3"
+      },
+      "body": {
+        "text": "",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 400,
+    "response_body": {
+      "error": "invalid",
+      "message": "The draft is empty."
+    },
+    "expect": {
+      "error": "refused",
+      "message": "The draft is empty."
+    }
+  },
+  {
+    "name": "drafts: an answer without draft_id is refused",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Hi.",
+        "thread": [],
+        "media": [],
+        "key": "add-4"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-4"
+      },
+      "body": {
+        "text": "Hi.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "id": "d_1"
+    },
+    "expect": {
+      "error": "refused",
+      "message": null
+    }
+  },
+  {
+    "name": "drafts: a 5xx is retried with the same key",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Hi.",
+        "thread": [],
+        "media": [],
+        "key": "add-5"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-5"
+      },
+      "body": {
+        "text": "Hi.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 502,
+    "response_body": "Bad gateway",
+    "expect": {
+      "error": "unavailable",
+      "message": null,
+      "attempts": 2
+    }
+  },
+  {
+    "name": "material: facts for a draft",
+    "setup": {},
+    "call": {
+      "method": "save_material",
+      "args": {
+        "facts": [
+          "Sign-ups doubled in March"
+        ],
+        "draft_id": "d_1",
+        "key": "add-1:facts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/material",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-1:facts"
+      },
+      "body": {
+        "facts": [
+          "Sign-ups doubled in March"
+        ],
+        "draft_id": "d_1"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "ok": true
+    },
+    "expect": {
+      "returns": null
+    }
+  },
+  {
+    "name": "material: facts with no draft yet",
+    "setup": {},
+    "call": {
+      "method": "save_material",
+      "args": {
+        "facts": [
+          "Replies in 2 minutes"
+        ],
+        "draft_id": null,
+        "key": "m1:facts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/material",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m1:facts"
+      },
+      "body": {
+        "facts": [
+          "Replies in 2 minutes"
+        ]
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "ok": true
+    },
+    "expect": {
+      "returns": null
+    }
+  },
+  {
+    "name": "charge: taken from the credits",
+    "setup": {
+      "credits_left": 5
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.0123,
+        "ref": "01JD0000000000000000000000:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "01JD0000000000000000000000:1"
+      },
+      "body": {
+        "cost_usd": 0.0123,
+        "ref": "01JD0000000000000000000000:1"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "ok": true
+    },
+    "expect": {
+      "returns": null
+    }
+  },
+  {
+    "name": "charge: no credits left is 402",
+    "setup": {
+      "credits_left": 0
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m2:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m2:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m2:1"
+      }
+    },
+    "response_status": 402,
+    "response_body": {
+      "error": "out_of_credits",
+      "message": "You're out of credits. Top up in Billing."
+    },
+    "expect": {
+      "error": "out_of_credits",
+      "message": "You're out of credits. Top up in Billing."
+    }
+  },
+  {
+    "name": "charge: a repeated ref is not charged again",
+    "setup": {
+      "credits_left": 0,
+      "done": [
+        {
+          "path": "/charge",
+          "key": "m3:1",
+          "answer": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m3:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m3:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m3:1"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "ok": true
+    },
+    "expect": {
+      "returns": null
+    }
+  },
+  {
+    "name": "charge: 402 with a bare code shows no message",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m4:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m4:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m4:1"
+      }
+    },
+    "response_status": 402,
+    "response_body": {
+      "error": "out_of_credits"
+    },
+    "expect": {
+      "error": "out_of_credits",
+      "message": null
+    }
+  },
+  {
+    "name": "charge: a code before a sentence is dropped",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m5:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m5:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m5:1"
+      }
+    },
+    "response_status": 402,
+    "response_body": {
+      "error": "out_of_credits",
+      "message": "out_of_credits: You're out of credits."
+    },
+    "expect": {
+      "error": "out_of_credits",
+      "message": "You're out of credits."
+    }
+  },
+  {
+    "name": "charge: an answer that is not ok is refused",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m6:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m6:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m6:1"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "ok": false
+    },
+    "expect": {
+      "error": "refused",
+      "message": null
+    }
+  }
+]

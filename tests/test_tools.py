@@ -254,3 +254,51 @@ async def test_calls_to_the_app_are_timed_by_the_apps_tool_name():
         await tools.save_draft("hello", [], [], "k1")
         await tools.charge(0.01, "m:1")
     assert [s["name"] for s in tools.timer.summary()["tool"]] == ["save_draft", "assistant_charge"]
+
+
+@respx.mock
+async def test_mcp_media_is_sent_as_today_without_mime():
+    route = respx.post(URL).mock(return_value=ok({"id": "d1", "edit_url": None}))
+    media = [{"url": "https://bot/f?sig=1", "alt": "", "mime": "image/png"}]
+    async with httpx.AsyncClient() as client:
+        await make_tools(client).save_draft("hello", [], media, "k")
+    assert json.loads(route.calls[0].request.content)["params"]["arguments"]["media"] == [
+        {"url": "https://bot/f?sig=1", "alt": ""}
+    ]
+
+
+async def test_tools_for_picks_the_client_by_how_the_pack_reaches_the_app():
+    from datetime import UTC, datetime
+
+    from assistant.timing import TurnTimer
+    from assistant.tools import RestHttpTools, tools_for
+
+    session = Session(app="demo", workspace="w1", access="draft", token=TOKEN, expires_at=datetime.now(UTC))
+    rest = AppPack.model_validate(
+        {**make_pack().model_dump(), "mcp_url": None, "tools": None, "api_base": "https://app.test/api/assistant"}
+    )
+    timer = TurnTimer()
+    async with httpx.AsyncClient() as client:
+        mcp_tools = tools_for(make_pack(), session, client, timer)
+        rest_tools = tools_for(rest, session, client)
+    assert isinstance(mcp_tools, McpHttpTools) and mcp_tools.timer is timer
+    assert isinstance(rest_tools, RestHttpTools) and rest_tools.timer is None
+
+
+@respx.mock
+async def test_rest_calls_are_timed_by_endpoint():
+    from datetime import UTC, datetime
+
+    from assistant.timing import TurnTimer
+    from assistant.tools import RestHttpTools
+
+    base = "https://app.test/api/assistant"
+    respx.post(f"{base}/drafts").mock(return_value=httpx.Response(200, json={"draft_id": "d1", "edit_url": None}))
+    respx.post(f"{base}/charge").mock(return_value=httpx.Response(200, json={"ok": True}))
+    rest = AppPack.model_validate({**make_pack().model_dump(), "mcp_url": None, "tools": None, "api_base": base})
+    session = Session(app="demo", workspace="w1", access="draft", token=TOKEN, expires_at=datetime.now(UTC))
+    async with httpx.AsyncClient() as client:
+        tools = RestHttpTools(rest, session, client, TurnTimer())
+        await tools.save_draft("hello", [], [], "k1")
+        await tools.charge(0.01, "m:1")
+    assert [s["name"] for s in tools.timer.summary()["tool"]] == ["drafts", "charge"]

@@ -280,14 +280,14 @@ async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[l
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select storage_key from files where id = %s and app = %s and workspace = %s and thread_id = %s"
+            "select storage_key, mime from files where id = %s and app = %s and workspace = %s and thread_id = %s"
             " and kind <> %s",
             (file_id, session.app, session.workspace, chat_id, PENDING),
         )
         row = await cur.fetchone()
     if row is None:
         return []
-    return [{"url": await asyncio.to_thread(state.storage.signed_url, row[0], 300), "alt": ""}]
+    return [{"url": await asyncio.to_thread(state.storage.signed_url, row[0], 300), "alt": "", "mime": row[1]}]
 
 
 @router.post("/threads/{thread_id}/actions")

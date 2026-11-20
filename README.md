@@ -2,11 +2,13 @@
 
 A private chat bot that any web app adds with one script tag. It talks with the user like a person, asks one thing at a time about what they did, and writes a post or a thread from what they said or showed it, never inventing a number. The app decides where a draft goes. The bot never publishes anything.
 
+**Adding it to an app:** [docs/integration.md](docs/integration.md) is the contract (version 1): the token, the chat API, the four endpoints, the pack the app serves at `/.well-known/app-assistant.json`, and the registry entry. `tests/contract/` checks the bot against a fake app built only from that page; its `scenarios.json` is language-neutral, so the JS package's tests reuse it.
+
 ## How it works
 
 1. The app's page loads `widget.js`; the widget asks the app's own server for a session token.
 2. The app signs a short-lived token (up to 1 hour) for the signed-in user's workspace and hands it to the widget.
-3. The widget talks to this service with that token. The service sends the same token to the app's MCP, which exposes four tools: read context, save a draft, save material, report the cost.
+3. The widget talks to this service with that token. The service sends the same token to the app's four HTTPS endpoints (`/context`, `/drafts`, `/material`, `/charge`: read context, save a draft, save material, report the cost). An app that still uses MCP exposes the same four as MCP tools.
 4. A chat model (`models.chat`) holds the conversation and has tools to keep what the user says as facts and to ask a writer model (`models.writer`) for a draft. Every number and claim in a draft must come from the facts the user gave or a file showed; the draft is checked in code, written once more if it fails, then dropped. What the bot kept shows in the chat as a "Saved" line.
 5. Saving a draft to the app happens only when the user taps Add (the `add_draft` action). The bot has no tool that publishes.
 

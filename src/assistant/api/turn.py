@@ -43,7 +43,7 @@ from assistant.limits import (
 from assistant.pack_store import spend_key
 from assistant.packs import AppPack
 from assistant.timing import Outcome, TimedLlm, TurnTimer, current, log_turn
-from assistant.tools import AppTools, McpHttpTools, ToolError
+from assistant.tools import AppTools, McpHttpTools, RestHttpTools, ToolError
 
 log = logging.getLogger("assistant.turn")
 
@@ -272,7 +272,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     current.set(timer)  # the graph's Deps pick it up
     message_id = new_id()
     tools = state.tools_for(t.pack, t.session)
-    if isinstance(tools, McpHttpTools):
+    if isinstance(tools, McpHttpTools | RestHttpTools):
         tools.timer = timer
     try:
         await _gate(state, t, tools)
