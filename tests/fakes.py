@@ -41,6 +41,7 @@ class FakeLlm:
         self.script: dict[str, list] = {k: list(v) for k, v in (script or {}).items()}
         self.cost = cost
         self.calls: list[dict] = []
+        self._pending: dict = {}  # max_tokens and reasoning of the call being made
 
     def add(self, name: str, *values: Any) -> None:
         self.script.setdefault(name, []).extend(values)
@@ -49,7 +50,8 @@ class FakeLlm:
         return [c["name"] for c in self.calls]
 
     def _next(self, name: str, messages: list[dict] | None, model: str | None) -> tuple[Any, float]:
-        self.calls.append({"name": name, "messages": messages, "model": model})
+        self.calls.append({"name": name, "messages": messages, "model": model, **self._pending})
+        self._pending = {}
         queue = self.script.get(name)
         if not queue:
             raise AssertionError(f"FakeLlm: no scripted output left for {name}")
@@ -61,13 +63,15 @@ class FakeLlm:
             raise value
         return value, cost
 
-    async def chat(self, messages, model, fallbacks, max_tokens, on_text=None) -> LlmResult:
+    async def chat(self, messages, model, fallbacks, max_tokens, on_text=None, reasoning=None) -> LlmResult:
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning}
         text, cost = self._next(marker(messages), messages, model)
         if on_text is not None:
             await on_text(text)
         return LlmResult(text=text, cost_usd=cost, model=model)
 
-    async def chat_json(self, messages, model, fallbacks, schema: type[BaseModel], max_tokens):
+    async def chat_json(self, messages, model, fallbacks, schema: type[BaseModel], max_tokens, reasoning=None):
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning}
         value, cost = self._next(marker(messages), messages, model)
         return schema.model_validate(value), cost
 

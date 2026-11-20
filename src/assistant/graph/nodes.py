@@ -6,13 +6,12 @@ or the app supplied goes to a model inside a `<data>` block. Every model call fi
 
 import re
 import time
-import unicodedata
 from collections import Counter
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel, ConfigDict
 
-from assistant.checks import Fact, numbers_in, repeats, rule_problems, unsupported_numbers
+from assistant.checks import Fact, nfc, numbers_in, unsupported_numbers
 from assistant.db import new_id
 from assistant.files.intake import UploadError
 from assistant.graph import prompts
@@ -21,6 +20,16 @@ from assistant.graph.state import ChatState, Piece
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
 from assistant.packs import AppPack, WriteSpec
 from assistant.tools import KeptFact
+from assistant.writer import (
+    CLAIM,
+    CLAIM_TOKENS,
+    ClaimOut,
+    claim_request,
+    fact_blocks,
+    image_allowed,
+    language_tag,
+    post_problems,
+)
 
 CONTEXT_TTL = 300  # seconds the app's context is reused within a thread
 MAX_ROUNDS = 2  # ask-back rounds before writing with what there is
@@ -28,10 +37,6 @@ MAX_LINKS = 2  # links read from one message
 MAX_MESSAGES = 20  # conversation messages shown to a model
 MAX_KEPT = 10  # kept facts taken from the app's context
 
-NUMBER = "a number you didn't give ({})"
-RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
-REPEAT = "it repeats a recent post"
-CLAIM = "it says something you didn't tell me"
 READ_NOTES = {
     "voice": "Read your voice note",
     "image": "Read your screenshot",
@@ -40,7 +45,6 @@ READ_NOTES = {
 }
 
 _LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-_LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*")
 INTRO = "Here's what I wrote from what you told me:"
 KEPT_OFFER = "Last time you kept these — want to write from one?"
 KEPT_NOTE = "Offered the facts you kept"
@@ -82,15 +86,7 @@ class WriterOut(_Strict):
     pieces: list[PieceOut]
 
 
-class ClaimOut(_Strict):
-    unsupported: list[str]
-
-
 # ---- helpers ----
-
-
-def nfc(text: str) -> str:
-    return unicodedata.normalize("NFC", text)
 
 
 def _key(text: str) -> str:
@@ -136,30 +132,14 @@ def _links(text: str) -> list[str]:
     return found[:MAX_LINKS]
 
 
-def _fmt(n: float) -> str:
-    return format(n, "f").rstrip("0").rstrip(".")
-
-
-def _language(tag: str) -> str:
-    """The app's language tag (en, vi, pt-BR), or "en" for anything else: it goes into a system prompt."""
-    return tag if _LANGUAGE_TAG.fullmatch(tag) else "en"
-
-
 def _system(prompt: str, pack: AppPack, state: ChatState, *, guide=False, language=False) -> str:
     parts = [prompt, f"App: {pack.name}"]
     if guide:
         parts.append(f"The app's guide:\n{pack.guide.strip()}")
     if language:
         ctx = state.get("context")
-        parts.append(f"Language: {_language(ctx.language if ctx else '')}")
+        parts.append(f"Language: {language_tag(ctx.language if ctx else '')}")
     return "\n\n".join(parts)
-
-
-def _fact_blocks(facts: list[Fact]) -> str:
-    if not facts:
-        return "Known facts: none yet."
-    lines = [data("user" if f.source == "typed" else f.source, f.text, fact=f"F{i}") for i, f in enumerate(facts, 1)]
-    return "Known facts:\n" + "\n".join(lines)
 
 
 def _material(state: ChatState, *, facts=False, context=False, kept=False) -> str:
@@ -186,7 +166,7 @@ def _material(state: ChatState, *, facts=False, context=False, kept=False) -> st
         blocks = "\n".join(data("kept", k.text, id=k.id) for k in _kept(state))
         parts.append("Facts the user kept in an earlier chat (their own words, not used yet):\n" + blocks)
     if facts:
-        parts.append(_fact_blocks(state.get("facts", [])))
+        parts.append(fact_blocks(state.get("facts", [])))
     return "\n\n".join(parts)
 
 
@@ -202,23 +182,6 @@ def _spec_lines(specs: list[tuple[WriteSpec, int]]) -> str:
             f"  Instructions: {spec.instructions.strip()}"
         )
     return "What to write:\n" + "\n".join(lines)
-
-
-def _problems(piece: Piece, spec: WriteSpec, facts: list[Fact], recent: list[str]) -> list[str]:
-    reasons = []
-    missing = unsupported_numbers(piece.text, facts)
-    if missing:
-        reasons.append(NUMBER.format(_fmt(missing[0])))
-    reasons += [RULES[code] for code in rule_problems(piece.text, spec)]
-    if repeats(piece.text, recent):
-        reasons.append(REPEAT)
-    return reasons
-
-
-def _image_allowed(piece: Piece, spec: WriteSpec, state: ChatState) -> bool:
-    images = {r.file_id for r in state.get("readings", []) if r.kind == "image"}
-    from_image = {f.id for f in state.get("facts", []) if f.file_id == piece.image_file_id}
-    return spec.may_carry_image and piece.image_file_id in images and bool(from_image & set(piece.fact_ids))
 
 
 # ---- nodes ----
@@ -408,18 +371,18 @@ async def check(state: ChatState, t: Turn) -> dict:
     recent = [*(ctx.recent_posts if ctx else []), *state.get("past_pieces", [])]
     problems: dict[str, list[str]] = {}
     capped = False
-    claim_system = _system(prompts.CLAIM_CHECK, t.pack, state)
     try:
         for i, p in enumerate(pieces):
             if p.id in passed or (second and p.id not in old):
                 continue
             spec = specs[p.spec_kind]
-            if p.image_file_id is not None and not _image_allowed(p, spec, state):
+            readings = state.get("readings", [])
+            if p.image_file_id is not None and not image_allowed(p.image_file_id, p.fact_ids, spec, readings, facts):
                 p = pieces[i] = p.model_copy(update={"image_file_id": None})
-            reasons = _problems(p, spec, facts, recent + [q.text for q in pieces if q.id in passed])
+            reasons = post_problems(p.text, spec, facts, recent + [q.text for q in pieces if q.id in passed])
             if not reasons:
-                user = _fact_blocks(facts) + "\n\nThe piece to check:\n" + data("draft", p.text)
-                if (await t.json(claim_system, user, ClaimOut, max_tokens=400, cheap=True)).unsupported:
+                system, user = claim_request(t.pack, facts, [p.text])
+                if (await t.json(system, user, ClaimOut, max_tokens=CLAIM_TOKENS, cheap=True)).unsupported:
                     reasons = [CLAIM]
             if reasons:
                 problems[p.id] = reasons

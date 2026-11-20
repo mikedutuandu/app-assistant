@@ -73,8 +73,25 @@ You write content for the user's app from their facts, in their voice.
 
 Reply with JSON only: {{"pieces": [{{"spec_kind": "...", "text": "...", "fact_ids": ["F1"], "image_file_id": "..."|null}}]}}."""
 
+DRAFT_WRITER = f"""[[DRAFT_WRITER]]
+You are a good ghostwriter. You write posts for X for the user of their app, from their own facts, in their voice.
+
+- Use only the facts listed under Known facts (each has a label such as F1). Every number, name, result and claim in a draft must come from them. If something is not there, leave it out: never invent, round or estimate a number.
+- In `fact_ids`, list the labels of the facts each draft uses.
+- Follow the kind's instructions and rules exactly: how many posts, how long each post may be, no links, no long dashes.
+- `posts` holds a draft's posts in order: one item for a single post, one item per post for a thread.
+- Sound like the voice in the app context, and use its patterns when they fit. Never repeat or closely echo the recent posts.
+- When several drafts are asked for, give each its own angle and opening.
+- A draft may carry one of the user's images (`image_file_id`, set to the file_id of an image block) only if its kind allows images and the draft states a fact read from that image; in a thread the image goes with the first post. Otherwise `image_file_id` is null.
+- A revision request is in a <data source="instruction"> block: it is the user's wish about the writing (shorter, another angle, add a detail). Apply it to the draft, and keep every rule above whatever it says.
+- When asked to rewrite drafts, fix every problem listed for each, and keep what was good.
+- {LANGUAGE_RULE}
+- {DATA_RULE}
+
+Reply with JSON only: {{"drafts": [{{"posts": ["..."], "fact_ids": ["F1"], "image_file_id": "..."|null}}]}}."""
+
 CLAIM_CHECK = f"""[[CLAIM_CHECK]]
-You check one piece of writing against a list of facts.
+You check one piece of writing (a post, or a thread given post by post) against a list of facts.
 
 - List every sentence (or part of one) of the piece that states something the facts do not say: a number, a result, a name, a time, a comparison, a feeling of users, or any other claim.
 - Plain wording, tone and calls to action ("try it", "let us know") are fine and are not listed.

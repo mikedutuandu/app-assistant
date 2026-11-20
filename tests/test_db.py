@@ -16,7 +16,7 @@ pytestmark = pytest.mark.db
 
 
 async def test_migrate_applies_once(pool):
-    assert await migrate(pool) == ["001_init.sql", "002_pieces.sql", "003_demo.sql"]
+    assert await migrate(pool) == ["001_init.sql", "002_pieces.sql", "003_demo.sql", "004_drafts.sql"]
     assert await migrate(pool) == []
 
 
@@ -80,7 +80,7 @@ async def test_pools_use_their_own_schema_and_migrate_creates_it(fresh_schema):
     saver = await open_saver_pool(url, schema, max_size=2)
     try:
         assert (pool.max_size, saver.max_size) == (3, 2)
-        assert await migrate(pool, schema) == ["001_init.sql", "002_pieces.sql", "003_demo.sql"]
+        assert await migrate(pool, schema) == ["001_init.sql", "002_pieces.sql", "003_demo.sql", "004_drafts.sql"]
         async with pool.connection() as conn:
             cur = await conn.execute("select current_schema()")
             assert (await cur.fetchone())[0] == schema
