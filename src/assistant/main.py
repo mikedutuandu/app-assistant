@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
@@ -20,6 +21,8 @@ from assistant.graph.build import serializer
 from assistant.llm import Llm
 from assistant.packs import AppPack, PackError, load_packs
 from assistant.tools import McpHttpTools
+
+WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -83,5 +86,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, bool]:
         return {"ok": True}
+
+    @app.get("/widget.js", include_in_schema=False)
+    async def widget() -> Response:
+        if not WIDGET_JS.is_file():
+            return Response(status_code=404)
+        return Response(
+            WIDGET_JS.read_bytes(),
+            media_type="application/javascript",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
 
     return app
