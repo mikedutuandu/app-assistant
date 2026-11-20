@@ -12,7 +12,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from assistant.files.read import FileReading
+from assistant.files.read import FileReading, Meter
 from assistant.graph import nodes
 from assistant.graph.state import STATE_TYPES, ChatState
 from assistant.graph.turn import Deps, bind
@@ -69,7 +69,7 @@ def build_graph(
     tools_factory: Callable[[], AppTools],
     checkpointer,
     on_event: Callable[[str, dict], Awaitable[None]],
-    read_files: Callable[[list[str]], Awaitable[list[FileReading]]],
+    read_files: Callable[[list[str], Meter], Awaitable[list[FileReading]]],
     read_link: Callable[[str], Awaitable[FileReading]],
     on_cost: Callable[[float, int], Awaitable[None]] | None = None,
 ) -> CompiledStateGraph:

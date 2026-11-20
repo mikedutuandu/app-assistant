@@ -19,7 +19,6 @@ from assistant.graph import prompts
 from assistant.graph.prompts import data
 from assistant.graph.state import ChatState, Piece
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
-from assistant.llm import LlmError
 from assistant.packs import AppPack, WriteSpec
 from assistant.tools import KeptFact
 
@@ -245,17 +244,12 @@ async def read_files(state: ChatState, t: Turn) -> dict:
     try:
         for ref, is_link in jobs:
             t.gate()
-            try:
-                got = [await t.deps.read_link(ref)] if is_link else await t.deps.read_files([ref])
+            try:  # the reader reports each model call's cost to the turn as it ends, and checks the cap before each
+                got = [await t.deps.read_link(ref)] if is_link else await t.deps.read_files([ref], t)
             except UploadError as e:
-                await t.spend(e.cost_usd)
                 await t.emit("text", {"delta": e.message + "\n"})
                 continue
-            except LlmError as e:
-                await t.spend(e.cost_usd)
-                raise
             for r in got:
-                await t.spend(r.cost_usd)
                 r = r.model_copy(update={"text": nfc(r.text), "unsure": [nfc(u) for u in r.unsure]})
                 if r.kind == "voice":
                     await t.emit("transcript", {"file_id": r.file_id, "text": r.text})

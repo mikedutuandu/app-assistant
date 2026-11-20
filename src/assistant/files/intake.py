@@ -61,11 +61,10 @@ _CLAIMS: dict[str, Kind] = {mime: kind for kind, mime in _TYPES.values()} | {
 
 
 class UploadError(Exception):
-    def __init__(self, code: str, message: str, cost_usd: float = 0.0):
+    def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
         self.message = message
-        self.cost_usd = cost_usd  # spent before the refusal (a too-long voice note was still transcribed)
 
 
 class UploadNotFound(Exception):

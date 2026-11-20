@@ -1,8 +1,8 @@
 """The cost-accounting core of a turn: what each node may use, what the turn has spent, and the message's cap.
 
-Every model call goes through `Turn.json` or `Turn.stream`, which first check the cap and then add what the call
-cost (even a failed one) and report it at once through `Deps.on_cost`, so a turn that is cut off has still recorded
-every call that ended. `bind` turns a node into a LangGraph node that keeps that cost in state.
+Every model call goes through `Turn.json` or `Turn.stream`, or (reading a file) through the turn as the reader's
+Meter. Each checks the cap first and then adds what the call cost (even a failed one) and reports it at once through
+`Deps.on_cost`, so a turn that is cut off has still recorded every call that ended. `bind` turns a node into a LangGraph node that keeps that cost in state.
 """
 
 from collections.abc import Awaitable, Callable
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from assistant.files.read import FileReading
+from assistant.files.read import FileReading, Meter
 from assistant.graph.state import ChatState
 from assistant.llm import Llm, LlmError
 from assistant.packs import AppPack
@@ -29,7 +29,7 @@ class Deps:
     llm: Llm
     tools_factory: Callable[[], AppTools]
     on_event: Callable[[str, dict], Awaitable[None]]
-    read_files: Callable[[list[str]], Awaitable[list[FileReading]]]
+    read_files: Callable[[list[str], Meter], Awaitable[list[FileReading]]]  # the Meter is the turn
     read_link: Callable[[str], Awaitable[FileReading]]
     on_cost: Callable[
         [float, int], Awaitable[None]

@@ -72,7 +72,7 @@ def test_pack_values():
     assert p.files.model_dump() == {
         "image_mb": 5,
         "pdf_mb": 20,
-        "pdf_pages": 30,
+        "pdf_pages": 10,
         "voice_seconds": 300,
         "per_message": 5,
         "kinds": ["image", "pdf", "voice"],

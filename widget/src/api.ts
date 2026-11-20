@@ -227,7 +227,11 @@ export class BotApi {
     if (!res.ok) throw await errorOf(res);
     if (!res.body) throw new ApiError(res.status, "server", "Something went wrong. Please try again.");
     onAccepted?.();
-    const parser = new SseParser(onEvent);
+    let ended = false; // every turn ends with `done` or `failed`
+    const parser = new SseParser((e) => {
+      if (e.event === "done" || e.event === "failed") ended = true;
+      onEvent(e);
+    });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     for (;;) {
@@ -237,6 +241,8 @@ export class BotApi {
     }
     parser.feed(decoder.decode());
     parser.end();
+    // A stream that stops without either was cut (Vercel ends a function at 300 s): say so instead of going quiet.
+    if (!ended) throw new ApiError(res.status, "cut_off", "The answer was cut off. Try again.");
   }
 
   /** Three steps: the bot reserves the upload, the bytes go straight to storage, then the bot checks what arrived. */

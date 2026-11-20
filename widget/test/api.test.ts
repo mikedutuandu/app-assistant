@@ -84,12 +84,19 @@ describe("BotApi", () => {
 
   it("parses SSE events split across chunks", async () => {
     handler = () =>
-      sse(['event: thread\ndata: {"thread_id":"a",', '"title":"T"}\n\nevent: te', 'xt\ndata: {"delta":"Hi"}\n', "\n"]);
+      sse([
+        'event: thread\ndata: {"thread_id":"a",',
+        '"title":"T"}\n\nevent: te',
+        'xt\ndata: {"delta":"Hi"}\n',
+        "\n",
+        'event: done\ndata: {"message_id":"m","cost_usd":0}\n\n',
+      ]);
     const got: BotEvent[] = [];
     await api().send(null, "hello", [], (e) => got.push(e));
     expect(got).toEqual([
       { event: "thread", data: { thread_id: "a", title: "T" } },
       { event: "text", data: { delta: "Hi" } },
+      { event: "done", data: { message_id: "m", cost_usd: 0 } },
     ]);
     const body = JSON.parse(calls[1].init.body as string);
     expect(body).toEqual({ thread_id: null, text: "hello", file_ids: [] });
@@ -251,10 +258,29 @@ describe("BotApi session URL", () => {
   });
 
   it("send tells the caller once the server accepted the message", async () => {
-    handler = () => sse(['event: text\ndata: {"delta":"Hi"}\n\n']);
+    handler = () => sse(['event: text\ndata: {"delta":"Hi"}\n\n', 'event: done\ndata: {"message_id":"m"}\n\n']);
     const order: string[] = [];
     await api().send(null, "x", [], (e) => order.push(e.event), () => order.push("accepted"));
-    expect(order).toEqual(["accepted", "text"]);
+    expect(order).toEqual(["accepted", "text", "done"]);
+  });
+
+  it("a stream cut before `done` or `failed` is an error, after the events that did arrive", async () => {
+    // Vercel ends a function at 300 s: the stream just stops, with no last event.
+    handler = () => sse(['event: text\ndata: {"delta":"Reading your PDF"}\n\n']);
+    const got: string[] = [];
+    const err = await api()
+      .send(null, "x", [], (e) => got.push(e.event))
+      .catch((e) => e);
+    expect(got).toEqual(["text"]);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ code: "cut_off", message: "The answer was cut off. Try again." });
+  });
+
+  it("a stream that ends with `failed` is not reported again as cut off", async () => {
+    handler = () => sse(['event: failed\ndata: {"error":"unavailable","message":"Down."}\n\n']);
+    const got: string[] = [];
+    await api().send(null, "x", [], (e) => got.push(e.event));
+    expect(got).toEqual(["failed"]);
   });
 });
 

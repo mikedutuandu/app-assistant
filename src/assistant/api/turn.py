@@ -22,7 +22,7 @@ from assistant.auth import Session
 from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import FileRecord, UploadError
-from assistant.files.read import FileReading, read_file, read_link
+from assistant.files.read import FileReading, Meter, read_file, read_link
 from assistant.graph.build import build_graph, thread_id
 from assistant.limits import (
     DEMO_MESSAGES_PER_IP_DAY,
@@ -157,8 +157,8 @@ async def _save_pieces(pool, t: TurnInput, chat_id: str, message_id: str, card: 
             )
 
 
-def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str]], Awaitable[list[FileReading]]]:
-    async def read_files(ids: list[str]) -> list[FileReading]:
+def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str], Meter], Awaitable[list[FileReading]]]:
+    async def read_files(ids: list[str], meter: Meter) -> list[FileReading]:
         async with state.pool.connection() as conn:
             cur = await conn.execute(
                 "select id, kind, mime, bytes, storage_key from files"
@@ -172,7 +172,7 @@ def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str]]
             if row is None:
                 raise UploadError("file", FILE_GONE)
             rec = FileRecord(id=row[0], kind=row[1], mime=row[2], bytes=row[3], storage_key=row[4])
-            readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool))
+            readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool, meter))
         return readings
 
     return read_files
