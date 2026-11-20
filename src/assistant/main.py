@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator
@@ -9,11 +8,10 @@ import httpx
 from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from assistant.api import chat, deps, turn
+from assistant.api import chat, deps, internal, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, migrate, open_pool, open_saver_pool
-from assistant.demo import cleanup as demo_cleanup
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
@@ -24,6 +22,7 @@ from assistant.tools import McpHttpTools
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
 LOG_FORMAT = "%(levelname)s %(name)s %(message)s"
+log = logging.getLogger("assistant.main")
 
 
 class _StdoutHandler(logging.StreamHandler):
@@ -31,7 +30,7 @@ class _StdoutHandler(logging.StreamHandler):
 
 
 def log_to_stdout() -> None:
-    """The service's own lines (ids, timings, costs, error kinds) at INFO on stdout, where Cloud Run reads them.
+    """The service's own lines (ids, timings, costs, error kinds) at INFO on stdout, where the host reads them.
 
     Only the "assistant" logger, which does not propagate: the root logger is left alone, so libraries such as
     httpx (which logs every URL it calls) stay at their quiet defaults.
@@ -64,25 +63,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         saver_pool = await open_saver_pool(settings.database_url, settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
-            await migrate(pool, settings.db_schema)
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
-            await checkpointer.setup()
+            await migrate(pool, settings.db_schema, after=checkpointer.setup)  # both under one advisory lock
             app.state.packs = packs
             app.state.http = http
             app.state.pool = pool
             app.state.checkpointer = checkpointer
             app.state.storage = Storage(settings)
+            log.info("uploads: %s", app.state.storage.upload_backend)  # a missing SUPABASE_* shows here
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
             def tools_for(pack: AppPack, session: Session) -> McpHttpTools:
                 return McpHttpTools(pack, session, http)
 
             app.state.tools_for = tools_for
-            cleanup_task = asyncio.create_task(demo_cleanup.cleanup_loop(app.state))
-            try:
-                yield
-            finally:
-                await demo_cleanup.stop(cleanup_task)
+            yield
             await turn.drain(
                 settings.shutdown_drain_seconds
             )  # running turns finish and charge before their pools close
@@ -94,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="app-assistant", lifespan=lifespan)
     app.state.settings = settings
     deps.install(app)
+    app.include_router(internal.router)
     app.include_router(chat.router)
     app.include_router(chat.workspaces)
     app.include_router(demo_routes.router)

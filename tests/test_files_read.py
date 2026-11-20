@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from pathlib import Path
@@ -10,9 +11,9 @@ from moto import mock_aws
 from assistant.config import Settings
 from assistant.db import migrate, new_id
 from assistant.files.intake import FileRecord, UploadError
-from assistant.files.read import FileReading, read_file, read_link
+from assistant.files.read import FileReading, ImageRead, read_file, read_link
 from assistant.files.storage import Storage
-from assistant.llm import Llm
+from assistant.llm import Llm, LlmError
 from assistant.packs import AppPack
 
 FIX = Path(__file__).parent / "fixtures"
@@ -41,6 +42,31 @@ def _pack(pdf_pages: int = 30, voice_seconds: int = 300) -> AppPack:
             "message_usd_cap": 1.0,
         }
     )
+
+
+class Meter:
+    """Stands in for the turn: records each model call's cost as it is reported, and stops reads past `cap`."""
+
+    class Stop(Exception):
+        pass
+
+    def __init__(self, cap: float = float("inf")):
+        self.cap = cap
+        self.spent: list[float] = []
+        self.gates = 0
+
+    async def spend(self, cost_usd: float) -> None:
+        self.spent.append(cost_usd)
+
+    def gate(self) -> None:
+        self.gates += 1
+        if sum(self.spent) >= self.cap:
+            raise Meter.Stop
+
+
+@pytest.fixture
+def meter() -> Meter:
+    return Meter()
 
 
 @pytest.fixture
@@ -83,26 +109,27 @@ def transcript(text: str, seconds: float, cost: float) -> httpx.Response:
 
 @pytest.mark.db
 @respx.mock
-async def test_voice_transcript_and_cost(pool, storage, put):
+async def test_voice_transcript_and_cost(pool, storage, put, meter):
     rec = await put("voice", "audio/mp4", (FIX / "voice.m4a").read_bytes())
     route = respx.post(TRANSCRIBE).mock(return_value=transcript("we shipped it on friday", 12.5, 0.0004))
-    got = await read_file(rec, _pack(), Llm("k"), storage, pool)
+    got = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
     assert got == FileReading(
         file_id=rec.id, kind="voice", text="we shipped it on friday", unsure=[], cost_usd=0.0004, seconds=12.5
     )
+    assert meter.spent == [0.0004]
     assert json.loads(route.calls[0].request.content)["input_audio"]["format"] == "m4a"
 
 
 @pytest.mark.db
 @respx.mock
-async def test_voice_over_cap_raises_too_long_with_cost(pool, storage, put):
+async def test_voice_over_cap_raises_too_long_with_cost(pool, storage, put, meter):
     rec = await put("voice", "audio/mp4", (FIX / "voice.m4a").read_bytes())
     respx.post(TRANSCRIBE).mock(return_value=transcript("long", 90.0, 0.003))
     with pytest.raises(UploadError) as exc:
-        await read_file(rec, _pack(voice_seconds=60), Llm("k"), storage, pool)
+        await read_file(rec, _pack(voice_seconds=60), Llm("k"), storage, pool, meter)
     assert exc.value.code == "too_long"
     assert exc.value.message == "Voice notes can be up to 1 minute."
-    assert exc.value.cost_usd == 0.003
+    assert meter.spent == [0.003]  # the transcription is charged even though the note is refused
     async with pool.connection() as conn:
         row = await (await conn.execute("select reading from files where id = %s", (rec.id,))).fetchone()
     assert row[0] is None
@@ -110,11 +137,11 @@ async def test_voice_over_cap_raises_too_long_with_cost(pool, storage, put):
 
 @pytest.mark.db
 @respx.mock
-async def test_image_unsure_kept(pool, storage, put):
+async def test_image_unsure_kept(pool, storage, put, meter):
     data = (FIX / "shot.png").read_bytes()
     rec = await put("image", "image/png", data)
     route = respx.post(CHAT).mock(return_value=vision_reply("Revenue 4200 USD", ["the last digit"], 0.0031))
-    got = await read_file(rec, _pack(), Llm("k"), storage, pool)
+    got = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
     assert (got.kind, got.text, got.unsure, got.cost_usd) == ("image", "Revenue 4200 USD", ["the last digit"], 0.0031)
     body = json.loads(route.calls[0].request.content)
     assert body["model"] == "vis/model" and body["max_tokens"] == 800
@@ -128,53 +155,138 @@ async def test_image_unsure_kept(pool, storage, put):
 
 @pytest.mark.db
 @respx.mock
-async def test_text_pdf_no_model_call(pool, storage, put):
+async def test_text_pdf_no_model_call(pool, storage, put, meter):
     rec = await put("pdf", "application/pdf", (FIX / "text.pdf").read_bytes())
     route = respx.post(CHAT).mock(return_value=vision_reply("x"))
-    got = await read_file(rec, _pack(), Llm("k"), storage, pool)
+    got = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
     assert "signups rose 42 percent" in got.text
     assert got.cost_usd == 0.0 and got.kind == "pdf"
-    assert route.call_count == 0
+    assert route.call_count == 0 and meter.spent == []
 
 
 @pytest.mark.db
 @respx.mock
-async def test_long_pdf_text_is_cut(pool, storage, put, monkeypatch):
+async def test_long_pdf_text_is_cut(pool, storage, put, meter, monkeypatch):
     import assistant.files.read as read_mod
 
     monkeypatch.setattr(read_mod, "_extract_pdf_text", lambda data: ("a" * 13000, 1))
     rec = await put("pdf", "application/pdf", (FIX / "text.pdf").read_bytes())
-    got = await read_file(rec, _pack(), Llm("k"), storage, pool)
+    got = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
     assert got.text == "a" * 12000 + "\n[cut: the PDF is longer than this]"
 
 
 @pytest.mark.db
 @respx.mock
-async def test_scanned_pdf_reads_pages_as_images_up_to_cap(pool, storage, put):
+async def test_scanned_pdf_reads_pages_as_images_up_to_cap(pool, storage, put, meter):
     rec = await put("pdf", "application/pdf", (FIX / "scanned.pdf").read_bytes())  # 3 pages, no text layer
     route = respx.post(CHAT).mock(
         side_effect=[vision_reply("first page", ["a"], 0.01), vision_reply("second page", ["b"], 0.02)]
     )
-    got = await read_file(rec, _pack(pdf_pages=2), Llm("k"), storage, pool)
+    got = await read_file(rec, _pack(pdf_pages=2), Llm("k"), storage, pool, meter)
     assert route.call_count == 2
     assert got.text == "Page 1:\nfirst page\n\nPage 2:\nsecond page"
     assert got.unsure == ["a", "b"]
     assert got.cost_usd == pytest.approx(0.03)
+    assert sorted(meter.spent) == [0.01, 0.02]  # each page's call reported on its own
     url = json.loads(route.calls[0].request.content)["messages"][1]["content"][-1]["image_url"]["url"]
     assert url.startswith("data:image/png;base64,")
 
 
 @pytest.mark.db
 @respx.mock
-async def test_second_read_is_cached_and_free(pool, storage, put):
+async def test_second_read_is_cached_and_free(pool, storage, put, meter):
     rec = await put("image", "image/png", (FIX / "shot.png").read_bytes())
     route = respx.post(CHAT).mock(return_value=vision_reply("Revenue 4200 USD", ["x"], 0.005))
-    first = await read_file(rec, _pack(), Llm("k"), storage, pool)
-    second = await read_file(rec, _pack(), Llm("k"), storage, pool)
+    first = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    second = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
     assert first.cost_usd == 0.005
     assert second.cost_usd == 0.0
+    assert meter.spent == [0.005]
     assert second.model_copy(update={"cost_usd": 0.005}) == first
     assert route.call_count == 1
+
+
+class PageLlm:
+    """A vision model for scanned PDFs: each page costs `cost`, takes `delay`, and `fail_on` call numbers fail."""
+
+    def __init__(self, cost: float = 0.01, delay: float = 0.02, fail_on: set[int] | None = None):
+        self.cost, self.delay, self.fail_on = cost, delay, fail_on or set()
+        self.calls = 0
+        self.running = 0
+        self.most_at_once = 0
+
+    async def chat_json(self, messages, model, fallbacks, schema, max_tokens):
+        self.calls += 1
+        n = self.calls
+        self.running += 1
+        self.most_at_once = max(self.most_at_once, self.running)
+        try:
+            await asyncio.sleep(self.delay)
+        finally:
+            self.running -= 1
+        if n in self.fail_on:
+            raise LlmError("unavailable", "down", self.cost)
+        return ImageRead(text=f"call {n}", unsure=[]), self.cost
+
+
+@pytest.fixture
+def ten_pages(monkeypatch):
+    """A scanned PDF of 10 pages (no text layer); rendering is stubbed, the page images are opaque bytes."""
+    import assistant.files.read as read_mod
+
+    monkeypatch.setattr(read_mod, "_extract_pdf_text", lambda data: ("", 10))
+    monkeypatch.setattr(read_mod, "_render_pages", lambda data, limit: [b"page%d" % i for i in range(min(10, limit))])
+
+
+@pytest.mark.db
+async def test_scanned_pdf_reads_four_pages_at_a_time_and_charges_each(pool, storage, put, meter, ten_pages):
+    rec = await put("pdf", "application/pdf", (FIX / "scanned.pdf").read_bytes())
+    llm = PageLlm()
+    got = await read_file(rec, _pack(pdf_pages=10), llm, storage, pool, meter)  # type: ignore[arg-type]
+    assert llm.calls == 10
+    assert llm.most_at_once == 4
+    assert meter.spent == [0.01] * 10
+    assert meter.gates == 10  # the message's cap is checked before every page
+    assert got.text.startswith("Page 1:\n") and "\n\nPage 10:\n" in got.text
+    assert got.cost_usd == pytest.approx(0.1)
+
+
+@pytest.mark.db
+async def test_the_message_cap_stops_a_scanned_pdf_between_pages(pool, storage, put, ten_pages):
+    rec = await put("pdf", "application/pdf", (FIX / "scanned.pdf").read_bytes())
+    llm = PageLlm(cost=0.01)
+    capped = Meter(cap=0.03)
+    with pytest.raises(Meter.Stop):
+        await read_file(rec, _pack(pdf_pages=10), llm, storage, pool, capped)  # type: ignore[arg-type]
+    assert 3 <= llm.calls < 10  # no page starts once the cap is reached
+    assert len(capped.spent) == llm.calls  # and every page that ran is charged, in-flight ones included
+    async with pool.connection() as conn:
+        row = await (await conn.execute("select reading from files where id = %s", (rec.id,))).fetchone()
+    assert row[0] is None
+
+
+@pytest.mark.db
+async def test_a_failed_page_is_charged_and_stops_the_rest(pool, storage, put, meter, ten_pages):
+    rec = await put("pdf", "application/pdf", (FIX / "scanned.pdf").read_bytes())
+    llm = PageLlm(cost=0.01, fail_on={2})
+    with pytest.raises(LlmError) as exc:
+        await read_file(rec, _pack(pdf_pages=10), llm, storage, pool, meter)  # type: ignore[arg-type]
+    assert exc.value.kind == "unavailable"
+    assert exc.value.cost_usd == 0.0  # already reported through the meter, so the turn can't count it twice
+    assert llm.calls == 4  # the pages already running finish; none starts after the failure
+    assert meter.spent == [0.01] * 4
+
+
+@pytest.mark.db
+@respx.mock
+async def test_a_failed_image_read_is_charged_once(pool, storage, put, meter):
+    rec = await put("image", "image/png", (FIX / "shot.png").read_bytes())
+    respx.post(CHAT).mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "no"}}], "usage": {"cost": 0.002}})
+    )
+    with pytest.raises(LlmError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    assert sum(meter.spent) > 0 and exc.value.cost_usd == 0.0
 
 
 # ---- links ----
@@ -320,3 +432,41 @@ async def test_control_character_urls_refused():
             with pytest.raises(UploadError) as exc:
                 await read_link(url, client, res)
             assert exc.value.code == "link"
+
+
+@pytest.mark.db
+@respx.mock
+async def test_an_object_replaced_with_bigger_bytes_is_refused_at_read(pool, storage, put, meter):
+    data = (FIX / "shot.png").read_bytes()
+    rec = await put("image", "image/png", data)
+    storage.put(rec.storage_key, data + b"\x00" * 4096, "image/png")  # overwritten after finish checked it
+    route = respx.post(CHAT).mock(return_value=vision_reply("x"))
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    assert (exc.value.code, exc.value.message) == ("file", "That file changed after it was checked. Upload it again.")
+    assert route.call_count == 0
+
+
+@pytest.mark.db
+@respx.mock
+async def test_a_missing_object_is_refused_at_read(pool, storage, put, meter):
+    rec = await put("image", "image/png", (FIX / "shot.png").read_bytes())
+    storage.delete_prefix(rec.storage_key)
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    assert exc.value.code == "file"
+
+
+@pytest.mark.db
+@respx.mock
+async def test_an_object_replaced_with_another_kind_is_refused_at_read(pool, storage, put, meter):
+    voice = (FIX / "voice.m4a").read_bytes()
+    rec = await put("voice", "audio/mp4", voice)
+    pdf = (FIX / "text.pdf").read_bytes()
+    same_size = (pdf + b"\n" * len(voice))[: len(voice)] if len(pdf) <= len(voice) else pdf[: len(voice)]
+    storage.put(rec.storage_key, same_size, "audio/mp4")  # same byte count, but a PDF under a voice row
+    route = respx.post(TRANSCRIBE).mock(return_value=transcript("x", 1.0, 0.001))
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    assert exc.value.code == "file"
+    assert route.call_count == 0  # nothing is transcribed or paid for

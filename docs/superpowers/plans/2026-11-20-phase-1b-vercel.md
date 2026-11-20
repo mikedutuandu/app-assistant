@@ -137,7 +137,7 @@ The Docker and Cloud Run files are removed, and `vercel.json` plus a Vercel READ
   - `pyproject.toml`: `[tool.vercel] entrypoint = "assistant.asgi:app"`
   - `config.py`: defaults `db_pool_max = 2`, `saver_pool_max = 1`, `shutdown_drain_seconds = 0.4`
   - `api/deps.py`: client IP order
-  - `README.md`: "Deploy on Vercel" replaces "Deploy on Google Cloud Run"
+  - `README.md`: "Deploy on Vercel" replaces "Deploy on Google Cloud Run", and every other Cloud Run or Secret Manager line (the HookPlaybook section's `gcloud run services update` line included) becomes its Vercel equivalent
   - `.env.example`: adds `CRON_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
   - the spec and Phase 1 plan: one dated line each, "20 Nov 2026: Mike moved hosting from Cloud Run to Vercel."
 - Delete: `Dockerfile`, `.dockerignore`
@@ -154,7 +154,7 @@ The Docker and Cloud Run files are removed, and `vercel.json` plus a Vercel READ
   The schedule is daily so it works on Hobby. `/widget.js` keeps being served by the app route.
 - README "Deploy on Vercel":
   1. Import the GitHub repo in Vercel; the framework preset is FastAPI, Python 3.12 from `.python-version`.
-  2. Set the environment variables: everything in `.env.example`, with `DATABASE_URL` = the Supabase Session pooler, the Supabase S3 values, `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (for the signed upload links), `CRON_SECRET` (`openssl rand -hex 32`), and `PUBLIC_BASE_URL` = the production domain.
+  2. Set the environment variables: everything in `.env.example`, with `DATABASE_URL` = the Supabase Session pooler, the Supabase S3 values, `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (for the signed upload links), `CRON_SECRET` (`openssl rand -hex 32`), `PUBLIC_BASE_URL` = the production domain, and each pack's session secret (`HOOKPLAYBOOK_SESSION_SECRET`, the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`; the service refuses to start without it).
   3. Deploy; a push to `main` redeploys.
   4. Check: `curl https://<domain>/health`, then `/demo`.
 
@@ -171,4 +171,29 @@ The Docker and Cloud Run files are removed, and `vercel.json` plus a Vercel READ
 - [ ] **Step 2:** run them. Expected: FAIL.
 - [ ] **Step 3:** implement, delete the Docker files, and update the docs.
 - [ ] **Step 4:** run the full Python and widget suites, and `ruff`. Expected: PASS.
-- [ ] **Step 5:** commit "chore: deploy on Vercel". Open the PR against `main` and tell Mike.
+- [ ] **Step 5:** commit "chore: deploy on Vercel".
+
+### Task 5: Faster cold starts
+
+Added 20 Nov 2026 after research on LangGraph on Vercel: every cold start imports everything, but most messages need no PDF or image library.
+
+**Files:**
+- Modify: `src/assistant/files/read.py` and `files/intake.py` (import `pypdfium2`, `pypdf` and `PIL` inside the functions that use them), any other module that imports them at the top
+- Create: `scripts/cold_start.py` (prints the seconds `import assistant.asgi` takes, best of 3 fresh interpreters)
+- Tests: `tests/test_cold_start.py`
+
+**Interfaces:**
+- `import assistant.asgi` leaves `pypdfium2`, `pypdf` and `PIL` out of `sys.modules` (checked in a fresh interpreter with `subprocess`).
+- Reading a PDF or an image still works exactly as before (the existing file tests stay green).
+- README "Deploy on Vercel" gets one line with the measured import time before and after, and how to re-measure (`uv run python scripts/cold_start.py`).
+
+- [ ] **Step 1: write the failing test.** `importing the app loads no PDF or image library`.
+- [ ] **Step 2:** run it. Expected: FAIL.
+- [ ] **Step 3:** measure, move the imports, measure again.
+- [ ] **Step 4:** run the full Python suite and `ruff`. Expected: PASS.
+- [ ] **Step 5:** commit "perf: load PDF and image libraries only when a file arrives". Open the PR against `main` and tell Mike.
+
+## After merge (Mike, with Claude's help if he says so)
+
+1. Create the Vercel project from `mikedutuandu/app-assistant` and set the environment variables (Task 4's README). Creating it in Mike's account needs his go-ahead.
+2. Deploy a preview and check four things: the cold start time, one full streamed chat turn on `/demo`, one browser upload straight to Supabase, and the database connections held (Supabase dashboard).

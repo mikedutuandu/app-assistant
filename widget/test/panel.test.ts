@@ -231,6 +231,18 @@ describe("panel", () => {
     expect($$(".msg.user").map((m) => m.textContent)).toEqual(["hello"]);
   });
 
+  it("shows that the answer was cut off when the stream ends early", async () => {
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on({ event: "text", data: { delta: "Reading your PDF" } });
+      throw new ApiError(200, "cut_off", "The answer was cut off. Try again.");
+    });
+    const { $, $$, say } = setup({ send } as any);
+    await say("here is my pdf");
+    expect($(".err").textContent).toBe("The answer was cut off. Try again.");
+    expect($$(".msg.user").map((m) => m.textContent)).toEqual(["here is my pdf"]);
+    expect(($(".send") as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("keeps the stored thread when reopening it fails for a passing reason", async () => {
     sessionStorage.setItem("assistant:thread:demo", "t7");
     const thread = vi.fn().mockRejectedValue(new ApiError(0, "network", "Couldn't reach the app. Try again."));

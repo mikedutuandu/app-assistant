@@ -1,7 +1,8 @@
 """The cost-accounting core of a turn: what each node may use, what the turn has spent, and the message's cap.
 
-Every model call goes through `Turn.json` or `Turn.stream`, which first check the cap and then add what the call
-cost (even a failed one). `bind` turns a node into a LangGraph node that keeps that cost in state.
+Every model call goes through `Turn.json` or `Turn.stream`, or (reading a file) through the turn as the reader's
+Meter. Each checks the cap first and then adds what the call cost (even a failed one) and reports it at once through
+`Deps.on_cost`, so a turn that is cut off has still recorded every call that ended. `bind` turns a node into a LangGraph node that keeps that cost in state.
 """
 
 from collections.abc import Awaitable, Callable
@@ -9,7 +10,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from assistant.files.read import FileReading
+from assistant.files.read import FileReading, Meter
 from assistant.graph.state import ChatState
 from assistant.llm import Llm, LlmError
 from assistant.packs import AppPack
@@ -28,8 +29,12 @@ class Deps:
     llm: Llm
     tools_factory: Callable[[], AppTools]
     on_event: Callable[[str, dict], Awaitable[None]]
-    read_files: Callable[[list[str]], Awaitable[list[FileReading]]]
+    read_files: Callable[[list[str], Meter], Awaitable[list[FileReading]]]  # the Meter is the turn
     read_link: Callable[[str], Awaitable[FileReading]]
+    on_cost: Callable[
+        [float, int], Awaitable[None]
+    ]  # (cost of one finished call, its number in the turn); never raises
+    calls: int = 0  # model calls whose cost has been reported this turn
 
 
 class Turn:
@@ -46,6 +51,12 @@ class Turn:
     async def note(self, text: str) -> None:
         await self.emit("note", {"text": text})
 
+    async def spend(self, cost_usd: float) -> None:
+        """Adds one finished model call's cost to the turn and reports it, numbered from 1 within the turn."""
+        self.cost += cost_usd
+        self.deps.calls += 1
+        await self.deps.on_cost(cost_usd, self.deps.calls)
+
     def gate(self) -> None:
         if self.cost >= self.pack.message_usd_cap:
             raise Capped
@@ -59,9 +70,9 @@ class Turn:
                 messages, models.cheap if cheap else models.main, models.fallbacks, schema, max_tokens
             )
         except LlmError as e:
-            self.cost += e.cost_usd
+            await self.spend(e.cost_usd)
             raise
-        self.cost += cost
+        await self.spend(cost)
         if not isinstance(out, schema):
             raise LlmError("bad_output", f"expected {schema.__name__}")
         return out
@@ -77,9 +88,9 @@ class Turn:
         try:
             result = await self.deps.llm.chat(messages, models.main, models.fallbacks, max_tokens, on_text=forward)
         except LlmError as e:
-            self.cost += e.cost_usd
+            await self.spend(e.cost_usd)
             raise
-        self.cost += result.cost_usd
+        await self.spend(result.cost_usd)
         return result.text
 
 

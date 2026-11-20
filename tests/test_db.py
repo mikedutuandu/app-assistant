@@ -94,6 +94,31 @@ async def test_pools_use_their_own_schema_and_migrate_creates_it(fresh_schema):
         await pool.close()
 
 
+async def test_pools_check_each_connection_before_handing_it_out(fresh_schema):
+    """On Fluid compute an instance can sit suspended with its connections open; one the pooler or a NAT dropped
+    meanwhile is caught by the check at checkout, not by the user's first message. Idle ones close after a minute."""
+    from psycopg_pool import AsyncConnectionPool
+
+    url, schema = fresh_schema
+    pool = await open_pool(url, schema, max_size=2)
+    saver = await open_saver_pool(url, schema, max_size=1)
+    try:
+        for p in (pool, saver):
+            assert p._check == AsyncConnectionPool.check_connection
+            assert p.max_idle == 60
+        # A connection killed while idle is replaced at checkout instead of failing the query.
+        async with pool.connection() as conn:
+            pid = conn.info.backend_pid
+        async with await AsyncConnection.connect(url, autocommit=True) as admin:
+            await admin.execute("select pg_terminate_backend(%s)", (pid,))
+        async with pool.connection() as conn:
+            cur = await conn.execute("select 1")
+            assert await cur.fetchone() == (1,)
+    finally:
+        await saver.close()
+        await pool.close()
+
+
 @pytest.mark.parametrize("name", ["assistant", "_x9", "a" * 41])
 def test_db_schema_accepts_plain_names(test_settings, name):
     assert Settings(**{**test_settings.model_dump(), "db_schema": name}).db_schema == name
@@ -106,10 +131,10 @@ def test_db_schema_refuses_other_names(test_settings, name):
 
 
 def test_pool_sizes_default_to_a_small_budget(test_settings):
-    assert (test_settings.db_schema, test_settings.db_pool_max, test_settings.saver_pool_max) == ("assistant", 5, 2)
+    assert (test_settings.db_schema, test_settings.db_pool_max, test_settings.saver_pool_max) == ("assistant", 2, 1)
 
 
-async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema):
+async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema, capsys):
     url, schema = fresh_schema
     monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
     monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
@@ -144,6 +169,7 @@ async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, m
             cur = await conn.execute("select count(*) from threads")
             assert (await cur.fetchone())[0] >= 0
     assert http.is_closed
+    assert "uploads: s3" in capsys.readouterr().out  # a missing SUPABASE_* shows in the log
 
 
 async def test_lifespan_fails_without_packs(test_settings):
@@ -171,3 +197,71 @@ async def test_lifespan_fails_when_a_pack_secret_is_unset(test_settings, monkeyp
     with pytest.raises(PackError, match="DEMO_SESSION_SECRET"):
         async with app.router.lifespan_context(app):
             pass
+
+
+async def test_lifespan_starts_no_background_loop(test_settings, monkeypatch, fresh_schema):
+    """Vercel runs nothing between requests: the demo clean-up comes from Cron (GET /internal/cleanup)."""
+    import asyncio
+
+    url, schema = fresh_schema
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+    settings = Settings(
+        **{
+            **test_settings.model_dump(),
+            "database_url": url,
+            "db_schema": schema,
+            "packs_dir": Path("apps"),
+            "run_lifespan": True,
+        }
+    )
+    created: list[str] = []
+    real_create_task = asyncio.create_task
+
+    def spy(coro, **kwargs):
+        created.append(getattr(coro, "__qualname__", repr(coro)))
+        return real_create_task(coro, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", spy)
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        pass
+    assert not [name for name in created if "cleanup" in name.lower()], created
+    from assistant.demo import cleanup
+
+    assert not hasattr(cleanup, "cleanup_loop")
+
+
+async def test_several_first_starts_at_once_all_succeed(test_settings, monkeypatch, fresh_schema):
+    """Vercel can start several instances on the first deploy: the bot's migrations and LangGraph's checkpoint
+    setup both run under the one advisory lock, so none of them fails on a fresh schema."""
+    import asyncio
+
+    url, base = fresh_schema
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+
+    async def start(schema: str) -> set[str]:
+        settings = Settings(
+            **{
+                **test_settings.model_dump(),
+                "database_url": url,
+                "db_schema": schema,
+                "packs_dir": Path("apps"),
+                "run_lifespan": True,
+            }
+        )
+        app = create_app(settings)
+        async with app.router.lifespan_context(app):
+            return await _tables(url, schema)
+
+    schemas = [f"{base}_{i}" for i in range(3)]
+    try:
+        for schema in schemas:  # a few rounds: one race can pass by luck
+            results = await asyncio.gather(*(start(schema) for _ in range(4)), return_exceptions=True)
+            assert [r for r in results if isinstance(r, BaseException)] == []
+            assert all({"threads", "checkpoints", "checkpoint_migrations"} <= r for r in results)
+    finally:
+        async with await AsyncConnection.connect(url, autocommit=True) as admin:
+            for schema in schemas:
+                await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))

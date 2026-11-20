@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from chat_api import (
@@ -20,7 +21,7 @@ from chat_api import (
     happy_script,
     raw_token,
 )
-from fakes import FakeTools, Out, default_context
+from fakes import FakeLlm, FakeTools, Out, default_context, marker
 from starlette.requests import Request
 
 from assistant.api import chat, turn
@@ -124,8 +125,11 @@ async def test_message_streams_thread_card_done_and_charges_once(api: Api):
     assert thread["title"] == FACT[:60]
     [done] = of(events, "done")
     assert done["cost_usd"] == pytest.approx(0.005)  # five scripted model calls at 0.001
-    assert api.tools.charges == [{"cost_usd": pytest.approx(0.005), "ref": done["message_id"]}]
-    assert api.tools.calls == ["context", "context", "charge"]  # credits check, the graph's context, the charge
+    assert api.tools.charges == [
+        {"cost_usd": pytest.approx(0.001), "ref": f"{done['message_id']}:{n}"} for n in range(1, 6)
+    ]
+    # the credits check, the graph's context, then one charge after each of the five model calls
+    assert api.tools.calls == ["context", "context", *["charge"] * 5]
 
     [card] = of(events, "card")
     async with api.pool.connection() as conn:
@@ -151,14 +155,14 @@ async def test_message_streams_thread_card_done_and_charges_once(api: Api):
     assert [(t["id"], t["title"]) for t in r.json()] == [(thread["thread_id"], FACT[:60])]
 
 
-async def test_charge_ref_reaches_the_browser_only_after_the_charge(api: Api):
-    """The app charges once per ref: a browser that learned the ref first could spend it with a 0 charge."""
+async def test_charge_refs_reach_the_browser_only_after_their_charges(api: Api):
+    """The app charges once per ref: a browser that learned a ref first could spend it with a 0 charge."""
     timeline: list[tuple[str, str]] = []
     seen_at_charge: list[str] = []
 
     class Recording(FakeTools):
         async def charge(self, cost_usd: float, ref: str) -> None:
-            # What the browser could read right now: the thread, while the card is already stored.
+            # What the browser could read right now: the thread.
             [tid] = [json.loads(p)["thread_id"] for k, p in timeline if k == "thread"]
             r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
             seen_at_charge.append(r.text)
@@ -175,13 +179,72 @@ async def test_charge_ref_reaches_the_browser_only_after_the_charge(api: Api):
 
     await turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), emit)
     kinds = [k for k, _ in timeline]
-    assert kinds.index("charge") < kinds.index("done") == len(kinds) - 1
-    ref = dict(timeline)["charge"]
-    assert json.loads(dict(timeline)["done"])["message_id"] == ref
-    before = [p for k, p in timeline[: kinds.index("charge")]]
-    assert all(ref not in p for p in before)
-    [read] = seen_at_charge
-    assert '"pieces":[{' in read.replace(" ", "") and ref not in read
+    assert kinds.count("charge") == 5
+    assert kinds.index("done") == len(kinds) - 1  # every charge came before `done`
+    message_id = json.loads(dict(timeline)["done"])["message_id"]
+    refs = [p for k, p in timeline if k == "charge"]
+    assert refs == [f"{message_id}:{n}" for n in range(1, 6)]
+    # Nothing the browser was sent or could read before `done` carries the message id, so no ref.
+    before = [p for k, p in timeline if k not in ("charge", "done")]
+    assert all(message_id not in p for p in before)
+    assert len(seen_at_charge) == 5 and all(message_id not in r for r in seen_at_charge)
+
+
+class BlocksAtWriter(FakeLlm):
+    """Answers every call until the writer's, which waits to be let go: a turn caught in the middle of a call."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.at_writer = asyncio.Event()
+        self.go = asyncio.Event()
+
+    async def chat_json(self, messages, model, fallbacks, schema, max_tokens):
+        if marker(messages) == "WRITER":
+            self.at_writer.set()
+            await self.go.wait()
+        return await super().chat_json(messages, model, fallbacks, schema, max_tokens)
+
+
+async def test_a_turn_cut_off_after_two_calls_has_charged_both(api: Api):
+    llm = BlocksAtWriter(happy_script())
+    api.app.state.llm = llm
+    pack = api.app.state.packs["real"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+    task = asyncio.create_task(
+        turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), _ignore)
+    )
+    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    task.cancel()  # the function is cut off in the middle of the third call
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    [first, second] = api.tools.charges
+    assert first["ref"].endswith(":1") and second["ref"].endswith(":2")
+    assert first["ref"].split(":")[0] == second["ref"].split(":")[0]
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)] * 2
+
+
+async def _ignore(kind: str, payload: dict) -> None:
+    return None
+
+
+async def test_retry_of_the_same_ref_charges_once():
+    tools = FakeTools()
+    await tools.charge(0.001, ref="m1:1")
+    await tools.charge(0.001, ref="m1:1")
+    await tools.charge(0.002, ref="m1:2")
+    assert [c["ref"] for c in tools.charges] == ["m1:1", "m1:2"]
+
+
+async def test_a_charge_that_raises_anything_never_stops_the_turn(api: Api):
+    class Boom(FakeTools):
+        async def charge(self, cost_usd: float, ref: str) -> None:
+            raise RuntimeError("connection reset")
+
+    api.tools = Boom()
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    assert [k for k, _ in events][-1] == "done"
+    assert len(of(events, "card")) == 1
 
 
 async def test_second_message_in_thread_has_no_thread_event(api: Api):
@@ -229,10 +292,11 @@ async def test_tool_down_mid_turn_fails_and_charges_partial_once(api: Api):
     events = await api.send("here is the screenshot", thread=tid, file_ids=[fid])
     assert events[-1] == ("failed", {"error": "unavailable", "message": APP_DOWN})
     assert of(events, "done") == []
-    assert api.tools.calls == ["context", "context", "charge"]
+    assert api.tools.calls == ["context", "charge", "context"]  # the image was read (and charged) before the failure
     [charge] = api.tools.charges
     assert charge["cost_usd"] == pytest.approx(0.01)
-    assert len(charge["ref"]) == 26
+    message_id, n = charge["ref"].split(":")
+    assert len(message_id) == 26 and n == "1"
 
 
 async def test_client_going_away_does_not_stop_the_turn_or_its_charge(api: Api):
@@ -245,7 +309,7 @@ async def test_client_going_away_does_not_stop_the_turn_or_its_charge(api: Api):
     assert first.event == "thread"
     await events.aclose()  # what the SSE response does when the client disconnects
     await asyncio.wait_for(asyncio.gather(*turn._RUNNING), timeout=10)
-    assert len(api.tools.charges) == 1
+    assert len(api.tools.charges) == 5
     assert await api.count("pieces") == 2
 
 
@@ -254,6 +318,7 @@ async def test_model_failure_fails_with_our_words_and_charges_its_cost(api: Api)
     events = await api.send("shipped auto-reply")
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.002)]
+    assert api.tools.charges[0]["ref"].endswith(":1")
 
 
 async def test_charge_failure_still_ends_done(api: Api):
@@ -261,7 +326,7 @@ async def test_charge_failure_still_ends_done(api: Api):
     api.llm.script = ask_script()
     events = await api.send("shipped auto-reply")
     assert [k for k, _ in events][-1] == "done"
-    assert api.tools.calls.count("charge") == 1
+    assert api.tools.calls.count("charge") == 2  # both model calls tried to charge; the failures were only logged
 
 
 async def test_user_cap_fails_before_anything(api: Api):
@@ -337,6 +402,24 @@ async def test_demo_records_spend_instead_of_charging(api: Api, test_settings: S
     assert left == pytest.approx(test_settings.demo_daily_usd_cap - done["cost_usd"])
 
 
+async def test_demo_spend_recorded_per_call(api: Api, test_settings: Settings):
+    """Each call adds to the day's spend as it ends: a turn cut off after two calls has already counted both."""
+    llm = BlocksAtWriter(happy_script())
+    api.app.state.llm = llm
+    pack = api.app.state.packs["demo"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+    task = asyncio.create_task(
+        turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "203.0.113.9"), _ignore)
+    )
+    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    left = await remaining(api.pool, DEMO_USD_KEY, test_settings.demo_daily_usd_cap)
+    assert left == pytest.approx(test_settings.demo_daily_usd_cap - 0.002)
+    assert api.tools.charges == []
+
+
 async def test_demo_ip_cap_and_dollar_cap(api: Api, test_settings: Settings):
     from assistant.limits import demo_ip_key
 
@@ -358,39 +441,110 @@ async def test_demo_ip_cap_and_dollar_cap(api: Api, test_settings: Settings):
 
 
 async def test_upload_creates_thread_and_returns_file(api: Api):
-    r = await api.upload(PNG)
-    assert r.status_code == 200
+    r = await api.start_upload(len(PNG))
+    assert r.status_code == 200, r.text
+    started = r.json()
+    assert set(started) == {"upload_id", "thread_id", "target"}
+    target = started["target"]
+    assert target["method"] == "PUT" and target["headers"] == {"content-type": "image/png", "if-none-match": "*"}
+    assert f"/real/ws1/{started['thread_id']}/{started['upload_id']}?" in target["url"]
+    api.put(started, PNG)
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body["kind"] == "image" and len(body["file_id"]) == 26
+    assert body == {"file_id": started["upload_id"], "kind": "image", "thread_id": started["thread_id"]}
     r = await api.client.get("/v1/chat/real/threads", headers=api.headers())
     assert [(t["id"], t["title"]) for t in r.json()] == [(body["thread_id"], "Files")]
     again = (await api.upload(PNG, thread=body["thread_id"])).json()
     assert again["thread_id"] == body["thread_id"]
 
 
+async def test_old_files_route_is_gone(api: Api):
+    files = {"file": ("shot.png", PNG, "image/png")}
+    r = await api.client.post("/v1/chat/real/files", files=files, headers=api.headers())
+    assert r.status_code in (404, 405)
+
+
+async def test_upload_claim_refused_400_before_anything(api: Api):
+    r = await api.start_upload(10, mime="text/html", name="page.html")
+    assert (r.status_code, r.json()) == (400, {"error": "type", "message": "This file type isn't supported here."})
+    r = await api.start_upload(11 * 1024 * 1024)
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 10 MB."})
+    r = await api.start_upload(10, app="demo", mime="application/pdf", name="a.pdf")
+    assert (r.status_code, r.json()) == (400, {"error": "kind_off", "message": "This app doesn't take PDF files."})
+    assert await api.count("threads") == 0 and await api.count("files") == 0
+
+
 async def test_upload_refused_type_400_and_leaves_no_thread(api: Api):
     r = await api.upload(b"just some text, not a file type")
     assert r.status_code == 400
     assert r.json() == {"error": "type", "message": "This file type isn't supported here."}
-    assert await api.count("threads") == 0
+    assert await api.count("threads") == 0 and await api.count("files") == 0
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
 
 
-async def test_upload_body_too_big_413(api: Api):
-    big = b"\x89PNG\r\n\x1a\n" + b"\x00" * (26 * 1024 * 1024)
-    r = await api.upload(big)
-    assert r.status_code == 413
-    assert r.json() == {"error": "too_big", "message": "That file is too big."}
+async def test_finish_refuses_missing_object(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert (r.status_code, r.json()) == (400, {"error": "missing", "message": "The file didn't arrive. Try again."})
+    api.put(started, PNG)  # the upload is still open: the browser may try again
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert r.status_code == 200 and r.json()["file_id"] == started["upload_id"]
 
-    async def chunks():  # no Content-Length: the running cap stops it
-        yield b'--b\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\n\r\n'
-        for _ in range(27):
-            yield b"\x00" * (1024 * 1024)
 
-    headers = api.headers(**{"Content-Type": "multipart/form-data; boundary=b"})
-    r = await api.client.post("/v1/chat/real/files", content=chunks(), headers=headers)
-    assert r.status_code == 413
-    assert r.json() == {"error": "too_big", "message": "That file is too big."}
-    assert await api.count("threads") == 0
+async def test_finish_deletes_and_refuses_a_pdf_uploaded_as_an_image_to_the_demo(api: Api):
+    pdf = (Path(__file__).parent / "fixtures" / "text.pdf").read_bytes()
+    r = await api.start_upload(len(pdf), app="demo", mime="image/png", name="shot.png")
+    assert r.status_code == 200, r.text
+    started = r.json()
+    api.put(started, pdf, app="demo")
+    r = await api.finish(started["upload_id"], started["thread_id"], app="demo")
+    assert (r.status_code, r.json()) == (400, {"error": "kind_off", "message": "This app doesn't take PDF files."})
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
+    assert await api.count("files") == 0
+    assert await api.count("threads") == 0  # the thread made for this upload got no file, so it is not kept
+
+
+async def test_finish_deletes_and_refuses_an_object_over_the_cap(api: Api):
+    tid = await api.thread_row()
+    started = (await api.start_upload(1000, thread=tid)).json()  # it claimed 1000 bytes
+    api.put(started, PNG + b"\x00" * (11 * 1024 * 1024))
+    r = await api.finish(started["upload_id"], tid)
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 10 MB."})
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
+    assert await api.count("files") == 0
+    assert await api.count("threads") == 1  # a thread the user already had stays
+    r = await api.finish(started["upload_id"], tid)
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+
+
+async def test_finish_is_idempotent(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    first = await api.finish(started["upload_id"], started["thread_id"])
+    second = await api.finish(started["upload_id"], started["thread_id"])
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert await api.count("files") == 1
+
+
+async def test_another_workspaces_upload_id_is_404(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    r = await api.finish(started["upload_id"], started["thread_id"], workspace="ws2")
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+    r = await api.finish(started["upload_id"], await api.thread_row())  # another thread of the same workspace
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+    assert (await api.finish(started["upload_id"], started["thread_id"])).status_code == 200
+
+
+async def test_a_pending_upload_cannot_be_sent(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    body = {"thread_id": started["thread_id"], "text": "hi", "file_ids": [started["upload_id"]]}
+    r = await api.client.post("/v1/chat/real/messages", json=body, headers=api.headers())
+    assert (r.status_code, r.json()) == (404, {"error": "file"})
+    assert api.llm.calls == []
 
 
 # ---- actions ----
@@ -601,7 +755,7 @@ async def test_pieces_not_saved_shows_card_fails_turn_and_charges_once(api: Api,
     assert len(of(events, "card")) == 1  # what was written is still shown
     assert of(events, "done") == []
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
-    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.005)]
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)] * 5
 
 
 async def test_message_over_4000_chars_400(api: Api):
@@ -675,7 +829,7 @@ async def test_drain_waits_for_running_turns():
         public_base_url="http://t",
         shutdown_drain_seconds=0.05,
     )
-    assert Settings.model_fields["shutdown_drain_seconds"].default == 8.0
+    assert Settings.model_fields["shutdown_drain_seconds"].default == 0.4
     turn.track(asyncio.create_task(slow(0.01, "quick")))
     await turn.drain(settings.shutdown_drain_seconds)
     assert done == ["quick"]

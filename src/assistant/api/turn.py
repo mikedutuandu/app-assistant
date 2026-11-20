@@ -1,7 +1,9 @@
-"""One message turn: the caps, the app's credits, the graph, the charge, then `done` or `failed`.
+"""One message turn: the caps, the app's credits, the graph, then `done` or `failed`.
 
 It runs as its own asyncio task that feeds a queue the SSE response drains, so a client that goes away never
-cancels it: whatever the turn spent is always charged, once, by its message id. Only ids, timings, costs and
+cancels it. Each model call is charged as soon as it ends, once, by `"<message id>:<call number>"`, so a turn cut off
+(a Vercel function can be) has still recorded every call that finished. The message id reaches the browser only in
+`done`, after every charge. Only ids, timings, costs and
 error kinds are logged, never text.
 """
 
@@ -20,7 +22,7 @@ from assistant.auth import Session
 from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import FileRecord, UploadError
-from assistant.files.read import FileReading, read_file, read_link
+from assistant.files.read import FileReading, Meter, read_file, read_link
 from assistant.graph.build import build_graph, thread_id
 from assistant.limits import (
     DEMO_MESSAGES_PER_IP_DAY,
@@ -155,8 +157,8 @@ async def _save_pieces(pool, t: TurnInput, chat_id: str, message_id: str, card: 
             )
 
 
-def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str]], Awaitable[list[FileReading]]]:
-    async def read_files(ids: list[str]) -> list[FileReading]:
+def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str], Meter], Awaitable[list[FileReading]]]:
+    async def read_files(ids: list[str], meter: Meter) -> list[FileReading]:
         async with state.pool.connection() as conn:
             cur = await conn.execute(
                 "select id, kind, mime, bytes, storage_key from files"
@@ -170,25 +172,32 @@ def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str]]
             if row is None:
                 raise UploadError("file", FILE_GONE)
             rec = FileRecord(id=row[0], kind=row[1], mime=row[2], bytes=row[3], storage_key=row[4])
-            readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool))
+            readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool, meter))
         return readings
 
     return read_files
 
 
-async def _record_cost(state: Any, t: TurnInput, tools: AppTools, cost: float, message_id: str) -> None:
-    """Charges the app once by message id (the demo adds to its daily spend instead). Never raises."""
-    if cost <= 0:
-        return
-    try:
-        if t.pack.demo:
-            await hit(state.pool, DEMO_USD_KEY, timedelta(days=1), cap=float("inf"), amount=cost)
-        else:
-            await tools.charge(cost, ref=message_id)
-    except ToolError as e:
-        log.warning("charge failed message=%s kind=%s cost=%.6f", message_id, e.kind, cost)
-    except Exception as e:  # noqa: BLE001 - the turn still ends with its own outcome
-        log.error("charge failed message=%s error=%s cost=%.6f", message_id, type(e).__name__, cost)
+def _cost_recorder(
+    state: Any, t: TurnInput, tools: AppTools, message_id: str
+) -> Callable[[float, int], Awaitable[None]]:
+    """What the graph awaits after each model call: charges the app by `"<message_id>:<n>"` (the demo adds to its
+    daily spend instead), so a retry of the same call adds nothing. Never raises: a failure is logged by kind."""
+
+    async def on_cost(cost: float, n: int) -> None:
+        if cost <= 0:
+            return
+        try:
+            if t.pack.demo:
+                await hit(state.pool, DEMO_USD_KEY, timedelta(days=1), cap=float("inf"), amount=cost)
+            else:
+                await tools.charge(cost, ref=f"{message_id}:{n}")
+        except ToolError as e:
+            log.warning("charge failed message=%s call=%d kind=%s cost=%.6f", message_id, n, e.kind, cost)
+        except Exception as e:  # noqa: BLE001 - the turn goes on and ends with its own outcome
+            log.error("charge failed message=%s call=%d error=%s cost=%.6f", message_id, n, type(e).__name__, cost)
+
+    return on_cost
 
 
 async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
@@ -238,6 +247,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         on_event,
         _file_reader(state, t, chat_id),
         lambda url: read_link(url, state.http),
+        _cost_recorder(state, t, tools, message_id),
     )
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
@@ -248,7 +258,6 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         failure = e
         cost = float(getattr(e, "cost_usd", 0.0) or 0.0)  # what the turn spent; never the checkpoint's on top
 
-    await _record_cost(state, t, tools, cost, message_id)
     took = time.monotonic() - started
     if failure is None and unsaved:
         log.error("turn failed app=%s message=%s error=pieces_not_saved cost=%.6f", t.pack.id, message_id, cost)

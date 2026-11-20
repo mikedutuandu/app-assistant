@@ -46,7 +46,7 @@ models:
 files:
   image_mb: 5 # HookPlaybook's own limit for a picture
   pdf_mb: 20
-  pdf_pages: 30
+  pdf_pages: 10 # a scanned page is one vision call: 10 (4 at a time) stay well inside Vercel's 300 s
   voice_seconds: 300
   per_message: 5
   kinds: [image, pdf, voice]

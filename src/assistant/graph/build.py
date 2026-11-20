@@ -12,7 +12,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from assistant.files.read import FileReading
+from assistant.files.read import FileReading, Meter
 from assistant.graph import nodes
 from assistant.graph.state import STATE_TYPES, ChatState
 from assistant.graph.turn import Deps, bind
@@ -59,18 +59,25 @@ def _after_check(state: ChatState) -> str:
     return "present"
 
 
+async def _no_cost(cost_usd: float, n: int) -> None:
+    return None
+
+
 def build_graph(
     pack: AppPack,
     llm: Llm,
     tools_factory: Callable[[], AppTools],
     checkpointer,
     on_event: Callable[[str, dict], Awaitable[None]],
-    read_files: Callable[[list[str]], Awaitable[list[FileReading]]],
+    read_files: Callable[[list[str], Meter], Awaitable[list[FileReading]]],
     read_link: Callable[[str], Awaitable[FileReading]],
+    on_cost: Callable[[float, int], Awaitable[None]] | None = None,
 ) -> CompiledStateGraph:
     """One graph per request (compiling is cheap). Invoke it with `{"messages": [HumanMessage(text)], "file_ids":
-    [...]}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`."""
-    deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link)
+    [...]}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`.
+
+    `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise."""
+    deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link, on_cost or _no_cost)
     graph = StateGraph(ChatState)
     for node in (
         nodes.read_files,

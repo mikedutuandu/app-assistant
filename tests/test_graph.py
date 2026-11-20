@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from assistant.files.intake import UploadError
-from assistant.files.read import FileReading
+from assistant.files.read import FileReading, Meter
 from assistant.graph import nodes
 from assistant.graph.build import build_graph, serializer, thread_id
 from assistant.graph.prompts import data
@@ -51,16 +51,26 @@ class Harness:
         self.saver = InMemorySaver(serde=serializer())
         self.events: list[tuple[str, dict]] = []
         self.files: dict[str, FileReading | Exception] = {}
+        self.file_costs: dict[str, float] = {}  # what reading a refused file cost (a too-long voice note)
         self.links: dict[str, FileReading | Exception] = {}
         self.link_calls: list[str] = []
+        self.costs: list[tuple[float, int]] = []
+
+    async def on_cost(self, cost_usd: float, n: int) -> None:
+        self.costs.append((cost_usd, n))
 
     async def on_event(self, kind: str, payload: dict) -> None:
         self.events.append((kind, payload))
 
-    async def read_files(self, ids: list[str]) -> list[FileReading]:
+    async def read_files(self, ids: list[str], meter: Meter) -> list[FileReading]:
+        """Like the real reader, reports what each file's model call cost through the meter before returning."""
         out = []
         for i in ids:
+            meter.gate()
             got = self.files[i]
+            cost = self.file_costs.get(i, getattr(got, "cost_usd", 0.0))
+            if cost:
+                await meter.spend(cost)
             if isinstance(got, Exception):
                 raise got
             out.append(got)
@@ -83,6 +93,7 @@ class Harness:
             self.on_event,
             self.read_files,
             self.read_link,
+            self.on_cost,
         )
         config = {"configurable": {"thread_id": thread_id(self.pack.id, "ws1", chat)}}
         return await graph.ainvoke({"messages": [HumanMessage(text)], "file_ids": file_ids or []}, config)
@@ -452,7 +463,8 @@ async def test_cost_resets_each_turn():
 async def test_reader_upload_error_continues_turn():
     llm = FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What changed?"]})
     h = Harness(llm)
-    h.files["v1"] = UploadError("too_long", "Voice notes can be up to 1 minute.", cost_usd=0.002)
+    h.files["v1"] = UploadError("too_long", "Voice notes can be up to 1 minute.")
+    h.file_costs["v1"] = 0.002
     h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on", cost_usd=0.003)
     state = await h.send("here", file_ids=["v1", "img1"])
     assert h.of("text")[0]["delta"].startswith("Voice notes can be up to 1 minute.")
@@ -779,3 +791,63 @@ async def test_a_kept_fact_is_stored_once_even_if_extracted_twice():
     await h.send("the first one")
     state = await h.send("again please")
     assert [f.id for f in state["facts"]] == ["k1"]
+
+
+# ---- cost is recorded after every model call ----
+
+
+async def test_each_model_call_reports_its_own_cost_in_order():
+    llm = happy_llm()
+    h = Harness(llm)
+    state = await h.send("replies go out in 2 min instead of 2 hours")
+    assert [n for _, n in h.costs] == list(range(1, len(llm.calls) + 1))
+    assert [c for c, _ in h.costs] == [pytest.approx(0.001)] * len(llm.calls)
+    assert sum(c for c, _ in h.costs) == pytest.approx(state["cost_usd"])
+
+
+async def test_a_failed_model_call_still_reports_its_cost():
+    llm = happy_llm()
+    llm.script["WRITER"] = [LlmError("unavailable", "down", cost_usd=0.004)]
+    h = Harness(llm)
+    with pytest.raises(LlmError):
+        await h.send("replies go out in 2 min instead of 2 hours")
+    assert h.costs == [(0.001, 1), (0.001, 2), (0.004, 3)]
+
+
+async def test_file_reads_report_their_cost_with_their_own_numbers():
+    h = Harness(FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What changed?"]}))
+    h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on", cost_usd=0.003)
+    h.files["v1"] = UploadError("too_long", "Voice notes can be up to 1 minute.")
+    h.file_costs["v1"] = 0.002
+    await h.send("here are my files", file_ids=["img1", "v1"])
+    assert h.costs[:2] == [(0.003, 1), (0.002, 2)]
+    assert [n for _, n in h.costs] == list(range(1, len(h.costs) + 1))
+
+
+async def test_the_cap_reached_inside_a_file_read_ends_the_turn_with_the_cap_text():
+    """A scanned PDF's pages are gated one by one: the reader raises the turn's own Capped between pages."""
+
+    class PagedReader(Harness):
+        async def read_files(self, ids: list[str], meter: Meter) -> list[FileReading]:
+            for _ in range(10):  # ten pages at 0.01; the pack's cap is 0.02
+                meter.gate()
+                await meter.spend(0.01)
+            raise AssertionError("the cap should have stopped the read")
+
+    llm = FakeLlm()
+    h = PagedReader(llm, pack=make_pack(cap=0.02))
+    state = await h.send("a scanned pdf", file_ids=["pdf1"])
+    assert state["capped"] is True
+    assert h.text().endswith(CAP_TEXT)
+    assert h.costs == [(0.01, 1), (0.01, 2)]  # two pages ran and were charged once each; the third never started
+    assert state["cost_usd"] == pytest.approx(0.02)
+    assert llm.calls == []
+
+
+async def test_a_file_reads_cost_is_charged_once():
+    h = Harness(FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What changed?"]}))
+    h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on", cost_usd=0.003)
+    state = await h.send("here", file_ids=["img1"])
+    assert h.costs[0] == (0.003, 1)
+    assert [c for c, _ in h.costs].count(0.003) == 1
+    assert state["cost_usd"] == pytest.approx(sum(c for c, _ in h.costs))
