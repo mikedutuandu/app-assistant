@@ -1,0 +1,9 @@
+{
+  "secret": "fixture-secret-not-real-00000000000000000000000000000000000000",
+  "app_id": "shipnote",
+  "workspace": "ws_42",
+  "now": 1795000000,
+  "ttl_seconds": 3600,
+  "draft": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaGlwbm90ZSIsInN1YiI6IndzXzQyIiwiYWNjZXNzIjoiZHJhZnQiLCJpYXQiOjE3OTUwMDAwMDAsImV4cCI6MTc5NTAwMzYwMH0.JPyUGIhV3pWFTIGOK2r9NY69tiZ4n_AZzQDtfZ4cPSc",
+  "delete": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaGlwbm90ZSIsInN1YiI6IndzXzQyIiwiYWNjZXNzIjoiZGVsZXRlIiwiaWF0IjoxNzk1MDAwMDAwLCJleHAiOjE3OTUwMDM2MDB9.xae97Bn7_4AOsuXivW9mncdo5-83GXDuOMMi_03LKIM"
+}

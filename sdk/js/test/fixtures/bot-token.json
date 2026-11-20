@@ -1,0 +1,15 @@
+{
+  "note": "Made by tests/contract/test_sdk_token_fixture.py from the bot's mint_session. The secret is fake.",
+  "secret": "fixture-secret-not-real-00000000000000000000000000000000000000",
+  "app_id": "shipnote",
+  "workspace": "ws_42",
+  "now": 1795000000,
+  "claims": {
+    "iss": "shipnote",
+    "sub": "ws_42",
+    "access": "draft",
+    "iat": 1795000000,
+    "exp": 1795003600
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaGlwbm90ZSIsInN1YiI6IndzXzQyIiwiYWNjZXNzIjoiZHJhZnQiLCJpYXQiOjE3OTUwMDAwMDAsImV4cCI6MTc5NTAwMzYwMH0.JPyUGIhV3pWFTIGOK2r9NY69tiZ4n_AZzQDtfZ4cPSc"
+}

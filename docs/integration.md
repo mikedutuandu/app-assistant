@@ -289,10 +289,39 @@ lowered value is logged.
 
 ## Using the JS package
 
-Coming in the same release as this page. For a JavaScript app (Next.js, Hono, Cloudflare Workers, Node), the npm
-package `@app-assistant/host` does all of this:
-`/server` signs tokens and serves the four endpoints, the pack and the session route from four functions you write;
-`/react` is the chat window. Its README has a worked Next.js example.
+For a JavaScript app (Next.js, Hono, Cloudflare Workers, Deno, Node 18+), the npm package `@app-assistant/host` does
+all of the above except knowing who is signed in. `/server` checks the token and serves the four endpoints and your
+pack from four functions you write (with the idempotency, error codes and statuses of this page); `/react` is the
+chat window. Its README (`sdk/js/README.md`) has the details.
+
+```ts
+import { createAssistantHost } from "@app-assistant/host/server";
+
+export const assistant = createAssistantHost({
+  appId: "shipnote",
+  secret: process.env.SHIPNOTE_SESSION_SECRET!,
+  pack, // your pack's JSON, served at /.well-known/app-assistant.json
+  context: async (ws) => ({ language: "en", credits_left: await creditsOf(ws) }),
+  saveDraft: async (ws, draft, key) => saveDraftOnce(ws, key, draft), // → {draft_id, edit_url}
+  saveMaterial: async (ws, facts, draftId, key) => keepFactsOnce(ws, key, facts, draftId),
+  charge: async (ws, costUsd, ref) => ((await takeCredits(ws, ref, costUsd)) ? { ok: true } : { outOfCredits: "You're out of credits." }),
+});
+
+// Every request to /api/assistant/* and /.well-known/app-assistant.json (null: not one of them):
+const res = await assistant.handle(request);
+
+// Your session route, for a signed-in user:
+return Response.json({ token: await assistant.signToken(user.workspaceId, "draft") });
+```
+
+```tsx
+import { AssistantChat } from "@app-assistant/host/react";
+
+<AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />
+```
+
+The package's tests send every scenario below (its `match` not `null`) to `handle`, and check that its tokens and the
+bot's verify on both sides.
 
 ## Checking your app
 
