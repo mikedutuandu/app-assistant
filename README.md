@@ -10,7 +10,7 @@ A private chat bot that any web app adds with one script tag. It asks the user a
 4. Every number and claim in a draft must come from the facts list. The facts are shown to the user before they are kept, and a draft that fails the check is written once more, then dropped.
 5. Saving happens only when the user taps. The bot has no tool that publishes.
 
-FastAPI and LangGraph, Postgres for state, an S3-compatible bucket for files, OpenRouter for the models.
+FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Google Cloud Run with the data on Supabase.
 
 ## Run locally
 
@@ -43,42 +43,33 @@ cd widget && npm run build
 
 ## Deploy on Google Cloud Run
 
-The repo has a `Dockerfile`; Cloud Run builds it from source. Replace the placeholders (`PROJECT_ID`, `REGION`, and so on) with your own. Run the commands in a terminal where you are signed in with `gcloud auth login`; you paste secrets yourself, nobody else needs to see them.
+The service runs on Cloud Run, built from the repo's `Dockerfile`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket through its S3-compatible API. (Cloud SQL and Cloud Storage work too: see the alternative at the end.) Replace the placeholders (`PROJECT_ID`, `REGION`, `REF`, and so on) with your own. Run the commands in a terminal where you are signed in with `gcloud auth login`; you paste secrets yourself, nobody else needs to see them. Pick a Cloud Run region close to the Supabase project's region.
 
 **1. Switch on the Google services it uses.**
 
 ```bash
 gcloud config set project PROJECT_ID
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com \
-  sqladmin.googleapis.com secretmanager.googleapis.com
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
 ```
 
-**2. Postgres.** Pick one.
+**2. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
-- Cloud SQL (Google's own Postgres 16):
+- Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
+- Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and Cloud Run reaches the internet over IPv4.
 
-  ```bash
-  gcloud sql instances create INSTANCE --database-version=POSTGRES_16 --region=REGION --tier=db-f1-micro
-  gcloud sql databases create DB --instance=INSTANCE
-  gcloud sql users create USER --instance=INSTANCE --password=PASSWORD
-  ```
+**Keep the tables private.** Supabase serves the schemas listed under Project Settings → Data API → **Exposed schemas** (`public` by default) to anyone holding the project's public key. The bot keeps every table, LangGraph's checkpoints included, in its own schema, `DB_SCHEMA` (default `assistant`), which it creates on its first start. **Never add that schema to Exposed schemas**, and never set `DB_SCHEMA=public`. After the first deploy, the Table Editor shows the bot's tables under the `assistant` schema and nothing new under `public`.
 
-  `DATABASE_URL` is then `postgresql://USER:PASSWORD@/DB?host=/cloudsql/PROJECT_ID:REGION:INSTANCE`, and the deploy command below needs `--add-cloudsql-instances PROJECT_ID:REGION:INSTANCE`.
-- Cheaper: any external Postgres (Supabase, Neon). Use its connection URL as `DATABASE_URL` and skip `--add-cloudsql-instances`.
+**3. Files in Supabase Storage.**
 
-**3. A private bucket for files.** The service talks to Cloud Storage through its S3-compatible API.
+1. Storage → **New bucket**: give it a name (`BUCKET`) and leave **Public bucket** off.
+2. Storage's **S3** settings page (`https://supabase.com/dashboard/project/REF/storage/s3`): make sure the S3 connection is enabled; it shows the endpoint and the region.
+3. Create an **access key** there: it shows an access key id and a secret once. They give full access to every bucket of the project (they bypass Storage's row-level policies), so they go into Secret Manager only.
 
-```bash
-gcloud storage buckets create gs://BUCKET --location=REGION --uniform-bucket-level-access --public-access-prevention
-gcloud iam service-accounts create app-assistant-files
-gcloud storage buckets add-iam-policy-binding gs://BUCKET \
-  --member=serviceAccount:app-assistant-files@PROJECT_ID.iam.gserviceaccount.com --role=roles/storage.objectAdmin
-gcloud storage hmac create app-assistant-files@PROJECT_ID.iam.gserviceaccount.com
-```
+The values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co/storage/v1/s3`; the `https://REF.storage.supabase.co/storage/v1/s3` form works too), `S3_REGION=` the region shown there (for example `ap-southeast-1`), `S3_BUCKET=BUCKET`, and the key id and secret as `S3_ACCESS_KEY` and `S3_SECRET_KEY`.
 
-The last command prints an access id and a secret: they are `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The other values are `S3_ENDPOINT=https://storage.googleapis.com`, `S3_REGION=auto` and `S3_BUCKET=BUCKET`.
+**4. Connection budget.** Each Cloud Run instance opens up to `DB_POOL_MAX` (default 5) connections for its own queries plus `SAVER_POOL_MAX` (default 2) for LangGraph's checkpoints. Keep `instances × (DB_POOL_MAX + SAVER_POOL_MAX)` under the Session pooler's pool size (Database settings → Connection pooling; 15 by default on every compute size up to Medium). Start with `--max-instances 2`: 2 × 7 = 14. To run more instances, raise the pool size (a larger compute) or lower `DB_POOL_MAX` first.
 
-**4. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
+**5. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
 
 ```bash
 openssl rand -hex 32 | gcloud secrets create DEMO_SESSION_SECRET --data-file=-
@@ -92,32 +83,39 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
   --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor
 ```
 
-**5. Deploy.**
+**6. First deploy.** This one sets every secret and variable:
 
 ```bash
 gcloud run deploy app-assistant --source . --region REGION --allow-unauthenticated \
-  --no-cpu-throttling --min-instances 0 --max-instances 3 --timeout 3600 --concurrency 40 --memory 1Gi \
-  --add-cloudsql-instances PROJECT_ID:REGION:INSTANCE \
+  --no-cpu-throttling --min-instances 0 --max-instances 2 --timeout 3600 --concurrency 40 --memory 1Gi \
   --set-secrets OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,DEMO_SESSION_SECRET=DEMO_SESSION_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,S3_ACCESS_KEY=S3_ACCESS_KEY:latest,S3_SECRET_KEY=S3_SECRET_KEY:latest \
-  --set-env-vars S3_ENDPOINT=https://storage.googleapis.com,S3_REGION=auto,S3_BUCKET=BUCKET,PUBLIC_BASE_URL=https://TEMP
+  --set-env-vars S3_ENDPOINT=https://REF.supabase.co/storage/v1/s3,S3_REGION=SUPABASE_REGION,S3_BUCKET=BUCKET,PUBLIC_BASE_URL=https://TEMP
 ```
 
 - `--no-cpu-throttling`: a chat turn finishes and is charged even if the user closes the chat, and the demo's clean-up runs in the background; both need CPU between requests.
 - `--timeout 3600`: answers are streamed and may stay open for a while.
-- Leave out `--add-cloudsql-instances` if you use an external Postgres.
+- `--max-instances 2`: the connection budget above.
 
-`PUBLIC_BASE_URL` must be the service's own URL, which you only know after the first deploy. Deploy once, copy the URL it prints (or map a custom domain such as `bot.example.com`), then set it and redeploy:
+`PUBLIC_BASE_URL` must be the service's own URL, which you only know after the first deploy. Copy the URL it prints (or map a custom domain such as `bot.example.com`) and set it; this makes a new revision with only that value changed:
 
 ```bash
 gcloud run services update app-assistant --region REGION --update-env-vars PUBLIC_BASE_URL=https://THE-SERVICE-URL
 ```
 
-**6. Check.** `curl https://<url>/health` answers `{"ok":true}`; then open `https://<url>/demo` on a phone. Migrations run on start; if a pack's secret variable is missing, the service refuses to start and says which one.
+**7. Redeploy after a code change.**
+
+```bash
+gcloud run deploy app-assistant --source . --region REGION
+```
+
+Leave out `--set-env-vars` and `--set-secrets`: the new revision keeps the last one's variables and secrets, while `--set-env-vars` would replace all of them (and drop `PUBLIC_BASE_URL`). To change one value later, use `gcloud run services update app-assistant --region REGION --update-env-vars NAME=VALUE` (or `--update-secrets NAME=SECRET:latest`). Migrations run on start.
+
+**8. Check.** `curl https://<url>/health` answers `{"ok":true}`; then open `https://<url>/demo` on a phone. If a pack's secret variable is missing, the service refuses to start and says which one.
 
 **Check the bucket once.** Before the first real user, run this from your machine with the real `S3_*` values (and the rest of the settings) in `.env`. It does each call the service makes, against the real bucket, then cleans up:
 
 ```bash
-uv run python - <<'EOF'
+uv run python - <<'PY'
 import httpx
 from assistant.config import get_settings
 from assistant.files.storage import Storage
@@ -130,12 +128,39 @@ assert httpx.get(url).content == b"hello"                                  # 3. 
 assert httpx.get(url.split("?")[0]).status_code in (400, 401, 403, 404)    # 4. unsigned GET refused: the bucket is private
 assert s.delete_prefix("check/") == 1                                      # 5. delete
 print("bucket ok")
-EOF
+PY
 ```
 
 It prints `bucket ok`. Any error names the call that failed; fix the bucket or keys before going on.
 
 Note on the demo's per-IP limit: Cloud Run appends the visitor's IP as the last `X-Forwarded-For` entry, and the limit relies on that. Putting a Google external load balancer in front adds its own IP last and would need a code change.
+
+### Alternative: Cloud SQL and Cloud Storage
+
+Everything above stays the same except where the data lives.
+
+- **Postgres on Cloud SQL** (Postgres 16). Also enable `sqladmin.googleapis.com`, then:
+
+  ```bash
+  gcloud sql instances create INSTANCE --database-version=POSTGRES_16 --region=REGION --tier=db-f1-micro
+  gcloud sql databases create DB --instance=INSTANCE
+  gcloud sql users create USER --instance=INSTANCE --password=PASSWORD
+  gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/cloudsql.client
+  ```
+
+  `DATABASE_URL` is `postgresql://USER:PASSWORD@/DB?host=/cloudsql/PROJECT_ID:REGION:INSTANCE`, with the password percent-encoded as above, and the first deploy also needs `--add-cloudsql-instances PROJECT_ID:REGION:INSTANCE` (later redeploys keep it). The connection budget is the instance's `max_connections` (about 25 on `db-f1-micro`, a few of them reserved).
+- **Files in Cloud Storage** through its S3-compatible API:
+
+  ```bash
+  gcloud storage buckets create gs://BUCKET --location=REGION --uniform-bucket-level-access --public-access-prevention
+  gcloud iam service-accounts create app-assistant-files
+  gcloud storage buckets add-iam-policy-binding gs://BUCKET \
+    --member=serviceAccount:app-assistant-files@PROJECT_ID.iam.gserviceaccount.com --role=roles/storage.objectAdmin
+  gcloud storage hmac create app-assistant-files@PROJECT_ID.iam.gserviceaccount.com
+  ```
+
+  The last command prints an access id and a secret: `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The other values are `S3_ENDPOINT=https://storage.googleapis.com`, `S3_REGION=auto` and `S3_BUCKET=BUCKET`. Run the bucket check above against it too.
 
 ## Add an app
 
