@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from assistant.config import Settings
@@ -33,10 +32,6 @@ def test_empty_unpooled_url_is_unset():
     s = _settings(database_url_unpooled="")
     assert s.database_url_unpooled is None
     assert direct_url(s) == "postgresql://pooled/db"
-
-
-def test_vercel_runs_in_iad1():
-    assert json.loads((ROOT / "vercel.json").read_text())["regions"] == ["iad1"]
 
 
 async def test_every_pool_and_the_migration_use_the_direct_url(monkeypatch, tmp_path):

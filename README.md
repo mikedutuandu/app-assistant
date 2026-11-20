@@ -82,7 +82,7 @@ Cold start: `import assistant.asgi` takes about 1.08 s before and 1.07 s after t
 
 **1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
-- On Neon (Vercel Marketplace), set `DATABASE_URL_UNPOOLED` (the direct URL): every pool and the startup migration use it, because a transaction pooler would lose `search_path` and advisory locks between statements; `DATABASE_URL` is then not used. The function runs in `iad1` (US east), set in `vercel.json`, next to the database.
+- On Neon (Vercel Marketplace), set `DATABASE_URL_UNPOOLED` (the direct URL): every pool and the startup migration use it, because a transaction pooler would lose `search_path` and advisory locks between statements; `DATABASE_URL` is then not used. At the switch to Neon, also set Settings → Functions → Function Region → Washington, D.C. (iad1) in the Vercel project (not in `vercel.json`, so nothing moves before the database does).
 - Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
 - Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and a Vercel Function reaches the internet over IPv4.
 
