@@ -150,6 +150,43 @@ async def test_demo_save_material_idempotent(api: Api):
     assert await api.count("demo_facts", f"demo:{demo_id}") == 4
 
 
+async def test_demo_workspace_holds_at_most_100_drafts(api: Api):
+    r = await session(api)
+    token, ws = r.json()["token"], f"demo:{r.cookies['demo_id']}"
+    async with api.pool.connection() as conn:
+        for i in range(99):
+            await conn.execute(
+                "insert into demo_drafts (id, workspace, text, idem_key) values (%s, %s, 'x', %s)",
+                (f"d{i}", ws, f"k{i}"),
+            )
+    last = text_of(await call(api, token, "save_draft", {"text": "the 100th"}, key="n100"))
+    full = await call(api, token, "save_draft", {"text": "one more"}, key="n101")
+    assert full.json()["result"] == {
+        "isError": True,
+        "content": [{"type": "text", "text": "The demo is full for today."}],
+    }
+    assert text_of(await call(api, token, "save_draft", {"text": "the 100th"}, key="n100")) == last  # a repeat
+    assert await api.count("demo_drafts", ws) == 100
+
+
+async def test_demo_workspace_holds_at_most_300_facts(api: Api):
+    r = await session(api)
+    token, ws = r.json()["token"], f"demo:{r.cookies['demo_id']}"
+    async with api.pool.connection() as conn:
+        for i in range(298):
+            await conn.execute(
+                "insert into demo_facts (id, workspace, text, idem_key) values (%s, %s, %s, 'old')",
+                (f"f{i}", ws, f"t{i}"),
+            )
+    two = {"facts": [{"text": "a"}, {"text": "b"}], "draft_id": None}
+    assert "isError" not in (await call(api, token, "save_material", two, key="m1")).json()["result"]
+    assert "isError" not in (await call(api, token, "save_material", two, key="m1")).json()["result"]  # a repeat
+    full = await call(api, token, "save_material", {"facts": [{"text": "c"}], "draft_id": None}, key="m2")
+    assert full.json()["result"]["isError"] is True
+    assert full.json()["result"]["content"][0]["text"] == "The demo is full for today."
+    assert await api.count("demo_facts", ws) == 300
+
+
 async def test_demo_page_has_the_widget_tag(api: Api):
     r = await api.client.get("/demo")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")

@@ -23,6 +23,9 @@ router = APIRouter()
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_TEXT_CHARS = 4000
 MAX_FACTS = 100
+MAX_DRAFTS_KEPT = 100  # per demo workspace, until the daily cleanup
+MAX_FACTS_KEPT = 300
+DEMO_FULL = "The demo is full for today."
 RECENT_POSTS = 10
 PROTOCOL_VERSION = "2025-03-26"
 VOICE = "friendly, plain, a small team's founder"
@@ -116,6 +119,10 @@ async def _save_draft(state, session: Session, args: dict, key: str) -> dict:
     existing = await _existing_draft(state.pool, session.workspace, key)
     if existing is not None:
         return {"id": existing, "edit_url": None}
+    async with state.pool.connection() as conn:
+        cur = await conn.execute("select count(*) from demo_drafts where workspace = %s", (session.workspace,))
+        if (await cur.fetchone())[0] >= MAX_DRAFTS_KEPT:
+            raise ToolFailure(DEMO_FULL)
     draft_id = new_id()
     image_key = None
     media = args.get("media")
@@ -147,6 +154,14 @@ async def _save_material(state, session: Session, args: dict, key: str) -> dict:
     if draft_id is not None and not isinstance(draft_id, str):
         raise ToolFailure("That draft is not valid.")
     async with state.pool.connection() as conn:
+        # A repeat of this key adds nothing, so its rows don't count against the cap.
+        cur = await conn.execute(
+            "select count(*), count(*) filter (where idem_key = %s) from demo_facts where workspace = %s",
+            (key, session.workspace),
+        )
+        total, same_key = await cur.fetchone()
+        if total - same_key + len(texts) > MAX_FACTS_KEPT:
+            raise ToolFailure(DEMO_FULL)
         for text in texts:
             await conn.execute(
                 "insert into demo_facts (id, workspace, text, draft_id, idem_key) values (%s, %s, %s, %s, %s)"
