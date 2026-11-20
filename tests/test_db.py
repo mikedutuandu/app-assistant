@@ -94,6 +94,31 @@ async def test_pools_use_their_own_schema_and_migrate_creates_it(fresh_schema):
         await pool.close()
 
 
+async def test_pools_check_each_connection_before_handing_it_out(fresh_schema):
+    """On Fluid compute an instance can sit suspended with its connections open; one the pooler or a NAT dropped
+    meanwhile is caught by the check at checkout, not by the user's first message. Idle ones close after a minute."""
+    from psycopg_pool import AsyncConnectionPool
+
+    url, schema = fresh_schema
+    pool = await open_pool(url, schema, max_size=2)
+    saver = await open_saver_pool(url, schema, max_size=1)
+    try:
+        for p in (pool, saver):
+            assert p._check == AsyncConnectionPool.check_connection
+            assert p.max_idle == 60
+        # A connection killed while idle is replaced at checkout instead of failing the query.
+        async with pool.connection() as conn:
+            pid = conn.info.backend_pid
+        async with await AsyncConnection.connect(url, autocommit=True) as admin:
+            await admin.execute("select pg_terminate_backend(%s)", (pid,))
+        async with pool.connection() as conn:
+            cur = await conn.execute("select 1")
+            assert await cur.fetchone() == (1,)
+    finally:
+        await saver.close()
+        await pool.close()
+
+
 @pytest.mark.parametrize("name", ["assistant", "_x9", "a" * 41])
 def test_db_schema_accepts_plain_names(test_settings, name):
     assert Settings(**{**test_settings.model_dump(), "db_schema": name}).db_schema == name

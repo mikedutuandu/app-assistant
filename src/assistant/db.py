@@ -26,9 +26,23 @@ def _use_schema(schema: str | None) -> Callable[[AsyncConnection], Awaitable[Non
     return configure
 
 
+# Vercel's Fluid compute suspends an instance with its connections open (idle timeouts don't run meanwhile), and the
+# pooler or a NAT may drop them: each checkout checks its connection first (one round trip), and idle ones close
+# after a minute.
+_MAX_IDLE_SECONDS = 60.0
+
+
 async def open_pool(url: str, schema: str | None = None, max_size: int = 5) -> AsyncConnectionPool:
     """The app's own pool (tuple rows, transactions)."""
-    pool = AsyncConnectionPool(url, min_size=1, max_size=max_size, open=False, configure=_use_schema(schema))
+    pool = AsyncConnectionPool(
+        url,
+        min_size=1,
+        max_size=max_size,
+        open=False,
+        configure=_use_schema(schema),
+        check=AsyncConnectionPool.check_connection,
+        max_idle=_MAX_IDLE_SECONDS,
+    )
     await pool.open()
     return pool
 
@@ -41,6 +55,8 @@ async def open_saver_pool(url: str, schema: str | None = None, max_size: int = 2
         max_size=max_size,
         open=False,
         configure=_use_schema(schema),
+        check=AsyncConnectionPool.check_connection,
+        max_idle=_MAX_IDLE_SECONDS,
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
     )
     await pool.open()
