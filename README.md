@@ -47,7 +47,20 @@ OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --case hi  
 uv run python scripts/converse_eval.py                                          # replay the recordings, hard rules only, no key
 ```
 
-It prints a table (case, PASS or FAIL, hard rules, judge, what the bot spent, why) and exits non-zero when any case fails. Run it live before every release that changes the prompt (`prompts.CONVERSE`), the tools or the models. When a case fails, fix the prompt or the tools, not the case, and run it again. Once every case passes, run `--live --record` and commit `tests/conversations/recorded/`: CI then replays each recording through the bot (`tests/test_conversations.py`) and checks its hard rules with no key. A recording holds the chat as the bot showed it, the judge's verdicts, and every model call in order (a request summary and the raw response). A replay that hits a different call than the recording holds, or a case whose turns changed, says so: record that case again.
+It prints a table (case, PASS or FAIL, hard rules, judge, what the bot spent, why) and exits non-zero when any case fails. Every case also has a hard rule that is on by default: each number in a draft must be one the user gave in the case (in a message, or in what an attached file shows).
+
+Run it live before every release that changes the prompts, the tools or the models. When a case fails, fix the prompt or the tools, not the case, and run it again. `--record` saves only a case that passed every hard rule and every judge note. A failing case is saved in your temp folder (`converse_eval_failed/`) for you to look at, and the table says where. Commit `tests/conversations/recorded/`: CI then replays each recording through the bot (`tests/test_conversations.py`) with no key. It checks that each case's hard rules hold and that every note held when the case was recorded.
+
+A recording holds the chat as the bot showed it, the judge's verdicts, the pack's models, and every model call in order (a request summary with hashes, and the raw response). The replay fails with "re-record this case" when any of these changed since the recording:
+
+- a prompt (any of them, with what is built into it)
+- the conversation
+- a model or its settings
+- the case's turns or notes
+
+So run `--live --record` again after any such change.
+
+`REQUIRE_CONVERSATION_RECORDINGS=1` makes an empty `recorded/` fail instead of being skipped. Set it in CI once the first recordings are committed.
 
 ## Build the widget
 

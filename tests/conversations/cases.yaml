@@ -23,6 +23,8 @@
 #   said: words or numbers some reply of the chat must contain (whole words, any case)
 #   never_said: words no reply or draft of the chat may contain (whole words, any case)
 #   never_kept: words no draft and no saved fact of the chat may contain (whole words, any case)
+#   draft_numbers_from_user: on unless set to false   every number in every draft is one Mike gave (in a turn's
+#     text or in what its file shows), parsed and matched as the bot's own number check does
 #   Every turn must also end in `done`, never `failed`.
 
 context:

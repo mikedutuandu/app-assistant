@@ -2,6 +2,8 @@
 the whole bot with its `hard` rules holding. Recording needs the real models: `scripts/converse_eval.py --live
 --record` (README, "Conversation tests")."""
 
+import os
+
 import pytest
 from converse_eval import (
     CASES,
@@ -10,10 +12,10 @@ from converse_eval import (
     RECORDED,
     ReplayLlm,
     check_hard,
-    inputs_of,
     load_pack,
     load_recording,
     load_suite,
+    recording_problems,
     run_case,
 )
 
@@ -23,6 +25,8 @@ from assistant.files.intake import check_content
 SUITE = load_suite(CASES)
 BY_NAME = {c.name: c for c in SUITE.cases}
 RECORDINGS = sorted(RECORDED.glob("*.json"))
+# CI sets this once the first live run is recorded: from then on an empty recorded/ fails instead of skipping.
+REQUIRE_RECORDINGS = os.environ.get("REQUIRE_CONVERSATION_RECORDINGS", "") == "1"
 
 
 # ---- the cases ----
@@ -92,7 +96,7 @@ async def test_a_recorded_case_replays_with_its_hard_rules(path, pool):
     recording = load_recording(path)
     case = BY_NAME.get(recording["case"])
     assert case is not None, f"{path.name}: no case named {recording['case']!r} in cases.yaml: delete the recording"
-    assert recording["inputs"] == inputs_of(case), f"{case.name}: the turns changed since it was recorded"
+    assert recording_problems(recording, case, load_pack()) == []  # same case, same models, every note held
     await migrate(pool)
     llm = ReplayLlm(recording["calls"])
     logs = await run_case(case, SUITE.context, llm, pool)
@@ -100,7 +104,10 @@ async def test_a_recorded_case_replays_with_its_hard_rules(path, pool):
     assert check_hard(case, logs) == []
 
 
-@pytest.mark.skipif(not RECORDINGS, reason="no recordings yet: scripts/converse_eval.py --live --record")
+@pytest.mark.skipif(
+    not RECORDINGS and not REQUIRE_RECORDINGS,
+    reason="no recordings yet: scripts/converse_eval.py --live --record (REQUIRE_CONVERSATION_RECORDINGS=1 to fail)",
+)
 def test_every_case_has_a_recording():
     recorded = {p.stem for p in RECORDINGS}
     assert sorted(set(BY_NAME) - recorded) == [], "cases with no recording"
