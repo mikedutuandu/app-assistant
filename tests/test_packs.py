@@ -41,6 +41,7 @@ def test_loads_demo_pack():
     assert pack.files.kinds == ["image", "voice"]
     assert pack.files.voice_seconds == 60
     assert pack.demo is True
+    assert pack.message_usd_cap == 0.10  # one write with a rewrite on Sonnet, then the reply after it
     assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
     assert pack.tools["charge"] == "assistant_charge"
 

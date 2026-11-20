@@ -4,7 +4,7 @@ mcp_url: "{base}/demo/mcp"
 secret_env: DEMO_SESSION_SECRET
 allowed_origins: ["{base}"]
 demo: true
-message_usd_cap: 0.05
+message_usd_cap: 0.10  # a write with one rewrite on Sonnet costs about $0.05; leaves room for the reply after it
 
 guide: |
   Shipnote turns what a small team shipped into a launch post for X, or a short thread when there is more to tell.
