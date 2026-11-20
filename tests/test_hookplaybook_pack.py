@@ -9,15 +9,20 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
+import yaml
 from chat_api import PNG, Api, parse_sse
 from fakes import Reply, call, default_context
 
 from assistant import auth
 from assistant.auth import AuthError, verify_delete_token, verify_session
+from assistant.db import migrate
 from assistant.graph.build import thread_id
+from assistant.pack_store import PackStore, RegistryEntry, load_registry, registry_path
 from assistant.packs import load_packs
 from assistant.tools import AppContext
+from assistant.tools import tools_for as real_tools_for
 
 APPS = Path("apps")
 SITE = "https://hookplaybook.com"
@@ -266,3 +271,90 @@ async def test_uploads_use_hookplaybooks_own_5_mb_image_cap(hp: Api):
     r = await hp.client.post(url, json={"thread_id": started["thread_id"]}, headers=_widget("ws_hp"))
     assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 5 MB."})
     assert hp.storage._client.list_objects_v2(Bucket=hp.storage.bucket).get("Contents", []) == []
+
+
+# ---- from the registry: HookPlaybook serves its own pack; the YAML is the fallback ----
+
+WELL_KNOWN = f"{SITE}/.well-known/app-assistant.json"
+
+
+def registry_entry() -> RegistryEntry:
+    [entry] = [e for e in load_registry(registry_path(APPS), None) if e.id == "hookplaybook"]
+    return entry
+
+
+def served_pack() -> dict:
+    """What HookPlaybook serves: the YAML's content as contract 1, reached by REST (no secret, no tool names)."""
+    raw = yaml.safe_load((APPS / "hookplaybook.yaml").read_text())
+    for key in ("mcp_url", "tools", "secret_env"):
+        raw.pop(key, None)
+    return {**raw, "contract": 1, "api_base": f"{SITE}/api/assistant"}
+
+
+def hp_store(settings, pool, *, status: int = 200) -> PackStore:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == WELL_KNOWN
+        return httpx.Response(status, json=served_pack() if status == 200 else {"error": "not_found"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return PackStore({"hookplaybook": pack()}, settings, registry=[registry_entry()], pool=pool, http=http)
+
+
+def test_the_registry_lists_hookplaybook_with_its_secret_env():
+    entry = registry_entry()
+    assert (entry.site, entry.secret_env) == (SITE, SECRET_ENV)
+    assert entry.origin == SITE
+
+
+async def test_bucket_cors_origins_still_include_hookplaybook(test_settings):
+    packs = PackStore(
+        load_packs(APPS, base_url="http://testserver"), test_settings, registry=load_registry(registry_path(APPS), None)
+    )
+    assert SITE in packs.origins()
+
+
+@pytest.mark.db
+async def test_a_reachable_pack_makes_hookplaybook_a_rest_app(test_settings, pool):
+    await migrate(pool)
+    served = await hp_store(test_settings, pool).get("hookplaybook")
+    assert served is not None
+    assert (served.api_base, served.mcp_url, served.tools) == (f"{SITE}/api/assistant", None, None)
+    assert served.secret_env == SECRET_ENV and served.allowed_origins == [SITE] and served.demo is False
+
+
+@pytest.mark.db
+async def test_an_unreachable_pack_with_no_copy_uses_the_yaml_and_mcp(test_settings, pool):
+    await migrate(pool)
+    fallback = await hp_store(test_settings, pool, status=404).get("hookplaybook")
+    assert fallback is not None
+    assert (fallback.mcp_url, fallback.api_base) == ("https://hookplaybook.com/api/v1/mcp", None)
+
+
+@pytest.mark.db
+async def test_a_stored_copy_beats_the_yaml_when_the_pack_goes_down(test_settings, pool):
+    await migrate(pool)
+    await hp_store(test_settings, pool).get("hookplaybook")  # fetched once: kept in Postgres
+    down = await hp_store(test_settings, pool, status=500).get("hookplaybook")  # a cold instance, route down
+    assert down is not None
+    assert (down.api_base, down.mcp_url) == (f"{SITE}/api/assistant", None)
+
+
+@pytest.mark.db
+@pytest.mark.parametrize(
+    ("status", "client"), [(200, "RestHttpTools"), (404, "McpHttpTools")], ids=["pack served", "pack not served yet"]
+)
+async def test_a_hookplaybook_turn_uses_the_client_its_pack_calls_for(api: Api, status, client, monkeypatch):
+    monkeypatch.setenv(SECRET_ENV, SECRET)
+    api.app.state.packs = hp_store(api.app.state.settings, api.pool, status=status)
+    used: list[str] = []
+
+    def tools_for_pack(pack, session):
+        used.append(type(real_tools_for(pack, session, api.client)).__name__)
+        return api.tools
+
+    api.app.state.tools_for = tools_for_pack
+    api.tools._context = default_context(credits_left=100)
+    api.llm.script = {"CONVERSE": ["What changed for users?"]}
+    r = await api.client.post("/v1/chat/hookplaybook/messages", json={"text": "hi"}, headers=_widget("ws_hp"))
+    assert [k for k, _ in parse_sse(r.text)][-1] == "done", r.text
+    assert used == [client]

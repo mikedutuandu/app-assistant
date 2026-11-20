@@ -2,4 +2,5 @@
 # Each entry: id (the pack's id and its tokens' iss), site, and secret_env (the environment variable holding the
 # app's shared secret; never the secret itself). The APPS environment variable (the same list as JSON) replaces
 # this file when set.
-apps: []
+apps:
+  - {id: hookplaybook, site: https://hookplaybook.com, secret_env: HOOKPLAYBOOK_SESSION_SECRET}

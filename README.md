@@ -255,6 +255,11 @@ Your app needs no change to this bot. The whole contract is one page: [`docs/int
    `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`.
    Your session route signs the token for the signed-in user.
 
+HookPlaybook is registered this way (`apps/registry.yaml`), and `apps/hookplaybook.yaml` stays as its fallback (MCP),
+used only while no remote copy was ever fetched. The first chat for `hookplaybook` after a start fetches the pack (at most
+5 s). While HookPlaybook does not serve it yet (404), the bot answers from the YAML over MCP and tries again every 60 s;
+once fetched, the pack is used over REST, kept 5 minutes in memory and in Postgres for the next cold start.
+
 The bot's own demo (`/demo`) is built this way too: `apps/demo.yaml` has `api_base: {base}/demo/api/assistant`, and
 `src/assistant/demo/api.py` serves the four endpoints.
 
