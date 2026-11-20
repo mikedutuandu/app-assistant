@@ -613,8 +613,24 @@ def test_the_conversation_prompt_asks_one_thing_and_saves_then_writes():
     ],
 )
 async def test_the_same_words_are_never_sent_twice_in_one_turn(second: str, shown: str):
+    await _said_twice("You shipped a chatbot?", second, shown)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("On it.", "Here's a post that builds on it. Want it shorter?"),  # a short line is not a repeat of a long one
+        ("On it.", "Done, since the rest builds on it."),
+        ("Ok.", "Here is the draft. Looks ok."),  # "ok" inside another sentence
+        ("Hi", "Take this one. Want it shorter?"),  # no letters-inside-words matches ("hi" in "this")
+    ],
+)
+async def test_a_different_reply_is_not_hidden_by_a_short_earlier_line(first: str, second: str):
+    await _said_twice(first, second, f"{first}\n\n{second}")
+
+
+async def _said_twice(first: str, second: str, shown: str):
     # The model plays back, saves a fact, then (after the tool) says it again: the user sees it once.
-    first = "You shipped a chatbot?"
     llm = FakeLlm({"CONVERSE": [Reply(first, [call("revise_draft", draft_id="nope", instruction="x")]), second]})
     h = Harness(llm)
     state = await h.send(SAID)

@@ -397,3 +397,13 @@ async def test_a_revision_is_told_what_another_angle_means():
     await revise_draft(w, draft, "another angle")
     ask = prompt(llm.calls[0])
     assert "open with a different fact or framing" in ask and "never just reorder the same sentences" in ask
+
+
+async def test_the_writer_sees_only_the_latest_ten_drafts_of_the_chat():
+    older = [f"Older draft number {i} about auto-reply." for i in range(3)]
+    latest = [f"Newer draft number {i} about launch day." for i in range(10)]
+    llm = FakeLlm({"DRAFT_WRITER": [drafts([POST])], "CLAIM_CHECK": [OK]})
+    w, _ = deps(llm, shown=[*older, *latest])
+    await write_drafts(w, "launch", "x_post", 1)
+    sent = prompt(llm.calls[0])
+    assert all(d in sent for d in latest) and not any(d in sent for d in older)

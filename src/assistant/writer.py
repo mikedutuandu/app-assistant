@@ -27,6 +27,7 @@ from assistant.tools import AppContext
 
 KINDS = ("x_post", "x_thread")
 MAX_DRAFTS = 3  # drafts in one call
+MAX_DRAFTS_SHOWN = 10  # the chat's latest drafts the writer is shown (as the chat's own prompt)
 THREAD_POSTS = 8  # a thread's most posts when its spec doesn't say
 WRITER_TOKENS = 3000
 THREAD_TOKENS = 5000  # up to 3 threads of 8 posts of 280 characters
@@ -338,7 +339,7 @@ class _Run:
             about = f"Recent posts (do not repeat):\n{recent}"
         parts.append("About the app's user:\n" + data("context", about))
         if self.mine:
-            shown = "\n".join(data("draft", p) for p in self.mine)
+            shown = "\n".join(data("draft", p) for p in self.mine[-MAX_DRAFTS_SHOWN:])
             parts.append(f"Drafts already shown in this chat (write something new, not a copy):\n{shown}")
         if self.w.readings:
             blocks = []
