@@ -74,6 +74,22 @@ class Storage:
                 return None
             raise
 
+    def ensure_cors(self, origins: list[str]) -> None:
+        """Let the browser PUT and GET from these origins: one rule, replacing the bucket's CORS configuration."""
+        self._client.put_bucket_cors(
+            Bucket=self.bucket,
+            CORSConfiguration={
+                "CORSRules": [
+                    {
+                        "AllowedOrigins": sorted(set(origins)),
+                        "AllowedMethods": ["GET", "PUT"],
+                        "AllowedHeaders": ["content-type", "if-none-match"],
+                        "MaxAgeSeconds": 3600,
+                    }
+                ]
+            },
+        )
+
     def upload_target(self, key: str, mime: str) -> dict:
         """Where the browser PUTs one file's bytes: this key only, never over an object already there.
 

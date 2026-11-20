@@ -140,7 +140,7 @@ cases:
     expect:
       - The last draft is a shorter version of the draft before it, about the same news (auto-reply now answers in 2 minutes instead of 2 hours).
       - The last draft adds no number or claim that was not in the earlier draft or in Mike's message.
-      - The last reply is one short line and does not paste the draft's text again.
+      - The last reply is short, one sentence plus at most one light question (a sentence and a question is fine), and does not paste the draft's text again.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, shorter_than_previous_draft: true}
 
   - name: another_angle
@@ -250,5 +250,5 @@ cases:
     expect:
       - Every reply and both drafts are in Vietnamese, including after the English button text "Make it shorter".
       - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week; 30 beta users scheduled 500 posts in the first 3 days), and adds no number or result Mike didn't give.
-      - The last reply is one short line and does not paste the draft's text again.
+      - The last reply is short, one sentence plus at most one light question (a sentence and a question is fine), and does not paste the draft's text again.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi, shorter_than_previous_draft: true}

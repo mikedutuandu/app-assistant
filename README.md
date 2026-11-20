@@ -82,6 +82,7 @@ Cold start: `import assistant.asgi` takes about 1.08 s before and 1.07 s after t
 
 **1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
+- On Neon (Vercel Marketplace), set `DATABASE_URL_UNPOOLED` (the direct URL): every pool and the startup migration use it, because a transaction pooler would lose `search_path` and advisory locks between statements; `DATABASE_URL` is then not used. At the switch to Neon, also set Settings → Functions → Function Region → Washington, D.C. (iad1) in the Vercel project (not in `vercel.json`, so nothing moves before the database does).
 - Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
 - Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and a Vercel Function reaches the internet over IPv4.
 
@@ -112,7 +113,7 @@ The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase
 
 **4. Import the project.** In Vercel: **Add New → Project**, import the GitHub repo. The framework preset is **FastAPI**; Python 3.12 comes from `.python-version`. Leave the build and output settings alone: `vercel.json` sets the function (300 s, test files left out) and the daily clean-up cron.
 
-Then put the function next to the database: Settings → Functions → **Function Region**, the Vercel region closest to the Supabase project's region (for example `sin1` for `ap-southeast-1`; Supabase shows its region under Project Settings → General). New projects run in `iad1` (Washington, D.C.), and from there every query, checkpoint write and storage call to Singapore costs about 230 ms, dozens of times per turn, and a cold start gains seconds. Hobby allows one region. You can also set it in `vercel.json` as `"regions": ["sin1"]`; the repo leaves it out because the right region depends on where your Supabase project is.
+Then put the function next to the database: Settings → Functions → **Function Region**, the Vercel region closest to the database (`iad1`, Washington, D.C., for Neon in AWS US East; on Supabase, the region of the project, for example `sin1` for `ap-southeast-1`, shown under Project Settings → General). A function far from its database pays that distance on every query, checkpoint write and storage call, dozens of times per turn, and a cold start gains seconds. Hobby allows one region. The repo leaves the region out of `vercel.json` because the right one depends on where your database is. To move the bot's data to Neon, follow [docs/DEPLOY.md](docs/DEPLOY.md).
 
 **5. Environment variables.** Settings → Environment Variables, for Production and Preview (mark every secret Sensitive); without them a Preview deployment fails at start. A Preview then uses the production database and bucket, so only deploy previews you trust. Everything in `.env.example`:
 
@@ -120,6 +121,7 @@ Then put the function next to the database: Settings → Functions → **Functio
 |---|---|
 | `OPENROUTER_API_KEY` | the OpenRouter key |
 | `DATABASE_URL` | the Supabase **Session pooler** string (port 5432) |
+| `DATABASE_URL_UNPOOLED` | on Neon, the direct URL (Vercel injects it): set it and the bot uses the direct connection for everything (app queries, checkpoints, migrations). Leave unset on Supabase |
 | `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the Supabase S3 values above |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key (`sb_secret_…`), for the signed upload links |
@@ -161,9 +163,13 @@ It prints `bucket ok`. Any error names the call that failed; fix the bucket or k
 
 Note on the demo's per-IP limit: the client IP is `x-vercel-forwarded-for`, then `x-real-ip`, then the rightmost `x-forwarded-for` entry. They are set by Vercel's edge, which replaces what a visitor sends. Putting another proxy in front (a CDN, say) changes what they hold and needs a code change in `client_ip`.
 
+### Neon Object Storage
+
+Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` from the Neon console, and leave `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` unset. Uploads then use an S3 presigned PUT (the startup log says `uploads: s3`), and at startup the bot sets the bucket's CORS itself (`PutBucketCors`: every app's `allowed_origins` and `PUBLIC_BASE_URL`'s origin; `GET` and `PUT`; headers `content-type` and `if-none-match`). If that call fails the bot logs one warning (`could not set the bucket's CORS`) and starts anyway: set the CORS by hand then. At switch-over, check on the real bucket that the browser's `PUT` from the widget and from `/demo` passes CORS, and that a second `PUT` to the same link is refused (the `if-none-match` write-once header): Neon does not document that header. On the Supabase backend the bot does not touch CORS.
+
 ### Alternative: another S3-compatible store
 
-Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
+Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** (set by the bot at startup on this path) must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
 
 - methods `PUT` (and `GET` if you read from the browser);
 - allowed headers `if-none-match` and `content-type`.

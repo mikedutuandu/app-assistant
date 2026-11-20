@@ -173,6 +173,35 @@ async def test_write_drafts_emits_draft_events():
     assert f'id="{draft["id"]}"' in system_of(llm.calls[3])  # this thread's drafts, with their ids
 
 
+async def test_drafts_written_this_message_are_marked_new():
+    # Review N3: after write_drafts the next round saw its own draft listed as if it were an earlier one, and called
+    # the chat's first draft "a fresh take". Drafts written in this message are marked as such.
+    llm = writing_llm()
+    h = Harness(llm)
+    await h.send(SAID)
+    [first] = h.of("draft")
+    assert "none yet" in system_of(llm.calls[0])  # before writing, the chat has no drafts
+    after = system_of(llm.calls[3])
+    mark = f'<data source="draft" id="{first["id"]}" kind="x_post" written="just now, in this message">'
+    assert mark in after
+    assert "no drafts before this message" in after and "never another version" in after
+    result = tool_results(llm.calls[3])[-1]["content"]
+    first_note = "the chat's first draft; never call it a fresh take, another version or a new one"
+    assert first_note in result  # said where the reply is written, too
+    # The next message: that draft is an earlier one now, with no mark; a new one written then is marked.
+    llm.add("CONVERSE", Reply(calls=[write()]), "Another angle.")
+    llm.add("DRAFT_WRITER", drafts(["Replies used to wait. Now they take 2 minutes."]))
+    llm.add("CLAIM_CHECK", OK)
+    await h.send("another angle please")
+    [second] = h.of("draft")
+    later = system_of(llm.calls[-1])
+    assert f'<data source="draft" id="{first["id"]}" kind="x_post">' in later
+    assert f'id="{second["id"]}" kind="x_post" written="just now, in this message">' in later
+    assert "no drafts before this message" not in later
+    assert "first draft" not in tool_results(llm.calls[-1])[-1]["content"]  # the chat had one already
+    assert 'written="just now' not in system_of(llm.calls[4])  # nothing new yet at the message's start
+
+
 async def test_a_draft_with_an_image_carries_it():
     llm = FakeLlm(
         {

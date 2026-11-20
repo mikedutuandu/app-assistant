@@ -7,6 +7,8 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from ulid import ULID
 
+from assistant.config import Settings
+
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK = 4_815_162_342  # advisory lock key: one instance migrates at a time
 _LOCK_POLL_SECONDS = 0.1
@@ -42,9 +44,17 @@ async def open_pool(url: str, schema: str | None = None, max_size: int = 5) -> A
         configure=_use_schema(schema),
         check=AsyncConnectionPool.check_connection,
         max_idle=_MAX_IDLE_SECONDS,
+        # Never prepare: behind a transaction pooler (Neon's pooled URL) a prepared statement lives on another backend.
+        kwargs={"prepare_threshold": None},
     )
     await pool.open()
     return pool
+
+
+def direct_url(settings: Settings) -> str:
+    """The URL every pool uses: the direct one (DATABASE_URL_UNPOOLED) when set, else DATABASE_URL. A transaction pooler
+    (Neon's pooled URL) breaks session state: search_path, advisory locks, prepared statements."""
+    return settings.database_url_unpooled or settings.database_url
 
 
 async def open_saver_pool(url: str, schema: str | None = None, max_size: int = 2) -> AsyncConnectionPool:

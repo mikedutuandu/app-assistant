@@ -14,7 +14,7 @@ from assistant.files.intake import UploadError
 from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
 
-CONTEXT_TTL = 300  # seconds the app's context is reused within a thread
+CONTEXT_TTL = 600  # seconds the app's context is reused within a thread
 MAX_LINKS = 2  # links read from one message
 MAX_KEPT = 10  # kept facts taken from the app's context
 
@@ -86,7 +86,7 @@ async def read_files(state: ChatState, t: Turn) -> dict:
 
 
 async def load_context(state: ChatState, t: Turn) -> dict:
-    """The app's context (voice, topics, recent posts), reused for 5 minutes within the thread."""
+    """The app's context (voice, topics, recent posts), reused for 10 minutes within the thread."""
     if state.get("context") is not None and 0 <= _now() - state.get("context_at", 0.0) < CONTEXT_TTL:
         return {}
     ctx = await t.deps.tools_factory().context()

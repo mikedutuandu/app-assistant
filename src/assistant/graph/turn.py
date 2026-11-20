@@ -8,12 +8,13 @@ LangGraph node that keeps that cost in state.
 """
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from assistant.files.read import FileReading, Meter
 from assistant.graph.state import ChatState
 from assistant.llm import Llm, LlmError, ToolTurn
 from assistant.packs import AppPack
+from assistant.timing import TimedLlm, TurnTimer, current
 from assistant.tools import AppTools
 
 CHAT_THINKING_TOKENS = 1024  # added to a chat call's max_tokens when it thinks (thinking counts toward it)
@@ -37,6 +38,7 @@ class Deps:
         [float, int], Awaitable[None]
     ]  # (cost of one finished call, its number in the turn); never raises
     calls: int = 0  # model calls whose cost has been reported this turn
+    timer: TurnTimer = field(default_factory=lambda: current.get() or TurnTimer())  # where this turn's time goes
 
 
 class Turn:
@@ -46,8 +48,12 @@ class Turn:
         self.deps = deps
         self.pack = deps.pack
         self.cost: float = state.get("cost_usd", 0.0)
+        self.timer = deps.timer
+        self.llm = TimedLlm(deps.llm, deps.timer)  # for callers that make their own model calls (the writer)
 
     async def emit(self, kind: str, payload: dict) -> None:
+        if kind == "text" and payload.get("delta"):
+            self.timer.mark_first_text()
         await self.deps.on_event(kind, payload)
 
     async def note(self, text: str) -> None:
@@ -75,16 +81,17 @@ class Turn:
         models = self.pack.models
         thinking = models.chat_reasoning == "low"
         try:
-            out = await self.deps.llm.chat_tools(
-                list(messages),
-                models.chat,
-                models.fallbacks,
-                tools,
-                max_tokens + (CHAT_THINKING_TOKENS if thinking else 0),
-                on_text=on_text,
-                reasoning="low" if thinking else None,
-                temperature=models.chat_temperature,
-            )
+            async with self.timer.span("model", models.chat):
+                out = await self.deps.llm.chat_tools(
+                    list(messages),
+                    models.chat,
+                    models.fallbacks,
+                    tools,
+                    max_tokens + (CHAT_THINKING_TOKENS if thinking else 0),
+                    on_text=on_text,
+                    reasoning="low" if thinking else None,
+                    temperature=models.chat_temperature,
+                )
         except LlmError as e:
             await self.spend(e.cost_usd)
             raise
@@ -101,7 +108,8 @@ def bind(node: Callable[[ChatState, Turn], Awaitable[dict]], deps: Deps) -> Call
     async def run(state: ChatState) -> dict:
         turn = Turn(deps, state)
         try:
-            update = await node(state, turn)
+            async with deps.timer.span("step", node.__name__):
+                update = await node(state, turn)
         except Capped:
             await turn.emit("text", {"delta": CAP_TEXT})
             return {"capped": True, "cost_usd": turn.cost}

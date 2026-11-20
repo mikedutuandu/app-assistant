@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Response
@@ -11,7 +13,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from assistant.api import chat, deps, internal, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
-from assistant.db import close_pool, migrate, open_pool, open_saver_pool
+from assistant.db import close_pool, direct_url, migrate, open_pool, open_saver_pool
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
@@ -45,6 +47,37 @@ def log_to_stdout() -> None:
     logger.propagate = False
 
 
+CORS_SECONDS = 8  # a hanging store must not hold up startup
+
+
+def cors_origins(packs: dict[str, AppPack], settings: Settings) -> list[str]:
+    """Every pack's origins and the demo's, as bare origins. One bad entry would fail the whole call, so entries that
+    are not http(s) origins (empty, "*", not a URL) are dropped: a wildcard would open the bucket to every site."""
+    found = [o for pack in packs.values() for o in pack.allowed_origins] + [settings.public_base_url]
+    origins = []
+    for value in found:  # a pack's {base} carries the demo's path: CORS wants the origin alone
+        try:
+            parts = urlsplit(value.strip())
+        except ValueError:  # e.g. "http://[bad": drop this entry, keep the rest
+            continue
+        if parts.scheme in {"http", "https"} and parts.netloc:
+            origins.append(f"{parts.scheme}://{parts.netloc}")
+    return origins
+
+
+async def set_bucket_cors(storage: Storage, packs: dict[str, AppPack], settings: Settings) -> None:
+    """The browser PUTs files straight to the bucket: allow every pack's origins and the demo's. Never stops startup."""
+    try:
+        origins = cors_origins(packs, settings)
+        await asyncio.wait_for(asyncio.to_thread(storage.ensure_cors, origins), CORS_SECONDS)
+    except TimeoutError:
+        logging.getLogger("assistant.storage").warning(
+            "could not set the bucket's CORS: no answer in %ss", CORS_SECONDS
+        )
+    except Exception as e:  # noqa: BLE001 - a CORS failure must not take the bot down
+        logging.getLogger("assistant.storage").warning("could not set the bucket's CORS: %s", e)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     log_to_stdout()
@@ -59,8 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise PackError(f"no app packs in {settings.packs_dir}")
         for pack in packs.values():
             pack.secret()  # fail at startup, not on every request, when a pack's secret is unset
-        pool = await open_pool(settings.database_url, settings.db_schema, settings.db_pool_max)
-        saver_pool = await open_saver_pool(settings.database_url, settings.db_schema, settings.saver_pool_max)
+        pool = await open_pool(direct_url(settings), settings.db_schema, settings.db_pool_max)
+        saver_pool = await open_saver_pool(direct_url(settings), settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
@@ -71,6 +104,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.checkpointer = checkpointer
             app.state.storage = Storage(settings)
             log.info("uploads: %s", app.state.storage.upload_backend)  # a missing SUPABASE_* shows here
+            if app.state.storage.upload_backend == "s3":
+                await set_bucket_cors(app.state.storage, packs, settings)
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
             def tools_for(pack: AppPack, session: Session) -> McpHttpTools:

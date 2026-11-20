@@ -182,6 +182,9 @@ def claim_request(pack: AppPack, facts: list[Fact], posts: list[str]) -> tuple[s
 # ---- the tools ----
 
 
+DIFFERENT_OPENINGS = "Each draft must open with a different first line and lead with a different fact or framing."
+
+
 async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, language: str | None = None) -> DraftResult:
     """Writes `count` (1 to 3) checked drafts of `kind` about `brief` from the user's facts, in `language` (the
     conversation's, as the conversation model named it), else the app's."""
@@ -195,6 +198,8 @@ async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, languag
         f'Write exactly {count} draft(s) of kind "{spec.kind}" about what this brief describes, '
         f"from the known facts only:\n{data('brief', nfc(brief))}"
     )
+    if count > 1:  # several drafts are options for the user (one draft's ask stays as it was)
+        ask += f"\n{DIFFERENT_OPENINGS}"
     return await _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts)).draft(ask, count)
 
 
@@ -453,6 +458,12 @@ class _Run:
             for n, d in enumerate(failing, 1):
                 listed = "; ".join(p.for_writer() for p in failed[d.id])
                 lines.append(f"{n}. problems: {listed}\n{_posts_blocks(d.posts)}")
+            kept = [d for d in drafts if d.id not in failed]
+            if count > 1 and kept:  # options for the user: a rewrite must not open like a draft that stays
+                openings = "\n".join(data("opening", d.posts[0].strip().split("\n", 1)[0]) for d in kept)
+                lines.append(
+                    f"Each rewrite must open differently from the drafts kept as they are, which open:\n{openings}"
+                )
             outs = await self._write(f"{ask}\n\n" + "\n".join(lines)) or []
             # Rewrites pair with the failing drafts in order; one with no usable rewrite keeps its problems.
             rewritten = []

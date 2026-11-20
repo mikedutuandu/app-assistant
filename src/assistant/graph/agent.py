@@ -200,11 +200,13 @@ def _key(text: str) -> str:
     return " ".join(nfc(text).casefold().split()).strip(" .!?;:,")
 
 
-def _draft_block(d: Draft) -> str:
+def _draft_block(d: Draft, new: bool = False) -> str:
     if len(d.posts) == 1:
         text = d.posts[0]
     else:
         text = "\n\n".join(f"({i}/{len(d.posts)}) {p}" for i, p in enumerate(d.posts, 1))
+    if new:  # written in this message: never an earlier draft (review N3)
+        return data("draft", text, id=d.id, kind=d.kind, written="just now, in this message")
     return data("draft", text, id=d.id, kind=d.kind)
 
 
@@ -260,6 +262,7 @@ class _Agent:
     in_bubble: bool = False  # the last thing shown was this turn's text: more text continues the same bubble
     shown: str = ""  # this round's text as the user saw it (a repeat of an earlier round is never shown)
     held: str = ""  # a later round's text, kept back until the round ends
+    written: set[str] = field(default_factory=set)  # the ids of the drafts written in this message
 
     def __post_init__(self) -> None:
         self.facts = list(self.state.get("facts", []))
@@ -302,7 +305,13 @@ class _Agent:
                 text = r.text + (f"\nUnsure (not facts): {'; '.join(r.unsure)}" if r.unsure else "")
                 blocks.append(data(r.kind, text, file_id=r.file_id))
             parts.append("Files and links they shared:\n" + "\n".join(blocks))
-        shown = "\n".join(_draft_block(d) for d in self.drafts[-MAX_DRAFTS_SHOWN:]) or "none yet"
+        recent = self.drafts[-MAX_DRAFTS_SHOWN:]
+        shown = "\n".join(_draft_block(d, new=d.id in self.written) for d in recent) or "none yet"
+        if self.written and all(d.id in self.written for d in self.drafts):
+            shown += (
+                "\n(There were no drafts before this message: the ones written just now are this chat's first, "
+                "never another version, a new take or a fresh one.)"
+            )
         parts.append("Drafts in this chat, oldest first (the user sees each one with its buttons):\n" + shown)
         return "\n\n".join(parts)
 
@@ -539,7 +548,7 @@ class _Agent:
 
         return WriterDeps(
             pack=self.t.pack,
-            llm=self.t.deps.llm,
+            llm=self.t.llm,
             facts=list(self.facts),
             readings=list(self.state.get("readings", [])),
             context=ctx,
@@ -570,8 +579,10 @@ class _Agent:
         return await self._shown(result, root=root)
 
     async def _shown(self, result: DraftResult, root: str | None) -> str:
+        first = not self.drafts  # the chat had no draft before this call (review N3)
         for d in result.drafts:
             self.drafts.append(d)
+            self.written.add(d.id)
             if root is not None:
                 self.family[d.id] = root
             payload: dict = {"id": d.id, "kind": d.kind, "posts": d.posts}
@@ -587,8 +598,15 @@ class _Agent:
         out = (
             f"wrote {_plural(n, 'draft')} in {language}; the user already sees {'it' if n == 1 else 'them'} under "
             f"your reply. Answer in one short sentence in {language}; don't repeat or describe the "
-            f"draft{'' if n == 1 else 's'}:\n" + "\n".join(_draft_block(d) for d in result.drafts)
+            f"draft{'' if n == 1 else 's'}."
         )
+        if first:
+            out += (
+                " This is the chat's first draft; never call it a fresh take, another version or a new one."
+                if n == 1
+                else " These are the chat's first drafts; never call them fresh takes, other versions or new ones."
+            )
+        out += "\n" + "\n".join(_draft_block(d) for d in result.drafts)
         return out + (f"\nnote: {result.note}" if result.note else "")
 
     # -- the end --

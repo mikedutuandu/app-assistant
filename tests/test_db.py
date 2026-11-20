@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 from psycopg import AsyncConnection, sql
 from pydantic import ValidationError
-from ulid import ULID
 
 from assistant.config import Settings
 from assistant.db import migrate, new_id, open_pool, open_saver_pool
@@ -61,18 +60,6 @@ def test_new_id_sorts_by_time():
     second = new_id()
     assert first < second
     assert len(first) == 26
-
-
-@pytest.fixture
-async def fresh_schema():
-    """A schema name that does not exist yet; dropped (if made) after the test."""
-    url = os.environ.get("TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("TEST_DATABASE_URL is not set")
-    schema = f"own_{str(ULID()).lower()}"
-    yield url, schema
-    async with await AsyncConnection.connect(url, autocommit=True) as admin:
-        await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))
 
 
 async def _tables(url: str, schema: str) -> set[str]:
@@ -279,3 +266,20 @@ async def test_several_first_starts_at_once_all_succeed(test_settings, monkeypat
         async with await AsyncConnection.connect(url, autocommit=True) as admin:
             for schema in schemas:
                 await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))
+
+
+async def test_app_pool_never_prepares_statements():
+    """Behind a transaction pooler (Neon's pooled URL) server-side prepared statements break: the app pool must not prepare."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    pool = await open_pool(url)
+    try:
+        async with pool.connection() as conn:
+            for _ in range(6):
+                await conn.execute("select 1")
+            cur = await conn.execute("select count(*) from pg_prepared_statements")
+            row = await cur.fetchone()
+        assert row is not None and row[0] == 0
+    finally:
+        await pool.close()

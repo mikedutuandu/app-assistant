@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 from assistant.auth import Session
 from assistant.checks import Fact
 from assistant.packs import AppPack
+from assistant.timing import TurnTimer
 
 TIMEOUT_SECONDS = 20
 ToolErrorKind = Literal["out_of_credits", "unauthorized", "unavailable", "refused"]
@@ -85,7 +86,8 @@ def _http_message(response: httpx.Response) -> str | None:
 
 
 class McpHttpTools:
-    def __init__(self, pack: AppPack, session: Session, client: httpx.AsyncClient):
+    def __init__(self, pack: AppPack, session: Session, client: httpx.AsyncClient, timer: TurnTimer | None = None):
+        self.timer = timer  # when set, every call to the app is timed, named by the app's tool name
         self._pack = pack
         self._session = session
         self._client = client
@@ -122,6 +124,17 @@ class McpHttpTools:
         key: str | None = None,
     ) -> str | None:
         """Returns the first text content of the result (None when absent)."""
+        if self.timer is None:
+            return await self._send(tool, arguments, key)
+        async with self.timer.span("tool", self._pack.tools[tool]):
+            return await self._send(tool, arguments, key)
+
+    async def _send(
+        self,
+        tool: Literal["context", "save_draft", "save_material", "charge"],
+        arguments: dict[str, Any],
+        key: str | None,
+    ) -> str | None:
         headers = {"Authorization": f"Bearer {self._session.token}"}
         if key is not None:
             headers["Idempotency-Key"] = key
