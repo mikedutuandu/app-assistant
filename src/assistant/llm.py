@@ -34,6 +34,39 @@ class LlmResult:
     model: str
 
 
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: dict = {}
+    bad_arguments: str | None = None  # the raw text when the arguments were not valid JSON
+
+
+class ToolTurn(BaseModel):
+    text: str
+    calls: list[ToolCall]
+    cost_usd: float
+    model: str
+
+
+def _tool_calls(raw: dict[int, dict[str, str]]) -> list[ToolCall]:
+    calls: list[ToolCall] = []
+    for index in sorted(raw):
+        item = raw[index]
+        arguments: dict = {}
+        bad: str | None = None
+        text = item["arguments"]
+        try:
+            parsed = json.loads(text) if text.strip() else {}
+            if isinstance(parsed, dict):
+                arguments = parsed
+            else:
+                bad = text
+        except ValueError:
+            bad = text
+        calls.append(ToolCall(id=item["id"], name=item["name"], arguments=arguments, bad_arguments=bad))
+    return calls
+
+
 class _Retryable(Exception):
     def __init__(self, message: str, cost: float = 0.0):
         super().__init__(message)
@@ -108,8 +141,11 @@ class Llm:
         self,
         body: dict,
         on_text: Callable[[str], Awaitable[None]] | None,
-    ) -> tuple[str, float]:
-        if on_text is None:
+        stream: bool | None = None,
+    ) -> tuple[str, list[ToolCall], float]:
+        if stream is None:
+            stream = on_text is not None
+        if not stream:
             resp = await self._client.post(
                 f"{BASE_URL}/chat/completions", json=body, headers=self._headers(), timeout=CHAT_TIMEOUT
             )
@@ -121,9 +157,10 @@ class Llm:
                 text = data["choices"][0]["message"]["content"] or ""
             except (KeyError, IndexError, TypeError) as e:
                 raise _Retryable("malformed response", cost) from e
-            return text, cost
+            return text, [], cost
 
         parts: list[str] = []
+        raw_calls: dict[int, dict[str, str]] = {}
         cost = 0.0
 
         def fail(message: str) -> Exception:
@@ -158,10 +195,23 @@ class Llm:
                     first = choices[0] if choices else {}
                     if event.get("error") or first.get("finish_reason") == "error":
                         raise fail("stream error")
-                    piece = (first.get("delta") or {}).get("content")
+                    delta = first.get("delta") or {}
+                    for tc in delta.get("tool_calls") or []:
+                        if not isinstance(tc, dict):
+                            continue
+                        slot = raw_calls.setdefault(int(tc.get("index") or 0), {"id": "", "name": "", "arguments": ""})
+                        fn = tc.get("function") or {}
+                        if tc.get("id"):
+                            slot["id"] = tc["id"]
+                        if fn.get("name"):
+                            slot["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            slot["arguments"] += fn["arguments"]
+                    piece = delta.get("content")
                     if piece:
                         parts.append(piece)
-                        await on_text(piece)
+                        if on_text is not None:
+                            await on_text(piece)
         except httpx.TransportError as e:
             if parts:
                 raise _Partial(type(e).__name__, cost) from None
@@ -170,7 +220,7 @@ class Llm:
             if parts:
                 raise _Partial(type(e).__name__, cost) from None
             raise
-        return "".join(parts), cost
+        return "".join(parts), _tool_calls(raw_calls), cost
 
     async def _complete(
         self,
@@ -180,15 +230,21 @@ class Llm:
         max_tokens: int,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         response_format: dict | None = None,
-    ) -> LlmResult:
+        tools: list[dict] | None = None,
+        reasoning: str | None = None,
+    ) -> ToolTurn:
         spent = 0.0
         last = "no model"
         for m in [model, *fallbacks]:
             body: dict = {"model": m, "messages": messages, "max_tokens": max_tokens, "usage": {"include": True}}
             if response_format is not None:
                 body["response_format"] = response_format
+            if tools:
+                body["tools"] = tools
+            if reasoning:
+                body["reasoning"] = {"effort": reasoning}
             try:
-                text, cost = await self._once(body, on_text)
+                text, calls, cost = await self._once(body, on_text, stream=True if tools else None)
             except _Retryable as e:
                 spent += e.cost
                 last = str(e)
@@ -199,7 +255,7 @@ class Llm:
             except LlmError as e:
                 raise LlmError(e.kind, str(e), spent + e.cost_usd) from None
             else:
-                return LlmResult(text=text, cost_usd=spent + cost, model=m)
+                return ToolTurn(text=text, calls=calls, cost_usd=spent + cost, model=m)
         raise LlmError("unavailable", f"every model failed ({last})", spent)
 
     async def chat(
@@ -209,8 +265,22 @@ class Llm:
         fallbacks: list[str],
         max_tokens: int,
         on_text: Callable[[str], Awaitable[None]] | None = None,
+        reasoning: str | None = None,
     ) -> LlmResult:
-        return await self._complete(messages, model, fallbacks, max_tokens, on_text)
+        turn = await self._complete(messages, model, fallbacks, max_tokens, on_text, reasoning=reasoning)
+        return LlmResult(text=turn.text, cost_usd=turn.cost_usd, model=turn.model)
+
+    async def chat_tools(
+        self,
+        messages: list[dict],
+        model: str,
+        fallbacks: list[str],
+        tools: list[dict],
+        max_tokens: int,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
+        reasoning: str | None = None,
+    ) -> ToolTurn:
+        return await self._complete(messages, model, fallbacks, max_tokens, on_text, tools=tools, reasoning=reasoning)
 
     async def chat_json(
         self,
@@ -219,6 +289,7 @@ class Llm:
         fallbacks: list[str],
         schema: type[BaseModel],
         max_tokens: int,
+        reasoning: str | None = None,
     ) -> tuple[BaseModel, float]:
         response_format = {
             "type": "json_schema",
@@ -228,7 +299,9 @@ class Llm:
         history = messages
         for attempt in range(2):
             try:
-                res = await self._complete(history, model, fallbacks, max_tokens, response_format=response_format)
+                res = await self._complete(
+                    history, model, fallbacks, max_tokens, response_format=response_format, reasoning=reasoning
+                )
             except LlmError as e:
                 raise LlmError(e.kind, str(e), total + e.cost_usd) from None
             total += res.cost_usd
