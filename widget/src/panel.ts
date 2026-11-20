@@ -241,7 +241,13 @@ export function createPanel(opts: PanelOptions) {
     else el.append(h("p", { class: "post", text: posts[0] ?? "" }));
     const actionId = `add:${d.id}`; // the same for every render of this draft: a repeat tap, or after a reload
     const row = h("div", { class: "row" });
-    const add = h("button", { class: "btn", type: "button", text: "Add to Schedule", "aria-label": "Add this draft to your Schedule" });
+    const add = h("button", { class: "btn", type: "button" });
+    // The spoken name starts with the visible text (WCAG 2.5.3) and follows it: Add, Adding, Added.
+    const setAdd = (text: string, label: string) => {
+      add.textContent = text;
+      add.setAttribute("aria-label", label);
+    };
+    setAdd("Add to Schedule", "Add to Schedule: this draft");
     const shorter = h("button", { class: "btn ghost", type: "button", text: "Shorter", "aria-label": "Make this draft shorter" });
     const angle = h("button", { class: "btn ghost", type: "button", text: "Another angle", "aria-label": "Try another angle for this draft" });
     const err = h("div", { class: "small", role: "alert" });
@@ -253,7 +259,7 @@ export function createPanel(opts: PanelOptions) {
     };
     syncers.add(sync);
     const markAdded = (editUrl: string | null | undefined) => {
-      add.textContent = "Added to your Schedule";
+      setAdd("Added to your Schedule", "Added to your Schedule: this draft");
       add.classList.add("done");
       add.disabled = true;
       const href = editUrl ? safeHref(editUrl) : null;
@@ -262,7 +268,7 @@ export function createPanel(opts: PanelOptions) {
     add.addEventListener("click", async () => {
       pending = true;
       add.disabled = true;
-      add.textContent = "Adding…";
+      setAdd("Adding…", "Adding to Schedule: this draft");
       err.textContent = "";
       try {
         const r = await api.act(threadId!, { action_id: actionId, kind: "add_draft", draft_id: d.id });
@@ -271,7 +277,7 @@ export function createPanel(opts: PanelOptions) {
         window.dispatchEvent(new CustomEvent("assistant:saved", { detail: { draft_id: r.draft_id } }));
       } catch (e) {
         pending = false;
-        add.textContent = "Add to Schedule";
+        setAdd("Add to Schedule", "Add to Schedule: this draft");
         sync();
         if (e instanceof AuthLost) stop(SIGN_IN);
         else err.textContent = errorText(e);
@@ -437,12 +443,16 @@ export function createPanel(opts: PanelOptions) {
           bubble = null; // whatever the bot says next goes below the indicator
           showWorking(d.step);
           break;
-        case "text":
+        case "text": {
+          // A new bubble never starts with blank lines (the bot's paragraph break before a draft or a status).
+          const delta = bubble ? String(d.delta ?? "") : String(d.delta ?? "").replace(/^\s+/, "");
+          if (!delta) break;
           hideWorking();
           if (!bubble) bubble = addMsg("msg bot", "");
-          bubble.textContent += d.delta;
+          bubble.textContent += delta;
           scroll();
           break;
+        }
         case "draft":
           hideWorking();
           bubble = null;

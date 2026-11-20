@@ -129,6 +129,23 @@ describe("panel", () => {
     expect(act).toHaveBeenCalledWith("t1", { action_id: "add:d1", kind: "add_draft", draft_id: "d1" });
   });
 
+  it("the Add button's spoken name starts with its visible text and follows it once added", async () => {
+    let release!: () => void;
+    const act = vi.fn(() => new Promise((r) => (release = () => r({ draft_id: "s", edit_url: null }))));
+    const { $$, say, flush } = setup({ act } as any, [thr(), dr()]);
+    await say("hi");
+    const add = $$(".draft button")[0] as HTMLButtonElement;
+    const label = () => add.getAttribute("aria-label") ?? "";
+    expect(label().startsWith(add.textContent!)).toBe(true);
+    add.click();
+    expect(label()).toMatch(/^Adding/);
+    release();
+    await flush();
+    expect(add.textContent).toBe("Added to your Schedule");
+    expect(label().startsWith("Added to your Schedule")).toBe(true);
+    expect(label()).not.toMatch(/^Add /);
+  });
+
   it("no Edit link when edit_url is null; retry after failure reuses the action id", async () => {
     const act = vi.fn().mockRejectedValueOnce(new ApiError(502, "app_down", "The app couldn't be reached.")).mockResolvedValueOnce({ draft_id: "s", edit_url: null });
     const { $$, say, flush } = setup({ act } as any, [thr(), dr()]);
@@ -387,6 +404,21 @@ describe("panel", () => {
       h.emit({ event: "text", data: { delta: "Second." } });
       expect($$(".working")).toHaveLength(0);
       expect($$(".bot").map((b) => b.textContent)).toEqual(["First.", "Second."]);
+      h.finish();
+    });
+
+    it("a new bubble after a draft does not start with the bot's blank lines", async () => {
+      const h = held();
+      const { $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      h.emit({ event: "text", data: { delta: "Love it." } });
+      h.emit(status("writing"));
+      h.emit({ event: "draft", data: draft } as BotEvent);
+      h.emit({ event: "text", data: { delta: "\n\n" } });
+      expect($$(".bot")).toHaveLength(1); // blank lines alone open no bubble
+      h.emit({ event: "text", data: { delta: "Here's a first go." } });
+      h.emit({ event: "text", data: { delta: "\n\nWant it shorter" } });
+      expect($$(".bot").map((b) => b.textContent)).toEqual(["Love it.", "Here's a first go.\n\nWant it shorter"]);
       h.finish();
     });
 
