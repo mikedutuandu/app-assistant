@@ -191,6 +191,6 @@ What gets there:
 
 This replaces the Phase 2 "Write with me" entry point and comes before Phase 3 (StreakPlan), which will use the same conversation-first bot. Until it ships, the floating Write with me button is switched off in HookPlaybook (Claude's recommendation to Mike, 20 Nov 2026), so users never see the old behaviour.
 
-1. **The bot, conversation-first:** the agent with tools, the rules, the conversation tests (passing), `draft`/`saved` events, the widget and the demo updated. Ships to the public demo first.
+1. **The bot, conversation-first** (built, 20 Nov 2026, on branch `one-assistant-design`): the agent with tools, the rules, the conversation tests, `draft`/`saved` events, the widget and the demo (which saves threads) updated. Ships to the public demo first. Still to do: run the live conversation recordings (`scripts/converse_eval.py --live --record`); the egress proxy blocked openrouter.ai in the build environment, so `tests/conversations/recorded/` is not filled yet.
 2. **Speed:** HookPlaybook's tool latency measured and fixed, the context fetched once per conversation, per-step timing logs, the bot's region settled.
 3. **Ask hosts the writer:** router, chip, attach and voice, the server route and pass-throughs, shared context, history, chat delete, removal of the floating button and the session route.
