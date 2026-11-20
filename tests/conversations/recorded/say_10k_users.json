@@ -1,0 +1,206 @@
+{
+  "case": "say_10k_users",
+  "recorded_at": "2026-11-20T13:28:14+00:00",
+  "models": {
+    "chat": "anthropic/claude-haiku-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_temperature": 0.4
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "i deployed chat bot help user plan weet"
+    },
+    {
+      "text": "say we have 10k users"
+    }
+  ],
+  "turns": [
+    {
+      "user": "i deployed chat bot help user plan weet",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "You deployed a chatbot that helps users plan their week. Who is it for?",
+      "drafts": [],
+      "saved": [
+        "Deployed a chatbot that helps users plan their week."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0010069
+    },
+    {
+      "user": "say we have 10k users",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Got it. Is 10k users a real number for you, or just an example?",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0004204
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "No drafts appear in either turn; the chat shows only the assistant's text replies and a saved line, so no draft states 10k or any user count.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The last reply asks \"Is 10k users a real number for you, or just an example?\", which is a kind, single question checking whether 10k is real.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The last reply is \"Got it.\" plus a neutral question, with no lecturing or scolding.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "c3ce2805d43e3713",
+        "messages_sha256": "977faf4d8224bf9f",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">i deployed chat bot help user plan weet</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01XQdG5nrHcGf5psaEN2f3b5",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "Deployed a chatbot that helps users plan their week."
+                }
+              ]
+            },
+            "bad_arguments": null
+          },
+          {
+            "id": "toolu_01PLAQCffH8cbKU8LC38K143",
+            "name": "save_facts",
+            "arguments": {},
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.0005495,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "bfc6f5469b9f0deb",
+        "messages_sha256": "8996cf38b9657988",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">i deployed chat bot help user plan weet</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts",
+              "save_facts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 1 facts"
+          },
+          {
+            "role": "tool",
+            "content": "error: invalid arguments (facts: Field required); nothing was done"
+          }
+        ]
+      },
+      "response": {
+        "text": "You deployed a chatbot that helps users plan their week. Who is it for?",
+        "calls": [],
+        "cost_usd": 0.0004574,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "bfc6f5469b9f0deb",
+        "messages_sha256": "8177d08c81351e95",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">i deployed chat bot help user plan weet</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "You deployed a chatbot that helps users plan their week. Who is it for?"
+          },
+          {
+            "role": "user",
+            "content": "<data source=\"user\">say we have 10k users</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "Got it. Is 10k users a real number for you, or just an example?",
+        "calls": [],
+        "cost_usd": 0.0004204,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "case": "product_question",
+  "recorded_at": "2026-11-20T13:28:40+00:00",
+  "models": {
+    "chat": "anthropic/claude-haiku-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_temperature": 0.4
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "how many credits does a post cost?"
+    }
+  ],
+  "turns": [
+    {
+      "user": "how many credits does a post cost?",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "I don't have the credit pricing, so I can't tell you what a post costs. The app's pricing or billing page should show it, and support can confirm if it's unclear.",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0004496
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply says \"I don't have the credit pricing\" and points Mike to \"The app's pricing or billing page\" and support, which is honest and directs him to where he can see it.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The reply gives no credit price or any other number; it only says it doesn't have the pricing.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply is a plain answer to a factual question, with no post or story framing.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "c3ce2805d43e3713",
+        "messages_sha256": "a17c9ed42bd07d3e",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">how many credits does a post cost?</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "I don't have the credit pricing, so I can't tell you what a post costs. The app's pricing or billing page should show it, and support can confirm if it's unclear.",
+        "calls": [],
+        "cost_usd": 0.0004496,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    }
+  ]
+}

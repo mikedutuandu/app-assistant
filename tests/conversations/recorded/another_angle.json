@@ -1,0 +1,467 @@
+{
+  "case": "another_angle",
+  "recorded_at": "2026-11-20T13:27:14+00:00",
+  "models": {
+    "chat": "anthropic/claude-haiku-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_temperature": 0.4
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+    },
+    {
+      "text": "another angle",
+      "draft": "last"
+    }
+  ],
+  "turns": [
+    {
+      "user": "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Here's your post. Want me to try a different angle next?",
+      "drafts": [
+        {
+          "id": "F97EA299000008",
+          "kind": "x_post",
+          "posts": [
+            "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nwe shipped auto reply last week. 40 founders on the beta use it every day."
+          ]
+        }
+      ],
+      "saved": [
+        "We shipped auto reply last week.",
+        "Replies now go out in 2 minutes instead of 2 hours.",
+        "40 founders on the beta use auto reply every day."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0067881999999999994
+    },
+    {
+      "user": "another angle",
+      "file": null,
+      "shows": null,
+      "draft_id": "F97EA299000008",
+      "reply": "Here's a version that leads with the founders using it every day. Do you want the post to mention what they say about it?",
+      "drafts": [
+        {
+          "id": "F97EA299000010",
+          "kind": "x_post",
+          "posts": [
+            "40 founders on the beta use auto reply every day.\n\nwe shipped it last week."
+          ]
+        }
+      ],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0059681
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The last draft opens with '40 founders on the beta use auto reply every day.' instead of the 2 hours vs 2 minutes line, so the first line and angle differ while the news is the same.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The draft only says '40 founders on the beta use auto reply every day' and 'we shipped it last week', both from Mike's message, and adds nothing invented.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply says 'Here's a version that leads with the founders using it every day. Do you want the post to mention what they say about it?' and does not quote the draft's lines.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "c3ce2805d43e3713",
+        "messages_sha256": "09fffc3150311d63",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_013jGCEGDv48iCd11a1ZcEkC",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "We shipped auto reply last week."
+                },
+                {
+                  "text": "Replies now go out in 2 minutes instead of 2 hours."
+                },
+                {
+                  "text": "40 founders on the beta use auto reply every day."
+                }
+              ]
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.0005425,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "f08f8ffea5de34d9",
+        "messages_sha256": "f514a06252670f8a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 3 facts"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01Fv1ndrirbi3dEaF2BLsF49",
+            "name": "write_drafts",
+            "arguments": {
+              "brief": "We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day. Angle: the speed drop from 2 hours to 2 minutes, and the 40 founders using it daily.",
+              "kind": "x_post",
+              "language": "en",
+              "count": 1
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.0005279,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "f07cf13ae7f856bc",
+        "system_sha256": "cacdba84fef7a77e",
+        "messages_sha256": "fa4bb38bb70c97ae",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use auto reply every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day. Angle: the speed drop from 2 hours to 2 minutes, and the 40 founders using it daily.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nwe shipped auto reply last week. 40 founders on the beta use it every day."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2",
+                "F3"
+              ],
+              "image_file_id": null
+            }
+          ]
+        },
+        "cost_usd": 0.00522
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "62c552a7632e3663",
+        "messages_sha256": "9fad914edee6e5d0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use auto reply every day.</data>\n\nThe piece to check:\n<data source=\"draft\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nwe shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 6.87e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "103d28f32ab6ae27",
+        "messages_sha256": "60800bc76a3a182f",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 3 facts"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"F97EA299000008\" kind=\"x_post\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nwe shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's your post. Want me to try a different angle next?",
+        "calls": [],
+        "cost_usd": 0.0004291,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "103d28f32ab6ae27",
+        "messages_sha256": "b1ba8d19743e0bc2",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Here's your post. Want me to try a different angle next?"
+          },
+          {
+            "role": "user",
+            "content": "(The user tapped a button on draft F97EA299000008, written in en. The button's words are the app's, not the user's: keep replying in the language of the conversation.)\n<data source=\"user\">another angle</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01Eq1DGqnBbiJafpQ2LvgUYC",
+            "name": "revise_draft",
+            "arguments": {
+              "draft_id": "F97EA299000008",
+              "instruction": "Another angle: focus on the beta founders who use auto reply every day, rather than the speed gain.",
+              "language": "en"
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.0005068,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "f07cf13ae7f856bc",
+        "system_sha256": "cacdba84fef7a77e",
+        "messages_sha256": "ec006c4f631c4c72",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use auto reply every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nRevise this draft of kind \"x_post\" as the user asks, and reply with exactly 1 draft.\nThe draft:\n<data source=\"draft\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nwe shipped auto reply last week. 40 founders on the beta use it every day.</data>\nWhat the user asks:\n<data source=\"instruction\">Another angle: focus on the beta founders who use auto reply every day, rather than the speed gain.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "40 founders on the beta use auto reply every day.\n\nwe shipped it last week."
+              ],
+              "fact_ids": [
+                "F1",
+                "F3"
+              ],
+              "image_file_id": null
+            }
+          ]
+        },
+        "cost_usd": 0.004972
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "62c552a7632e3663",
+        "messages_sha256": "fc200e4435d1b240",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use auto reply every day.</data>\n\nThe piece to check:\n<data source=\"draft\">40 founders on the beta use auto reply every day.\n\nwe shipped it last week.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 6.11e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "b77eb705723d5f05",
+        "messages_sha256": "aaa75b1a7aa0f2ea",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Here's your post. Want me to try a different angle next?"
+          },
+          {
+            "role": "user",
+            "content": "(The user tapped a button on draft F97EA299000008, written in en. The button's words are the app's, not the user's: keep replying in the language of the conversation.)\n<data source=\"user\">another angle</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "revise_draft"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"F97EA299000010\" kind=\"x_post\">40 founders on the beta use auto reply every day.\n\nwe shipped it last week.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's a version that leads with the founders using it every day. Do you want the post to mention what they say about it?",
+        "calls": [],
+        "cost_usd": 0.0004282,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    }
+  ]
+}
