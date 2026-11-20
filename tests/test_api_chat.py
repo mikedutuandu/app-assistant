@@ -876,6 +876,47 @@ async def test_draft_not_stored_shows_it_fails_turn_and_charges_once(api: Api, m
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)]
 
 
+async def test_a_draft_added_before_its_turn_ends_still_marks_its_facts_told(api: Api, monkeypatch):
+    """The draft's facts are stored with it when it is shown, not read from the checkpoint (written at the turn's end)."""
+    shown, release = asyncio.Event(), asyncio.Event()
+    told = {"id": "f1", "text": FACT, "numbers": [2.0], "source": "typed", "file_id": None}
+
+    def slow_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
+        class Graph:
+            async def ainvoke(self, state, config):
+                draft = {"id": "d1", "kind": "x_post", "posts": [LAUNCH, "and more"], "told": [told]}
+                await on_event("draft", draft)
+                shown.set()
+                await release.wait()
+                return {"cost_usd": 0.0}
+
+        return Graph()
+
+    monkeypatch.setattr(turn, "build_graph", slow_graph)
+    sending = asyncio.create_task(api.send(FACT))
+    await asyncio.wait_for(shown.wait(), 5)
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select thread_id from pieces where id = 'd1'")
+        [(tid,)] = await cur.fetchall()
+    r = await api.act(tid, add_body("early", "d1"))
+    assert r.status_code == 200
+    [material] = api.tools.materials
+    assert material["draft_id"] == r.json()["draft_id"] and [f.text for f in material["facts"]] == [FACT]
+    assert api.tools.drafts[0]["thread"] == ["and more"]
+    release.set()
+    events = await sending
+    [sent] = of(events, "draft")
+    assert sent == {"id": "d1", "kind": "x_post", "posts": [LAUNCH, "and more"]}  # no fact fields reach the browser
+
+
+async def test_the_draft_event_sent_to_the_browser_has_no_fact_fields(api: Api):
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    [shown] = of(events, "draft")
+    assert set(shown) <= {"id", "kind", "posts", "image_file_id"}
+    assert FACT not in json.dumps(shown)
+
+
 async def test_message_with_draft_id_of_another_thread_is_404(api: Api):
     mine, other = await api.thread_row(), await api.thread_row()
     pid = await api.piece_row(other)

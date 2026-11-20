@@ -150,7 +150,9 @@ async def test_write_drafts_emits_draft_events():
     h = Harness(llm)
     state = await h.send(SAID)
     [draft] = h.of("draft")
+    told = draft.pop("told")  # the facts it was written from: the API stores them and never sends them on
     assert draft == {"id": draft["id"], "kind": "x_post", "posts": [POST]}
+    assert [f["id"] for f in told] == [f.id for f in state["facts"]]
     assert [d.id for d in state["drafts"]] == [draft["id"]]
     assert state["drafts"][0].fact_ids == [f.id for f in state["facts"]]
     assert llm.names() == ["CONVERSE", "DRAFT_WRITER", "CLAIM_CHECK", "CONVERSE"]

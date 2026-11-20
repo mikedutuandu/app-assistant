@@ -208,28 +208,17 @@ returning 1
 """
 
 
-async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[list[str], str | None]:
+async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[list[str], str | None, list[Fact]]:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "select posts, text, image_file_id from pieces where id = %s and app = %s and workspace = %s"
+            "select posts, text, image_file_id, facts from pieces where id = %s and app = %s and workspace = %s"
             " and thread_id = %s",
             (draft_id, session.app, session.workspace, chat_id),
         )
         row = await cur.fetchone()
     if row is None:
         raise ApiError(404, "draft")
-    return (row[0] if row[0] else [row[1]]), row[2]
-
-
-async def _told_facts(state, session: Session, chat_id: str, draft_id: str) -> list[Fact]:
-    """The facts this draft was written from: the thread's saved facts named by the draft's `fact_ids`."""
-    config = {"configurable": {"thread_id": graph_thread_id(session.app, session.workspace, chat_id)}}
-    saved = await state.checkpointer.aget_tuple(config)
-    values = saved.checkpoint["channel_values"] if saved is not None else {}
-    draft = next((d for d in values.get("drafts", []) if d.id == draft_id), None)
-    if draft is None:
-        return []
-    return [f for f in values.get("facts", []) if f.id in set(draft.fact_ids)]
+    return (row[0] if row[0] else [row[1]]), row[2], [Fact.model_validate(f) for f in row[3]]
 
 
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
@@ -253,7 +242,7 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):
         raise ApiError(429, "limit", "You've done that a lot this hour. Try again a bit later.")
     await owned_thread(state.pool, session, thread_id)
-    posts, image_file_id = await _draft(state.pool, session, thread_id, body.draft_id)
+    posts, image_file_id, facts = await _draft(state.pool, session, thread_id, body.draft_id)
 
     key = f"{session.app}:{session.workspace}:{body.action_id}"
     async with state.pool.connection() as conn:
@@ -273,7 +262,6 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     try:
         media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
         draft = await tools.save_draft(posts[0], posts[1:], media, key=body.action_id)
-        facts = await _told_facts(state, session, thread_id, body.draft_id)
         if facts:
             await tools.save_material(facts, draft.id, key=body.action_id + ":facts")
         result: dict = {"draft_id": draft.id, "edit_url": draft.edit_url}

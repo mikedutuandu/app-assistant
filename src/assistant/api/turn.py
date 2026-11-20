@@ -25,6 +25,7 @@ from langchain_core.messages import HumanMessage
 from psycopg.types.json import Jsonb
 
 from assistant.auth import Session
+from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import FileRecord, UploadError
 from assistant.files.read import FileReading, Meter, read_file, read_link
@@ -144,12 +145,12 @@ async def _open_thread(pool, t: TurnInput) -> tuple[str, bool]:
         return chat_id, True
 
 
-async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: dict) -> None:
+async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: dict, told: list[dict]) -> None:
     posts = draft["posts"]
     async with pool.connection() as conn:
         await conn.execute(
             "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-            " fact_ids, facts, posts) values (%s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s)"
+            " fact_ids, facts, posts) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " on conflict (id) do nothing",
             (
                 draft["id"],
@@ -160,6 +161,8 @@ async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: 
                 draft["kind"],
                 posts[0] if posts else "",
                 draft.get("image_file_id"),
+                Jsonb([f["id"] for f in told]),
+                Jsonb([Fact.model_validate(f).model_dump() for f in told]),
                 Jsonb(posts),
             ),
         )
@@ -264,10 +267,13 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     unsaved: list[str] = []  # a draft that could not be stored: its Add button would never work
 
     async def on_event(kind: str, payload: dict) -> None:
+        if kind == "draft":  # the facts it was written from are stored with it, never sent on
+            payload = dict(payload)
+            told = payload.pop("told", [])
         if kind in ("draft", "saved"):
             try:
                 if kind == "draft":
-                    await _save_draft(state.pool, t, chat_id, message_id, payload)
+                    await _save_draft(state.pool, t, chat_id, message_id, payload, told)
                 else:
                     await _save_lines(state.pool, t, chat_id, message_id, payload)
             except Exception as e:  # noqa: BLE001 - the graph must never fail because of an event

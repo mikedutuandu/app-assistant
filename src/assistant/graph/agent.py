@@ -469,6 +469,8 @@ class _Agent:
             payload: dict = {"id": d.id, "kind": d.kind, "posts": d.posts}
             if d.image_file_id is not None:
                 payload["image_file_id"] = d.image_file_id
+            # `told`: the facts the draft was written from, for the API to store with it. Never sent to the browser.
+            payload["told"] = [f.model_dump() for f in self.facts if f.id in set(d.fact_ids)]
             await self.t.emit("draft", payload)
         if not result.drafts:
             return f"nothing written: {result.note or 'the writer returned nothing usable'}"
