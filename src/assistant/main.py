@@ -19,8 +19,9 @@ from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
-from assistant.packs import AppPack, PackError, load_packs
-from assistant.tools import McpHttpTools
+from assistant.pack_store import PackStore, load_registry
+from assistant.packs import REGISTRY_FILES, AppPack, PackError, load_packs
+from assistant.tools import AppTools, McpHttpTools, NoAppTools
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
 LOG_FORMAT = "%(levelname)s %(name)s %(message)s"
@@ -50,10 +51,11 @@ def log_to_stdout() -> None:
 CORS_SECONDS = 8  # a hanging store must not hold up startup
 
 
-def cors_origins(packs: dict[str, AppPack], settings: Settings) -> list[str]:
-    """Every pack's origins and the demo's, as bare origins. One bad entry would fail the whole call, so entries that
-    are not http(s) origins (empty, "*", not a URL) are dropped: a wildcard would open the bucket to every site."""
-    found = [o for pack in packs.values() for o in pack.allowed_origins] + [settings.public_base_url]
+def cors_origins(found: list[str], settings: Settings) -> list[str]:
+    """The packs' origins (PackStore.origins) and the demo's, as bare origins. One bad entry would fail the whole call,
+    so entries that are not http(s) origins (empty, "*", not a URL) are dropped: a wildcard would open the bucket to
+    every site."""
+    found = [*found, settings.public_base_url]
     origins = []
     for value in found:  # a pack's {base} carries the demo's path: CORS wants the origin alone
         try:
@@ -65,10 +67,10 @@ def cors_origins(packs: dict[str, AppPack], settings: Settings) -> list[str]:
     return origins
 
 
-async def set_bucket_cors(storage: Storage, packs: dict[str, AppPack], settings: Settings) -> None:
+async def set_bucket_cors(storage: Storage, packs: PackStore, settings: Settings) -> None:
     """The browser PUTs files straight to the bucket: allow every pack's origins and the demo's. Never stops startup."""
     try:
-        origins = cors_origins(packs, settings)
+        origins = cors_origins(packs.origins(), settings)
         await asyncio.wait_for(asyncio.to_thread(storage.ensure_cors, origins), CORS_SECONDS)
     except TimeoutError:
         logging.getLogger("assistant.storage").warning(
@@ -87,17 +89,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.run_lifespan:
             yield
             return
-        packs = load_packs(settings.packs_dir, settings.public_base_url)
-        if not packs:
+        local = load_packs(settings.packs_dir, settings.public_base_url)
+        registry = load_registry(settings.packs_dir / REGISTRY_FILES[0], settings.apps)
+        if not local and not registry:
             raise PackError(f"no app packs in {settings.packs_dir}")
-        for pack in packs.values():
-            pack.secret()  # fail at startup, not on every request, when a pack's secret is unset
+        for key in [*local.values(), *registry]:
+            key.secret()  # fail at startup, not on every request, when an app's secret is unset
         pool = await open_pool(direct_url(settings), settings.db_schema, settings.db_pool_max)
         saver_pool = await open_saver_pool(direct_url(settings), settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
             await migrate(pool, settings.db_schema, after=checkpointer.setup)  # both under one advisory lock
+            packs = PackStore(local, settings, registry, pool=pool, http=http)  # refuses a local pack over a ceiling
             app.state.packs = packs
             app.state.http = http
             app.state.pool = pool
@@ -108,7 +112,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await set_bucket_cors(app.state.storage, packs, settings)
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
-            def tools_for(pack: AppPack, session: Session) -> McpHttpTools:
+            def tools_for(pack: AppPack, session: Session) -> AppTools:
+                if pack.mcp_url is None:
+                    return NoAppTools()  # an api_base pack: its REST client comes with the contract (Phase 4)
                 return McpHttpTools(pack, session, http)
 
             app.state.tools_for = tools_for

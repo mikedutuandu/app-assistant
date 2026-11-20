@@ -1,6 +1,8 @@
 """What every `/v1` request needs: its app pack, the origin check, the session token, the client IP, and CORS.
 
-Errors are JSON bodies the widget reads (`{"error": ...}`), never FastAPI's `{"detail": ...}`.
+Errors are JSON bodies the widget reads (`{"error": ...}`), never FastAPI's `{"detail": ...}`. Packs come from
+`app.state.packs` (a PackStore): an app nobody registered is 404 `app`; a registered app whose pack can't be had right
+now is 503 `unavailable` (the chat route answers it as a `failed` event instead).
 """
 
 import logging
@@ -12,10 +14,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from assistant.auth import AuthError, Session, verify_session
-from assistant.packs import AppPack
+from assistant.packs import AppKey, AppPack
 
 log = logging.getLogger("assistant.api")
 SERVER_ERROR = {"error": "server", "message": "Something went wrong on our side."}
+APP_DOWN = "The app couldn't be reached. Try again in a minute."
 _CHAT_PATH = re.compile(r"^/v1/chat/([^/]+)/")
 _CORS_HEADERS = [
     (b"access-control-allow-methods", b"GET, POST, DELETE"),
@@ -33,11 +36,30 @@ class ApiError(Exception):
         self.body: dict[str, str] = {"error": error} | ({"message": message} if message is not None else {})
 
 
-def pack_for(app: str, request: Request) -> AppPack:
-    pack = request.app.state.packs.get(app)
-    if pack is None:
+class Unavailable(ApiError):
+    """A registered app whose pack can't be had now: none fetched, no stored copy, no local pack."""
+
+    def __init__(self) -> None:
+        super().__init__(503, "unavailable", APP_DOWN)
+
+
+async def key_for(app: str, request: Request) -> AppKey:
+    """What checks an app's tokens: its pack, or its registry entry while the pack is unavailable."""
+    store = request.app.state.packs
+    key: AppKey | None = await store.get(app) or store.entry(app)
+    if key is None:
         raise ApiError(404, "app")
-    return pack
+    return key
+
+
+async def allowed_origins(store: Any, app: str) -> list[str] | None:
+    """The origins the app's chat may be called from; None for an app nobody registered. While a registered app's
+    pack is unavailable, its site's origin, so the widget can read why."""
+    pack = await store.get(app)
+    if pack is not None:
+        return pack.allowed_origins
+    entry = store.entry(app)
+    return [entry.origin] if entry is not None else None
 
 
 def origin_allowed(pack: AppPack, origin: str) -> bool:
@@ -57,15 +79,33 @@ async def session_for(app: str, request: Request) -> tuple[AppPack, Session]:
     An Origin header must be one of the pack's origins. A request without one (not a browser) is let through:
     the bearer token, not a cookie, is what grants access, so there is no cross-site request to forge.
     """
-    pack = pack_for(app, request)
+    store = request.app.state.packs
+    pack = await store.get(app)
+    if pack is None:
+        entry = store.entry(app)
+        if entry is None:
+            raise ApiError(404, "app")
+        _verified(request, entry)  # a bad token is 401 as always, before saying the app is unavailable
+        raise Unavailable()
     origin = request.headers.get("origin")
     if origin is not None and not origin_allowed(pack, origin):
         raise ApiError(403, "origin")
+    return pack, _verified(request, pack)
+
+
+async def session_or_unavailable(app: str, request: Request) -> tuple[AppPack, Session] | None:
+    """`session_for`, but None (not 503) for an unavailable app: the chat route answers that as a `failed` event."""
     try:
-        session = verify_session(bearer(request), pack)
+        return await session_for(app, request)
+    except Unavailable:
+        return None
+
+
+def _verified(request: Request, key: AppKey) -> Session:
+    try:
+        return verify_session(bearer(request), key)
     except AuthError as e:
         raise ApiError(401, e.reason) from None
-    return pack, session
 
 
 def client_ip(request: Request) -> str:
@@ -104,12 +144,13 @@ class ChatCors:
             return
         headers = {k.lower(): v for k, v in scope.get("headers", [])}
         origin = headers.get(b"origin", b"").decode("latin-1") if b"origin" in headers else None
-        pack = scope["app"].state.packs.get(match.group(1))
-        allowed = origin is not None and pack is not None and origin_allowed(pack, origin)
+        origins = await allowed_origins(scope["app"].state.packs, match.group(1))
+        known = origins is not None
+        allowed = origin is not None and origin != "" and origin in (origins or [])
 
         if scope["method"] == "OPTIONS" and b"access-control-request-method" in headers:
             if not allowed:
-                response = JSONResponse({"error": "origin" if pack else "app"}, 403 if pack else 404)
+                response = JSONResponse({"error": "origin" if known else "app"}, 403 if known else 404)
                 response.headers["Vary"] = "Origin"
                 await response(scope, receive, send)
                 return

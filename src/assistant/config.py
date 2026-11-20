@@ -1,9 +1,13 @@
+import json
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from assistant.packs import RegistryEntry
 
 _SCHEMA = re.compile(r"[a-z_][a-z0-9_]{0,40}")
 
@@ -33,7 +37,13 @@ class Settings(BaseSettings):
     # Supabase Storage's own signed upload links; otherwise through an S3 presigned PUT.
     supabase_url: str | None = None
     supabase_service_key: str | None = None
-    packs_dir: Path = Path("apps")
+    packs_dir: Path = Path("apps")  # the YAML packs, and registry.yaml: the apps trusted to serve their own pack
+    # APPS: the registry as JSON (`[{"id", "site", "secret_env"}]`); when set, apps/registry.yaml is not read.
+    apps: Annotated[list[RegistryEntry] | None, NoDecode] = None
+    # The owner's ceilings, over every pack (an app's own pack can never raise them):
+    max_message_usd: float = 0.25  # caps a pack's message_usd_cap
+    allowed_models: Annotated[list[str] | None, NoDecode] = None  # ALLOWED_MODELS="a/b,c/d"; unset: any model
+    max_app_daily_usd: float | None = None  # one app's model spend per UTC day; over it, "resting". Unset: off
     public_base_url: str
     demo_daily_usd_cap: float = 3.0
     run_lifespan: bool = True
@@ -48,8 +58,30 @@ class Settings(BaseSettings):
             raise ValueError("DB_SCHEMA must be lowercase letters, digits and _, starting with a letter or _")
         return value
 
+    @field_validator("apps", mode="before")
+    @classmethod
+    def _apps_json(cls, value: object) -> object:
+        if isinstance(value, str):
+            return json.loads(value) if value.strip() else None
+        return value
+
+    @field_validator("allowed_models", mode="before")
+    @classmethod
+    def _model_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            if value.strip().startswith("["):
+                return json.loads(value)
+            return [m.strip() for m in value.split(",") if m.strip()] or None
+        return value
+
     @field_validator(
-        "s3_endpoint", "cron_secret", "database_url_unpooled", "supabase_url", "supabase_service_key", mode="before"
+        "s3_endpoint",
+        "cron_secret",
+        "database_url_unpooled",
+        "supabase_url",
+        "supabase_service_key",
+        "max_app_daily_usd",
+        mode="before",
     )
     @classmethod
     def _empty_is_none(cls, value: object) -> object:

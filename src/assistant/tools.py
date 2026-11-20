@@ -85,6 +85,24 @@ def _http_message(response: httpx.Response) -> str | None:
     return None
 
 
+class NoAppTools:
+    """For a pack the bot has no client for yet: every call fails as `unavailable`, so a turn ends with `failed`."""
+
+    timer: TurnTimer | None = None
+
+    async def context(self) -> AppContext:
+        raise ToolError("unavailable")
+
+    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
+        raise ToolError("unavailable")
+
+    async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None:
+        raise ToolError("unavailable")
+
+    async def charge(self, cost_usd: float, ref: str) -> None:
+        raise ToolError("unavailable")
+
+
 class McpHttpTools:
     def __init__(self, pack: AppPack, session: Session, client: httpx.AsyncClient, timer: TurnTimer | None = None):
         self.timer = timer  # when set, every call to the app is timed, named by the app's tool name

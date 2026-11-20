@@ -214,7 +214,7 @@ def _result(rpc_id: Any, result: dict) -> JSONResponse:
 @router.post("/demo/mcp")
 async def mcp(request: Request) -> Response:
     state = request.app.state
-    pack = state.packs.get("demo")
+    pack = await state.packs.get("demo")
     if pack is None:
         return JSONResponse({"error": "app"}, status_code=404)
     try:

@@ -12,7 +12,7 @@ from typing import Literal
 
 import jwt
 
-from assistant.packs import AppPack
+from assistant.packs import AppKey
 
 MAX_TTL = timedelta(hours=1)
 LEEWAY_SECONDS = 30
@@ -38,7 +38,7 @@ class Session:
     expires_at: datetime
 
 
-def mint_session(pack: AppPack, workspace: str, ttl: timedelta = MAX_TTL) -> str:
+def mint_session(pack: AppKey, workspace: str, ttl: timedelta = MAX_TTL) -> str:
     if ttl > MAX_TTL:
         raise ValueError("session ttl must be at most 1 hour")
     now = datetime.now(UTC)
@@ -52,7 +52,7 @@ def mint_session(pack: AppPack, workspace: str, ttl: timedelta = MAX_TTL) -> str
     return jwt.encode(claims, pack.secret(), algorithm="HS256")
 
 
-def _verify(token: str, pack: AppPack, access: str) -> dict:
+def _verify(token: str, pack: AppKey, access: str) -> dict:
     """The checked claims of a token for `pack` whose `access` must be `access`; AuthError otherwise."""
     try:
         # Leeway covers clock skew on iat; expiry itself is checked strictly below.
@@ -82,7 +82,7 @@ def _verify(token: str, pack: AppPack, access: str) -> dict:
     return claims
 
 
-def verify_session(token: str, pack: AppPack) -> Session:
+def verify_session(token: str, pack: AppKey) -> Session:
     claims = _verify(token, pack, "draft")
     return Session(
         app=claims["iss"],
@@ -93,6 +93,6 @@ def verify_session(token: str, pack: AppPack) -> Session:
     )
 
 
-def verify_delete_token(token: str, pack: AppPack) -> str:
+def verify_delete_token(token: str, pack: AppKey) -> str:
     """The workspace a delete token (access "delete", minted by the app with the pack's secret) may delete."""
     return _verify(token, pack, "delete")["sub"]

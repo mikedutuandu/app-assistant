@@ -1,0 +1,5 @@
+# The apps the bot trusts to serve their own pack at {site}/.well-known/app-assistant.json (docs/integration.md).
+# Each entry: id (the pack's id and its tokens' iss), site, and secret_env (the environment variable holding the
+# app's shared secret; never the secret itself). The APPS environment variable (the same list as JSON) replaces
+# this file when set.
+apps: []

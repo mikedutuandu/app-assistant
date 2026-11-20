@@ -253,7 +253,8 @@ def test_cors_origins_drop_empty_wildcard_and_invalid_entries(test_settings: Set
         "b": SimpleNamespace(allowed_origins=["http://localhost:3000"]),
     }
     settings = test_settings.model_copy(update={"public_base_url": "https://bot.example/demo"})
-    assert cors_origins(packs, settings) == ["https://a.example", "http://localhost:3000", "https://bot.example"]
+    found = [o for pack in packs.values() for o in pack.allowed_origins]
+    assert cors_origins(found, settings) == ["https://a.example", "http://localhost:3000", "https://bot.example"]
 
 
 @pytest.mark.db
