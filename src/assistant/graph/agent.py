@@ -539,7 +539,7 @@ class _Agent:
 
         return WriterDeps(
             pack=self.t.pack,
-            llm=self.t.deps.llm,
+            llm=self.t.llm,
             facts=list(self.facts),
             readings=list(self.state.get("readings", [])),
             context=ctx,

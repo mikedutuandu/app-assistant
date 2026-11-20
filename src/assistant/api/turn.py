@@ -40,7 +40,8 @@ from assistant.limits import (
     user_key,
 )
 from assistant.packs import AppPack
-from assistant.tools import AppTools, ToolError
+from assistant.timing import Outcome, TimedLlm, TurnTimer, current, log_turn
+from assistant.tools import AppTools, McpHttpTools, ToolError
 
 log = logging.getLogger("assistant.turn")
 
@@ -176,7 +177,11 @@ async def _save_lines(pool, t: TurnInput, chat_id: str, message_id: str, saved: 
         )
 
 
-def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str], Meter], Awaitable[list[FileReading]]]:
+def _file_reader(
+    state: Any, t: TurnInput, chat_id: str, timer: TurnTimer
+) -> Callable[[list[str], Meter], Awaitable[list[FileReading]]]:
+    llm = TimedLlm(state.llm, timer)
+
     async def read_files(ids: list[str], meter: Meter) -> list[FileReading]:
         async with state.pool.connection() as conn:
             cur = await conn.execute(
@@ -193,7 +198,7 @@ def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str],
             rec = FileRecord(id=row[0], kind=row[1], mime=row[2], bytes=row[3], storage_key=row[4])
             # which kind it is is only known here: say what the bot is doing before the slow part
             await meter.emit("status", {"step": "listening" if rec.kind == "voice" else "reading"})
-            readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool, meter))
+            readings.append(await read_file(rec, t.pack, llm, state.storage, state.pool, meter))
         return readings
 
     return read_files
@@ -238,8 +243,12 @@ def _cost_recorder(
 
 async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     started = time.monotonic()
+    timer = TurnTimer()
+    current.set(timer)  # the graph's Deps pick it up
     message_id = new_id()
     tools = state.tools_for(t.pack, t.session)
+    if isinstance(tools, McpHttpTools):
+        tools.timer = timer
     try:
         await _gate(state, t, tools)
     except _Refused as r:
@@ -288,22 +297,25 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         lambda: tools,
         state.checkpointer,
         on_event,
-        _file_reader(state, t, chat_id),
+        _file_reader(state, t, chat_id, timer),
         lambda url: read_link(url, state.http),
         on_cost,
     )
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
+    capped = False
     try:
         # the turn's id rides on the user's message, so a reload can show each turn's drafts under its reply
         human = HumanMessage(t.text, additional_kwargs={"turn": message_id})
         inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id}
         final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
+        capped = bool(final.get("capped"))
         if final.get("failed"):  # a model call failed after the turn's tools had run: their work is kept
             failure = ModelFailed()
     except asyncio.CancelledError:
         await asyncio.shield(settle_charges())  # the client left: what was spent is still charged
+        log_turn(timer, t.pack.id, "cancelled")
         raise
     except Exception as e:  # noqa: BLE001 - every failure is told to the user and its cost still charged
         failure = e
@@ -311,6 +323,8 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     await settle_charges()  # before `done` or `failed`: no ref reaches the browser before its charge
 
     took = time.monotonic() - started
+    outcome: Outcome = "failed" if failure is not None or unsaved else "capped" if capped else "done"
+    log_turn(timer, t.pack.id, outcome)
     if failure is None and unsaved:
         log.error("turn failed app=%s message=%s error=not_stored cost=%.6f", t.pack.id, message_id, cost)
         await emit("failed", {"error": "server", "message": OUR_FAULT})

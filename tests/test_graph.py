@@ -61,12 +61,12 @@ async def test_conversation_resumes_from_checkpointer(caplog):
     assert "unregistered" not in caplog.text  # serializer() allows the state's own types
 
 
-async def test_context_reloaded_after_five_minutes(monkeypatch):
+async def test_context_reloaded_after_ten_minutes(monkeypatch):
     clock = [1_000.0]
     monkeypatch.setattr(nodes, "_now", lambda: clock[0])
     h = Harness(FakeLlm({"CONVERSE": ["A", "B", "C"]}))
     await h.send("one")
-    clock[0] += 299
+    clock[0] += 599
     await h.send("two")
     assert h.tools.calls == ["context"]
     clock[0] += 2

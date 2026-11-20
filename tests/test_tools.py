@@ -241,3 +241,16 @@ async def test_other_errors_are_refused():
     assert (e1.value.kind, e1.value.user_message) == ("refused", "text is empty")
     assert (e2.value.kind, e2.value.user_message) == ("refused", "bad args")
     assert e3.value.kind == "refused"
+
+
+@respx.mock
+async def test_calls_to_the_app_are_timed_by_the_apps_tool_name():
+    from assistant.timing import TurnTimer
+
+    respx.post(URL).mock(return_value=ok({"id": "d1", "edit_url": None}))
+    async with httpx.AsyncClient() as client:
+        tools = make_tools(client)
+        tools.timer = TurnTimer()
+        await tools.save_draft("hello", [], [], "k1")
+        await tools.charge(0.01, "m:1")
+    assert [s["name"] for s in tools.timer.summary()["tool"]] == ["save_draft", "assistant_charge"]
