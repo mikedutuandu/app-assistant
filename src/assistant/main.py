@@ -14,8 +14,8 @@ from assistant.api import chat, deps, internal, turn
 from assistant.api import files as files_api
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, direct_url, migrate, open_pool, open_saver_pool
+from assistant.demo import api as demo_api
 from assistant.demo import routes as demo_routes
-from assistant.demo import tools as demo_tools
 from assistant.files.signing import load_signing_key
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
@@ -154,7 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(chat.router)
     app.include_router(chat.workspaces)
     app.include_router(demo_routes.router)
-    app.include_router(demo_tools.router)
+    app.include_router(demo_api.router)
 
     @app.get("/health")
     async def health() -> dict[str, bool]:

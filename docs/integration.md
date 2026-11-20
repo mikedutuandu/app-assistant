@@ -330,6 +330,56 @@ key on their own.
 The package's tests send every scenario below (its `match` not `null`) to `handle`, and check that its tokens and the
 bot's verify on both sides.
 
+### A worked example: a Next.js app
+
+Four files; the pack, your data functions and who is signed in are the only things that are yours.
+
+```ts
+// lib/assistant.ts: the host, one per server
+import { createAssistantHost } from "@app-assistant/host/server";
+import pack from "./app-assistant.json";
+
+export const assistant = createAssistantHost({
+  appId: "shipnote",
+  secret: process.env.SHIPNOTE_SESSION_SECRET!,
+  pack,
+  context: async (ws) => ({ language: "en", credits_left: await creditsOf(ws) }),
+  saveDraft: async (ws, draft, key) => saveDraftOnce(ws, key, draft), // → {draft_id, edit_url}
+  saveMaterial: async (ws, facts, draftId, key) => keepFactsOnce(ws, key, facts, draftId),
+  charge: async (ws, costUsd, ref) =>
+    (await takeCredits(ws, ref, costUsd)) ? { ok: true } : { outOfCredits: "You're out of credits." },
+});
+```
+
+```ts
+// app/api/assistant/[endpoint]/route.ts, and the same file at app/.well-known/app-assistant.json/route.ts
+import { assistant } from "@/lib/assistant";
+
+const handle = async (req: Request) => (await assistant.handle(req)) ?? new Response(null, { status: 404 });
+export { handle as GET, handle as POST };
+```
+
+```ts
+// app/api/assistant/session/route.ts: yours, because only your app knows who is signed in
+import { assistant } from "@/lib/assistant";
+
+export async function POST() {
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+  return Response.json({ token: await assistant.signToken(user.workspaceId, "draft") });
+}
+```
+
+```tsx
+// in a client component of your dashboard
+import { AssistantChat } from "@app-assistant/host/react";
+
+<AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />;
+```
+
+Your pack's `api_base` is `https://shipnote.app/api/assistant` (the route's own path), and the bot's owner registers
+`shipnote` (the registry entry above). Add `once` as in the first example when two taps of Add can arrive together.
+
 ## Checking your app
 
 `tests/contract/scenarios.json` in the bot's repo lists the calls the bot makes. Each scenario has:

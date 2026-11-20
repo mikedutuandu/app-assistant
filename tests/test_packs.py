@@ -43,12 +43,12 @@ def test_loads_demo_pack():
     assert pack.demo is True
     assert pack.message_usd_cap == 0.10  # one write with a rewrite on Sonnet, then the reply after it
     assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
-    assert pack.tools["charge"] == "assistant_charge"
+    assert pack.api_base == "http://testserver/demo/api/assistant" and pack.mcp_url is None and pack.tools is None
 
 
 def test_base_url_is_substituted():
     pack = load_packs(Path("apps"), base_url="https://bot.example.com/")["demo"]
-    assert pack.mcp_url == "https://bot.example.com/demo/mcp"
+    assert pack.api_base == "https://bot.example.com/demo/api/assistant"
     assert pack.allowed_origins == ["https://bot.example.com"]
 
 

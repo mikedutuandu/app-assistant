@@ -1,16 +1,21 @@
-"""The Shipnote demo: session cookie, its tiny MCP, idempotent drafts, the daily cleanup."""
+"""The Shipnote demo: session cookie, its four endpoints of contract 1, idempotent drafts, the daily cleanup."""
 
+import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
+import jwt
 import pytest
-from chat_api import PNG, Api
+from chat_api import FACT, LAUNCH, PNG, SECRET, Api, happy_script, parse_sse
 
 from assistant.auth import verify_session
+from assistant.demo.api import image_allowed
 from assistant.demo.cleanup import cleanup_demo
-from assistant.demo.tools import image_allowed
 from assistant.files.storage import Storage
 from assistant.graph.build import thread_id
+from assistant.packs import load_packs
+from assistant.tools import RestHttpTools, tools_for
 
 pytestmark = pytest.mark.db
 
@@ -19,24 +24,17 @@ async def session(api: Api, **headers) -> httpx.Response:
     return await api.client.post("/demo/api/assistant/session", headers=headers)
 
 
-def rpc(method: str, params: dict | None = None, rpc_id: int | None = 1) -> dict:
-    body: dict = {"jsonrpc": "2.0", "method": method, "params": params or {}}
-    if rpc_id is not None:
-        body["id"] = rpc_id
-    return body
+BASE = "/demo/api/assistant"
 
 
-async def call(api: Api, token: str, tool: str, args: dict, key: str | None = None) -> httpx.Response:
+async def call(api: Api, token: str, endpoint: str, body: dict, key: str | None = None) -> httpx.Response:
     headers = {"Authorization": f"Bearer {token}"} | ({"Idempotency-Key": key} if key else {})
-    return await api.client.post(
-        "/demo/mcp", json=rpc("tools/call", {"name": tool, "arguments": args}), headers=headers
-    )
+    return await api.client.post(f"{BASE}/{endpoint}", json=body, headers=headers)
 
 
-def text_of(r: httpx.Response):
-    import json
-
-    return json.loads(r.json()["result"]["content"][0]["text"])
+def answer(r: httpx.Response) -> dict:
+    assert r.status_code == 200, r.text
+    return r.json()
 
 
 async def test_demo_session_sets_cookie_and_token_verifies(api: Api):
@@ -67,42 +65,67 @@ async def test_demo_session_limited_to_10_an_hour_per_ip(api: Api):
     assert (await session(api, **{"X-Forwarded-For": "203.0.113.51"})).status_code == 200
 
 
-async def test_demo_mcp_rejects_bad_token(api: Api):
-    for headers in ({}, {"Authorization": "Bearer nonsense"}):
-        r = await api.client.post("/demo/mcp", json=rpc("tools/list"), headers=headers)
-        assert r.status_code == 401
-        assert r.json() == {"error": "invalid"}
-    real = api.headers()["Authorization"]  # a token for another pack's id
-    r = await api.client.post("/demo/mcp", json=rpc("tools/list"), headers={"Authorization": real})
-    assert r.status_code == 401
+async def test_the_demo_pack_is_a_rest_app_on_its_own_endpoints(test_settings):
+    pack = load_packs(Path("apps"), base_url="https://bot.example.com")["demo"]
+    assert pack.api_base == "https://bot.example.com/demo/api/assistant" and pack.mcp_url is None
 
 
-async def test_demo_mcp_protocol(api: Api):
+async def test_demo_endpoints_reject_a_bad_token(api: Api):
+    good = (await session(api)).json()["token"]
+    other = api.headers()["Authorization"]  # a token for another pack's id
+    delete = jwt.encode(
+        {"iss": "demo", "sub": "demo:x", "access": "delete", "iat": int(time.time()), "exp": int(time.time()) + 60},
+        SECRET,
+        algorithm="HS256",
+    )
+    for endpoint in ("context", "drafts", "material", "charge"):
+        for headers in (
+            {},
+            {"Authorization": "Bearer nonsense"},
+            {"Authorization": other},
+            {"Authorization": f"Bearer {delete}"},
+        ):
+            r = await api.client.post(f"{BASE}/{endpoint}", json={}, headers=headers | {"Idempotency-Key": "k"})
+            assert (r.status_code, r.json()) == (401, {"error": "unauthorized"}), (endpoint, headers)
+    assert (await call(api, good, "context", {})).status_code == 200
+
+
+async def test_demo_endpoints_need_an_object_body_and_a_key(api: Api):
     token = (await session(api)).json()["token"]
-    auth = {"Authorization": f"Bearer {token}"}
-    init = (await api.client.post("/demo/mcp", json=rpc("initialize"), headers=auth)).json()
-    assert init["result"]["capabilities"] == {"tools": {}}
-    tools = (await api.client.post("/demo/mcp", json=rpc("tools/list"), headers=auth)).json()["result"]["tools"]
-    assert sorted(t["name"] for t in tools) == ["assistant_charge", "assistant_context", "save_draft", "save_material"]
-    note = await api.client.post("/demo/mcp", json=rpc("notifications/initialized", rpc_id=None), headers=auth)
-    assert note.status_code == 202 and note.content == b""
-    assert text_of(await call(api, token, "assistant_charge", {"cost_usd": 0.01, "ref": "m"})) == {}
-    unknown = await call(api, token, "delete_everything", {})
-    assert unknown.json()["error"]["code"] == -32602
+    for endpoint, body in (
+        ("drafts", {"text": "a"}),
+        ("material", {"facts": ["a"]}),
+        ("charge", {"cost_usd": 1, "ref": "r"}),
+    ):
+        r = await call(api, token, endpoint, body)  # no Idempotency-Key
+        assert (r.status_code, r.json()["error"]) == (400, "invalid"), endpoint
+        assert (await call(api, token, endpoint, body, key="k" * 201)).status_code == 400
+        assert (await call(api, token, endpoint, body, key="k" * 200)).status_code == 200
+    raw = await api.client.post(
+        f"{BASE}/context",
+        content=b"[1]",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    assert (raw.status_code, raw.json()["error"]) == (400, "invalid")
+    assert (await call(api, token, "drafts", {"text": "  "}, key="k1")).json()["error"] == "invalid"
+    assert (await call(api, token, "material", {"facts": [{"text": "a"}]}, key="k1")).status_code == 400
+    assert (await call(api, token, "charge", {"cost_usd": "x", "ref": "r"}, key="k1")).status_code == 400
+    assert answer(await call(api, token, "charge", {"cost_usd": 0.01, "ref": "m"}, key="m")) == {"ok": True}
 
 
 async def test_demo_save_draft_idempotent(api: Api):
     r = await session(api)
     token, demo_id = r.json()["token"], r.cookies["demo_id"]
-    first = text_of(await call(api, token, "save_draft", {"text": "Auto-reply is live", "media": []}, key="k1"))
-    again = text_of(await call(api, token, "save_draft", {"text": "Auto-reply is live", "media": []}, key="k1"))
+    body = {"text": "Auto-reply is live", "thread": [], "media": []}
+    first = answer(await call(api, token, "drafts", body, key="k1"))
+    again = answer(await call(api, token, "drafts", body, key="k1"))
     assert first == again and first["edit_url"] is None
-    other = text_of(await call(api, token, "save_draft", {"text": "Second", "media": []}, key="k2"))
-    assert other["id"] != first["id"]
+    other = answer(await call(api, token, "drafts", {"text": "Second", "thread": [], "media": []}, key="k2"))
+    assert other["draft_id"] != first["draft_id"]
     assert await api.count("demo_drafts", f"demo:{demo_id}") == 2
 
-    ctx = text_of(await call(api, token, "assistant_context", {}))
-    assert ctx["recent_posts"] == ["Second", "Auto-reply is live"]
+    ctx = answer(await call(api, token, "context", {}))
+    assert ctx["recent_posts"] == ["Second", "Auto-reply is live"] and ctx["language"] == "en"
     assert ctx["credits_left"] is None and ctx["voice"].startswith("friendly")
 
     api.client.cookies.set("demo_id", demo_id)
@@ -115,21 +138,19 @@ async def test_demo_save_draft_idempotent(api: Api):
 async def test_demo_saves_a_thread(api: Api):
     r = await session(api)
     token, demo_id = r.json()["token"], r.cookies["demo_id"]
-    tools = await api.client.post("/demo/mcp", json=rpc("tools/list"), headers={"Authorization": f"Bearer {token}"})
-    save = next(t for t in tools.json()["result"]["tools"] if t["name"] == "save_draft")
-    assert save["inputSchema"]["properties"]["thread"]["type"] == "array"
     long_post = "b" * 3000  # each post is its own text: the whole thread may pass one text's cap
     args = {"text": "First post", "thread": [long_post, "Third post", "  "], "media": []}
-    saved = text_of(await call(api, token, "save_draft", args, key="t1"))
-    assert text_of(await call(api, token, "save_draft", args, key="t1")) == saved
+    saved = answer(await call(api, token, "drafts", args, key="t1"))
+    assert answer(await call(api, token, "drafts", args, key="t1")) == saved
     assert await api.count("demo_drafts", f"demo:{demo_id}") == 1
     api.client.cookies.set("demo_id", demo_id)
     (listed,) = (await api.client.get("/demo/api/drafts")).json()
     assert listed["text"] == "First post" and listed["thread"] == [long_post, "Third post"]
-    ctx = text_of(await call(api, token, "assistant_context", {}))
+    ctx = answer(await call(api, token, "context", {}))
     assert ctx["recent_posts"] == ["First post"]
     too_many = {"text": "a", "thread": ["x"] * 30}
-    assert (await call(api, token, "save_draft", too_many, key="t2")).json()["result"]["isError"] is True
+    refused = await call(api, token, "drafts", too_many, key="t2")
+    assert (refused.status_code, refused.json()["error"]) == (400, "invalid")
 
 
 async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
@@ -145,11 +166,12 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
         return httpx.Response(200, content=PNG, headers={"content-type": "image/png"})
 
     api.app.state.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    ok = text_of(await call(api, token, "save_draft", {"text": "t", "media": [{"url": url, "alt": ""}]}, key="i1"))
-    assert api.storage.get(f"demo/{ws}/drafts/{ok['id']}") == PNG
+    picture = {"url": url, "alt": "", "mime": "image/png"}
+    ok = answer(await call(api, token, "drafts", {"text": "t", "thread": [], "media": [picture]}, key="i1"))
+    assert api.storage.get(f"demo/{ws}/drafts/{ok['draft_id']}") == PNG
 
-    bad = await call(api, token, "save_draft", {"text": "t", "media": [{"url": "https://evil.example/x.png"}]}, "i2")
-    assert bad.json()["result"]["isError"] is True
+    evil = {"text": "t", "thread": [], "media": [{"url": "https://evil.example/x.png", "alt": "", "mime": "image/png"}]}
+    assert (await call(api, token, "drafts", evil, "i2")).status_code == 400
     api.storage.put("demo/demo:someone-else/t1/f1", PNG, "image/png")
     for n, other in enumerate(
         [
@@ -158,8 +180,8 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
             url.replace(f"/demo/{ws.replace(':', '%3A')}/t1/f1", f"/demo/{ws.replace(':', '%3A')}/../x/f1"),
         ]
     ):
-        refused = await call(api, token, "save_draft", {"text": "t", "media": [{"url": other}]}, f"o{n}")
-        assert refused.json()["result"]["isError"] is True, other
+        refused = await call(api, token, "drafts", {"text": "t", "thread": [], "media": [{"url": other}]}, f"o{n}")
+        assert refused.status_code == 400, other
     assert served["n"] == 1  # none of the refused URLs was fetched
     assert await api.count("demo_drafts", ws) == 1
 
@@ -167,8 +189,8 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
         transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"x" * (10 * 1024 * 1024 + 1)))
     )
     api.app.state.http = big
-    too_big = await call(api, token, "save_draft", {"text": "t", "media": [{"url": url}]}, key="i3")
-    assert too_big.json()["result"]["isError"] is True
+    too_big = await call(api, token, "drafts", {"text": "t", "thread": [], "media": [{"url": url}]}, key="i3")
+    assert too_big.status_code == 400 and too_big.json()["message"] == "That image is too big."
 
 
 def test_demo_image_prefix_follows_the_endpoint_path_and_bucket(test_settings):
@@ -192,11 +214,11 @@ def test_demo_image_prefix_follows_the_endpoint_path_and_bucket(test_settings):
 async def test_demo_save_material_idempotent(api: Api):
     r = await session(api)
     token, demo_id = r.json()["token"], r.cookies["demo_id"]
-    args = {"facts": [{"id": "f1", "text": "Replies in 2 minutes"}, {"text": "Fixed 3 bugs"}], "draft_id": None}
-    await call(api, token, "save_material", args, key="m1")
-    await call(api, token, "save_material", args, key="m1")
+    args = {"facts": ["Replies in 2 minutes", "Fixed 3 bugs"], "draft_id": None}
+    assert answer(await call(api, token, "material", args, key="m1")) == {"ok": True}
+    await call(api, token, "material", args, key="m1")
     assert await api.count("demo_facts", f"demo:{demo_id}") == 2
-    await call(api, token, "save_material", args, key="m2")
+    await call(api, token, "material", args, key="m2")
     assert await api.count("demo_facts", f"demo:{demo_id}") == 4
 
 
@@ -209,13 +231,10 @@ async def test_demo_workspace_holds_at_most_100_drafts(api: Api):
                 "insert into demo_drafts (id, workspace, text, idem_key) values (%s, %s, 'x', %s)",
                 (f"d{i}", ws, f"k{i}"),
             )
-    last = text_of(await call(api, token, "save_draft", {"text": "the 100th"}, key="n100"))
-    full = await call(api, token, "save_draft", {"text": "one more"}, key="n101")
-    assert full.json()["result"] == {
-        "isError": True,
-        "content": [{"type": "text", "text": "The demo is full for today."}],
-    }
-    assert text_of(await call(api, token, "save_draft", {"text": "the 100th"}, key="n100")) == last  # a repeat
+    last = answer(await call(api, token, "drafts", {"text": "the 100th"}, key="n100"))
+    full = await call(api, token, "drafts", {"text": "one more"}, key="n101")
+    assert (full.status_code, full.json()) == (429, {"error": "demo_full", "message": "The demo is full for today."})
+    assert answer(await call(api, token, "drafts", {"text": "the 100th"}, key="n100")) == last  # a repeat
     assert await api.count("demo_drafts", ws) == 100
 
 
@@ -228,12 +247,15 @@ async def test_demo_workspace_holds_at_most_300_facts(api: Api):
                 "insert into demo_facts (id, workspace, text, idem_key) values (%s, %s, %s, 'old')",
                 (f"f{i}", ws, f"t{i}"),
             )
-    two = {"facts": [{"text": "a"}, {"text": "b"}], "draft_id": None}
-    assert "isError" not in (await call(api, token, "save_material", two, key="m1")).json()["result"]
-    assert "isError" not in (await call(api, token, "save_material", two, key="m1")).json()["result"]  # a repeat
-    full = await call(api, token, "save_material", {"facts": [{"text": "c"}], "draft_id": None}, key="m2")
-    assert full.json()["result"]["isError"] is True
-    assert full.json()["result"]["content"][0]["text"] == "The demo is full for today."
+    two = {"facts": ["a", "b"], "draft_id": None}
+    assert (await call(api, token, "material", two, key="m1")).status_code == 200
+    assert (await call(api, token, "material", two, key="m1")).status_code == 200  # a repeat
+    full = await call(api, token, "material", {"facts": ["c"], "draft_id": None}, key="m2")
+    assert (full.status_code, full.json()["error"], full.json()["message"]) == (
+        429,
+        "demo_full",
+        "The demo is full for today.",
+    )
     assert await api.count("demo_facts", ws) == 300
 
 
@@ -539,3 +561,54 @@ async def test_cleanup_endpoint_runs_with_the_secret_and_removes_day_old_rows(ap
     async with api.pool.connection() as conn:
         cur = await conn.execute("select id from demo_facts")
         assert [x[0] for x in await cur.fetchall()] == ["n"]
+
+
+async def test_a_demo_turn_and_its_add_go_through_rest_http_tools(api: Api, monkeypatch, test_settings):
+    """The demo is an app like any other: the bot's turn reads its context, and Add saves, over the four endpoints."""
+    monkeypatch.setenv("DEMO_SESSION_SECRET", SECRET)
+    pack = load_packs(Path("apps"), base_url="http://testserver")["demo"]
+    api.app.state.packs = type(api.app.state.packs)({"demo": pack}, test_settings)
+    made: list = []
+    paths: list[str] = []
+
+    class Recording(httpx.ASGITransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            paths.append(request.url.path)
+            return await super().handle_async_request(request)
+
+    async with httpx.AsyncClient(transport=Recording(app=api.app), base_url="http://testserver") as client:
+
+        def factory(p, s):
+            made.append(tools_for(p, s, client))
+            return made[-1]
+
+        api.app.state.tools_for = factory
+        api.llm.script = happy_script()
+        token = (await session(api)).json()["token"]
+        demo_id = api.client.cookies["demo_id"]
+        r = await api.client.post(
+            "/v1/chat/demo/messages",
+            json={"thread_id": None, "text": FACT, "file_ids": [], "draft_id": None},
+            headers={"Authorization": f"Bearer {token}", "X-Forwarded-For": "203.0.113.77"},
+        )
+        assert r.status_code == 200, r.text
+        events = parse_sse(r.text)
+        assert events[-1][0] == "done", events
+        tid = next(p for k, p in events if k == "thread")["thread_id"]
+        shown = next(p for k, p in events if k == "draft")
+        added = await api.client.post(
+            f"/v1/chat/demo/threads/{tid}/actions",
+            json={"action_id": "a1", "kind": "add_draft", "draft_id": shown["id"]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert added.status_code == 200, added.text
+
+    assert isinstance(made[0], RestHttpTools)
+    assert paths[0] == f"{BASE}/context" and f"{BASE}/drafts" in paths and f"{BASE}/material" in paths
+    assert not any(path.endswith("/mcp") for path in paths)
+    assert added.json()["draft_id"] and added.json()["edit_url"] is None
+    ws = f"demo:{demo_id}"
+    assert await api.count("demo_drafts", ws) == 1 and await api.count("demo_facts", ws) >= 1
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select text from demo_drafts where workspace = %s", (ws,))
+        assert [row[0] for row in await cur.fetchall()] == [LAUNCH]

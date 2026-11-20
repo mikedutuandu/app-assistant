@@ -232,9 +232,36 @@ HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools
 - **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.
 - **Charge.** `assistant_charge` is called once per model call, as it ends, with the ref `"<message id>:<n>"` (n counts the message's calls from 1), and charges once per `ref`: a message makes several charges. The browser first sees the message id in the `done` event, after every charge.
 
-## Add an app
+## Add the assistant to your app in 3 steps
 
-Two parts: a pack file here, and a few things in the app.
+Your app needs no change to this bot. The whole contract is one page: [`docs/integration.md`](docs/integration.md).
+
+1. **Register the app.** The bot's owner adds it to `apps/registry.yaml` and sets its secret as an environment
+   variable (shared with the app, never in git):
+
+   ```yaml
+   apps:
+     - id: shipnote
+       site: https://shipnote.app
+       secret_env: SHIPNOTE_SESSION_SECRET
+   ```
+
+2. **Serve the pack and the four endpoints.** The pack is a JSON file at `{site}/.well-known/app-assistant.json`; the
+   endpoints are `POST {api_base}/context`, `/drafts`, `/material` and `/charge`, each checking the user's token. In a
+   JavaScript app, `@app-assistant/host/server` does both from four functions you write (`sdk/js/README.md`); in any
+   other language, follow the page above, whose scenarios (`tests/contract/scenarios.json`) check your app.
+3. **Put the chat window on the page.** `<AssistantChat app="shipnote" botUrl="https://bot.example.com"
+   sessionUrl="/api/assistant/session" />` (`@app-assistant/host/react`), or one script tag:
+   `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`.
+   Your session route signs the token for the signed-in user.
+
+The bot's own demo (`/demo`) is built this way too: `apps/demo.yaml` has `api_base: {base}/demo/api/assistant`, and
+`src/assistant/demo/api.py` serves the four endpoints.
+
+## Add an app (a pack file, or MCP)
+
+The 3 steps above are the way for a new app. This section is the pack file's fields, and the older way an app can be
+reached: over MCP (`mcp_url`, with four tools).
 
 ### 1. A pack: `apps/<id>.yaml`
 
@@ -244,12 +271,13 @@ Two parts: a pack file here, and a few things in the app.
 |---|---|
 | `id` | App id. It is the `iss` claim of the app's tokens and the `data-app` of the script tag. |
 | `name` | Name shown in the widget. |
-| `mcp_url` | The app's MCP endpoint. `{base}` becomes `PUBLIC_BASE_URL`. |
+| `api_base` | The app's four endpoints of contract 1 (`{api_base}/context`, `/drafts`, `/material`, `/charge`). `{base}` becomes `PUBLIC_BASE_URL`. Set this or `mcp_url`, not both. |
+| `mcp_url` | Or the app's MCP endpoint. `{base}` becomes `PUBLIC_BASE_URL`. |
 | `secret_env` | Name of the environment variable holding the app's signing secret. Set it here and in the app. |
 | `allowed_origins` | Origins allowed to use the widget; the `Origin` header is checked on every `/v1` request. |
 | `guide` | What a good story from this app has, in plain words, and what the bot must never do (`interview_guide` is the old name and is refused). It steers the conversation and the writer. |
 | `writes` | What to write: per item `kind` (`x_post` or `x_thread`), `count`, `instructions`, and optional `max_posts` (threads), `max_chars`, `no_links`, `no_dashes`, `may_carry_image`. |
-| `tools` | The app's tool names for `context`, `save_draft`, `save_material`, `charge`. |
+| `tools` | With `mcp_url` only: the app's tool names for `context`, `save_draft`, `save_material`, `charge`. |
 | `models` | OpenRouter ids: `chat` (the conversation) with `chat_reasoning` (`none` or `low`; default `low`) and optional `chat_temperature`, `writer` (the drafts) with `writer_reasoning` (`none` or `low`), `main`, `cheap`, `vision`, and optional `fallbacks`. A model whose thinking is mandatory (Sonnet 5.5) thinks at high effort when sent `none`: use `low`. |
 | `files` | Optional caps: `image_mb`, `pdf_mb`, `pdf_pages`, `voice_seconds`, `per_message`, `kinds` (image, pdf, voice). |
 | `message_usd_cap` | Most the bot may spend on one message. |

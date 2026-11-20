@@ -9,7 +9,7 @@ from assistant.config import Settings
 from assistant.db import migrate, new_id, open_pool, open_saver_pool
 from assistant.main import create_app
 from assistant.packs import PackError
-from assistant.tools import McpHttpTools
+from assistant.tools import RestHttpTools
 
 pytestmark = pytest.mark.db
 
@@ -164,12 +164,12 @@ async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, m
         assert app.state.pool is not None
         assert app.state.checkpointer is not None
         assert app.state.checkpointer.serde.__class__.__name__ == "JsonPlusSerializer"
-        assert app.state.packs["demo"].mcp_url == "http://testserver/demo/mcp"
+        assert app.state.packs["demo"].api_base == "http://testserver/demo/api/assistant"
         assert app.state.llm._headers()["HTTP-Referer"] == "http://testserver"
         assert app.state.storage.bucket == "test-bucket"
         http = app.state.http
         assert not http.is_closed
-        assert isinstance(app.state.tools_for(app.state.packs["demo"], None), McpHttpTools)
+        assert isinstance(app.state.tools_for(app.state.packs["demo"], None), RestHttpTools)
         async with app.state.pool.connection() as conn:
             cur = await conn.execute("select count(*) from threads")
             assert (await cur.fetchone())[0] >= 0
