@@ -1,6 +1,7 @@
 """Private S3-compatible object storage (Supabase Storage, GCS, R2, S3, MinIO). Sync boto3 and httpx: call it with
 asyncio.to_thread."""
 
+import logging
 from urllib.parse import quote
 
 import boto3
@@ -18,6 +19,17 @@ class StorageError(Exception):
 UPLOAD_SECONDS = 600  # an S3 presigned PUT lives 10 minutes (Supabase's own signed upload links live 2 hours)
 _SIGN_TIMEOUT = 10.0
 _MISSING = {"404", "NoSuchKey", "NotFound"}
+log = logging.getLogger("assistant.storage")
+
+
+def _reason(r: httpx.Response) -> str:
+    """Supabase's own short reason for a refusal ("Bucket not found", "Invalid Compact JWS"), never the request."""
+    try:
+        body = r.json()
+    except ValueError:
+        return "no reason given"
+    text = body.get("message") or body.get("error") if isinstance(body, dict) else None
+    return str(text)[:200] if text else "no reason given"
 
 
 class Storage:
@@ -77,7 +89,9 @@ class Storage:
                 timeout=_SIGN_TIMEOUT,
             )
             if r.status_code != 200:
-                raise StorageError(f"signed upload link refused: {r.status_code}")
+                reason = _reason(r)
+                log.warning("signed upload link refused: status=%s reason=%s", r.status_code, reason)
+                raise StorageError(f"signed upload link refused: {r.status_code} {reason}")
             url = r.json()["url"]  # relative to the Storage API: /object/upload/sign/{bucket}/{key}?token=...
             if not url.startswith(("https://", "http://")):
                 url = f"{base}/storage/v1/{url.lstrip('/')}"

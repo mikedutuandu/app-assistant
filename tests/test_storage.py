@@ -128,6 +128,21 @@ def test_upload_target_raises_when_supabase_refuses(test_settings: Settings):
         storage.upload_target("a/b", "image/png")
 
 
+@respx.mock
+def test_upload_target_logs_supabase_reason(test_settings: Settings, caplog: pytest.LogCaptureFixture):
+    storage = Storage(
+        test_settings.model_copy(update={"supabase_url": SUPABASE_URL, "supabase_service_key": "sb_secret_x"})
+    )
+    body = {"statusCode": "404", "error": "Bucket not found", "message": "Bucket not found"}
+    respx.post(f"{SUPABASE_URL}/storage/v1/object/upload/sign/test-bucket/a/b").mock(
+        return_value=httpx.Response(400, json=body)
+    )
+    with caplog.at_level("WARNING", logger="assistant"), pytest.raises(StorageError, match="Bucket not found"):
+        storage.upload_target("a/b", "image/png")
+    assert "400" in caplog.text and "Bucket not found" in caplog.text
+    assert "sb_secret_x" not in caplog.text
+
+
 def test_upload_target_falls_back_to_s3_presign(test_settings: Settings):
     with mock_aws():
         storage = Storage(test_settings)
