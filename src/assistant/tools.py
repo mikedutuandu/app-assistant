@@ -28,6 +28,7 @@ class ToolError(Exception):
         super().__init__(kind)
         self.kind: ToolErrorKind = kind
         self.user_message = user_message
+        self.cost_usd = 0.0  # set by the graph to what the turn had spent when the call failed
 
 
 class AppContext(BaseModel):
