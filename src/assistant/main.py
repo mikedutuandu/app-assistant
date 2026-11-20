@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, Response
@@ -45,6 +47,19 @@ def log_to_stdout() -> None:
     logger.propagate = False
 
 
+async def set_bucket_cors(storage: Storage, packs: dict[str, AppPack], settings: Settings) -> None:
+    """The browser PUTs files straight to the bucket: allow every pack's origins and the demo's. Never stops startup."""
+    found = [o for pack in packs.values() for o in pack.allowed_origins] + [settings.public_base_url]
+    origins = []
+    for value in found:  # a pack's {base} carries the demo's path: CORS wants the origin alone
+        parts = urlsplit(value)
+        origins.append(f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else value)
+    try:
+        await asyncio.to_thread(storage.ensure_cors, origins)
+    except Exception as e:  # noqa: BLE001 - a CORS failure must not take the bot down
+        logging.getLogger("assistant.storage").warning("could not set the bucket's CORS: %s", e)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     log_to_stdout()
@@ -71,6 +86,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.checkpointer = checkpointer
             app.state.storage = Storage(settings)
             log.info("uploads: %s", app.state.storage.upload_backend)  # a missing SUPABASE_* shows here
+            if app.state.storage.upload_backend == "s3":
+                await set_bucket_cors(app.state.storage, packs, settings)
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
             def tools_for(pack: AppPack, session: Session) -> McpHttpTools:

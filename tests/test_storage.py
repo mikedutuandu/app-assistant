@@ -1,5 +1,6 @@
 """Storage against S3-compatible stores: the wire format of each call, and failures that must not be silent."""
 
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -7,11 +8,14 @@ import pytest
 import requests
 import respx
 from botocore.awsrequest import AWSResponse
+from botocore.exceptions import ClientError
 from botocore.stub import Stubber
+from chat_api import PNG
 from moto import mock_aws
 
 from assistant.config import Settings
 from assistant.files.storage import Storage, StorageError
+from assistant.main import create_app
 
 SUPABASE = "https://ref.supabase.co/storage/v1/s3"
 
@@ -165,3 +169,86 @@ def test_upload_target_falls_back_to_s3_presign(test_settings: Settings):
         again = requests.put(target["url"], data=b"other bytes, bigger", headers=target["headers"], timeout=5)
         assert again.status_code == 412  # the link can't replace the object finish checked
         assert storage.get("real/ws1/t1/u1") == b"\x89PNG-bytes"
+
+
+def test_ensure_cors_sets_one_rule_for_the_origins(test_settings: Settings):
+    storage = Storage(test_settings)
+    with Stubber(storage._client) as stub:
+        stub.add_response(
+            "put_bucket_cors",
+            {},
+            {
+                "Bucket": test_settings.s3_bucket,
+                "CORSConfiguration": {
+                    "CORSRules": [
+                        {
+                            "AllowedOrigins": ["https://a.example", "https://b.example"],
+                            "AllowedMethods": ["GET", "PUT"],
+                            "AllowedHeaders": ["content-type", "if-none-match"],
+                            "MaxAgeSeconds": 3600,
+                        }
+                    ]
+                },
+            },
+        )
+        storage.ensure_cors(["https://b.example", "https://a.example", "https://a.example"])
+        stub.assert_no_pending_responses()
+
+
+def _lifespan_settings(test_settings: Settings, fresh_schema, **extra) -> Settings:
+    url, schema = fresh_schema
+    return Settings(
+        **{
+            **test_settings.model_dump(),
+            "database_url": url,
+            "db_schema": schema,
+            "packs_dir": Path("apps"),
+            "run_lifespan": True,
+            "public_base_url": "https://bot.example/some/path",
+            **extra,
+        }
+    )
+
+
+@pytest.mark.db
+async def test_cors_failure_does_not_stop_startup(test_settings, monkeypatch, fresh_schema, capsys):
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+    seen: list[list[str]] = []
+
+    def refuse(self, origins):
+        seen.append(origins)
+        raise ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, "PutBucketCors")
+
+    monkeypatch.setattr(Storage, "ensure_cors", refuse)
+    app = create_app(_lifespan_settings(test_settings, fresh_schema))
+    async with app.router.lifespan_context(app):
+        pass
+    assert "https://bot.example" in seen[0] and all("/some/path" not in o for o in seen[0])
+    assert capsys.readouterr().out.count("WARNING assistant.storage") == 1
+
+
+@pytest.mark.db
+async def test_cors_is_not_set_on_the_supabase_backend(test_settings, monkeypatch, fresh_schema):
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(Storage, "ensure_cors", lambda self, origins: calls.append(origins))
+    settings = _lifespan_settings(
+        test_settings, fresh_schema, supabase_url="https://ref.supabase.co", supabase_service_key="sb_secret_x"
+    )
+    async with create_app(settings).router.lifespan_context(create_app(settings)):
+        pass
+    assert calls == []
+
+
+@pytest.mark.db
+async def test_finish_checks_size_on_s3_backend(api):
+    """The S3 backend's presigned PUT does not bind the size: finish must read the stored size and refuse a big one."""
+    assert api.storage.upload_backend == "s3"
+    tid = await api.thread_row()
+    started = (await api.start_upload(1000, thread=tid)).json()  # it promised 1000 bytes
+    api.put(started, PNG + b"\x00" * (11 * 1024 * 1024))
+    r = await api.finish(started["upload_id"], tid)
+    assert (r.status_code, r.json()["error"]) == (400, "too_big")
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []

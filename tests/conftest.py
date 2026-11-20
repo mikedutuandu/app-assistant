@@ -91,3 +91,15 @@ async def api(  # the chat API on a fresh schema, moto S3, FakeLlm and FakeTools
                 yield api
     finally:
         await saver_pool.close()
+
+
+@pytest.fixture
+async def fresh_schema():
+    """A schema name that does not exist yet; dropped (if made) after the test."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    schema = f"own_{str(ULID()).lower()}"
+    yield url, schema
+    async with await AsyncConnection.connect(url, autocommit=True) as admin:
+        await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))

@@ -163,9 +163,13 @@ It prints `bucket ok`. Any error names the call that failed; fix the bucket or k
 
 Note on the demo's per-IP limit: the client IP is `x-vercel-forwarded-for`, then `x-real-ip`, then the rightmost `x-forwarded-for` entry. They are set by Vercel's edge, which replaces what a visitor sends. Putting another proxy in front (a CDN, say) changes what they hold and needs a code change in `client_ip`.
 
+### Neon Object Storage
+
+Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` from the Neon console, and leave `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` unset. Uploads then use an S3 presigned PUT (the startup log says `uploads: s3`), and at startup the bot sets the bucket's CORS itself (`PutBucketCors`: every app's `allowed_origins` and `PUBLIC_BASE_URL`'s origin; `GET` and `PUT`; headers `content-type` and `if-none-match`). If that call fails the bot logs one warning (`could not set the bucket's CORS`) and starts anyway: set the CORS by hand then. On the Supabase backend the bot does not touch CORS.
+
 ### Alternative: another S3-compatible store
 
-Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
+Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** (set by the bot at startup on this path) must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
 
 - methods `PUT` (and `GET` if you read from the browser);
 - allowed headers `if-none-match` and `content-type`.
