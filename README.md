@@ -81,6 +81,8 @@ The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase
 
 **4. Import the project.** In Vercel: **Add New → Project**, import the GitHub repo. The framework preset is **FastAPI**; Python 3.12 comes from `.python-version`. Leave the build and output settings alone: `vercel.json` sets the function (300 s, test files left out) and the daily clean-up cron.
 
+Then put the function next to the database: Settings → Functions → **Function Region**, the Vercel region closest to the Supabase project's region (for example `sin1` for `ap-southeast-1`; Supabase shows its region under Project Settings → General). New projects run in `iad1` (Washington, D.C.), and from there every query, checkpoint write and storage call to Singapore costs about 230 ms, dozens of times per turn, and a cold start gains seconds. Hobby allows one region. You can also set it in `vercel.json` as `"regions": ["sin1"]`; the repo leaves it out because the right region depends on where your Supabase project is.
+
 **5. Environment variables.** Settings → Environment Variables, for Production (mark every secret Sensitive). Everything in `.env.example`:
 
 | Variable | Value |
