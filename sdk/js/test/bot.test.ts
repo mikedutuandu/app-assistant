@@ -50,6 +50,16 @@ describe("botFetch", () => {
     expect(headers.get("content-type")).toBe("text/plain");
   });
 
+  it("never sends an Origin header: the bot's server-to-server path relies on its absence", async () => {
+    const fetch = stubFetch();
+    await createAssistantHost(base).botFetch("ws_1", "/v1/chat/shipnote/threads", {
+      headers: { Origin: "https://app.example", accept: "application/json" },
+    });
+    const headers = new Headers(fetch.mock.calls[0][1]!.headers);
+    expect(headers.has("origin")).toBe(false);
+    expect(headers.get("accept")).toBe("application/json");
+  });
+
   it("uses a delete token for deleting a workspace", async () => {
     const fetch = stubFetch();
     await createAssistantHost(base).botFetch("ws_1", "/v1/apps/shipnote/workspaces/ws_1", { method: "DELETE" });

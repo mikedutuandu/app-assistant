@@ -7,14 +7,10 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 
 // Builds the package, then reads what apps import: ./server must run on Cloudflare Workers, with Web APIs only.
 beforeAll(() => {
-  execFileSync(
-    process.execPath,
-    [fileURLToPath(new URL("../node_modules/tsup/dist/cli-default.js", import.meta.url))],
-    {
-      cwd: root,
-      stdio: "pipe",
-    },
-  );
+  execFileSync(process.execPath, [fileURLToPath(new URL("../node_modules/.bin/tsup", import.meta.url))], {
+    cwd: root,
+    stdio: "pipe",
+  });
 }, 120_000);
 
 describe("the built ./server bundle", () => {

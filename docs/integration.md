@@ -289,7 +289,7 @@ lowered value is logged.
 
 ## Using the JS package
 
-For a JavaScript app (Next.js, Hono, Cloudflare Workers, Deno, Node 18+), the npm package `@app-assistant/host` does
+For a JavaScript app (Next.js, Hono, Cloudflare Workers, Deno, Node 20+), the npm package `@app-assistant/host` does
 all of the above except knowing who is signed in. `/server` checks the token and serves the four endpoints and your
 pack from four functions you write (with the idempotency, error codes and statuses of this page); `/react` is the
 chat window. Its README (`sdk/js/README.md`) has the details.
@@ -305,6 +305,8 @@ export const assistant = createAssistantHost({
   saveDraft: async (ws, draft, key) => saveDraftOnce(ws, key, draft), // → {draft_id, edit_url}
   saveMaterial: async (ws, facts, draftId, key) => keepFactsOnce(ws, key, facts, draftId),
   charge: async (ws, costUsd, ref) => ((await takeCredits(ws, ref, costUsd)) ? { ok: true } : { outOfCredits: "You're out of credits." }),
+  // Optional: 409 in_flight for a key being worked on. claim must be atomic and expire on its own (>= 60 s).
+  once: { claim: (key) => kv.setIfAbsent(key, "1", { ttlSeconds: 120 }), release: (key) => kv.delete(key) },
 });
 
 // Every request to /api/assistant/* and /.well-known/app-assistant.json (null: not one of them):
@@ -319,6 +321,11 @@ import { AssistantChat } from "@app-assistant/host/react";
 
 <AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />
 ```
+
+`once.claim` must be atomic and must expire on its own (at least 60 s, e.g. 2 minutes): `release` runs when a request
+ends, but not when it is killed mid-work (a timeout, a redeploy), and a claim that never expires would answer 409 to
+every repeat of that key forever. Without `once`, `saveDraft`, `saveMaterial` and `charge` must be idempotent per
+key on their own.
 
 The package's tests send every scenario below (its `match` not `null`) to `handle`, and check that its tokens and the
 bot's verify on both sides.

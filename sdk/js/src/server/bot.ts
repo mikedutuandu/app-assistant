@@ -34,6 +34,8 @@ export async function botFetch(
   });
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token}`);
+  // The bot treats a request with an Origin as a browser's (checked against the pack's allowed_origins).
+  headers.delete("origin");
   if (typeof init.body === "string" && !headers.has("content-type")) headers.set("content-type", "application/json");
   return fetch(`${opts.botUrl.replace(/\/+$/, "")}${path}`, { ...init, method, headers });
 }

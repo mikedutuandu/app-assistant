@@ -41,6 +41,10 @@ jobs:
   publish:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Two quick version bumps publish one after the other, never racing.
+    concurrency:
+      group: sdk-publish
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write # npm provenance

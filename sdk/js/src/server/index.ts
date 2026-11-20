@@ -1,6 +1,6 @@
 /**
  * `@app-assistant/host/server`: an app's side of the app-assistant contract (docs/integration.md) on Web
- * Request/Response, for Cloudflare Workers, Next.js, Hono, Deno and Node 18+. Web Crypto and fetch only.
+ * Request/Response, for Cloudflare Workers, Next.js, Hono, Deno and Node 20+. Web Crypto and fetch only.
  */
 
 import { type BotEvent, botFetch, readEvents } from "./bot";

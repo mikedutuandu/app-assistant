@@ -158,7 +158,7 @@ describe("handle", () => {
     expect(await host.handle(post("/context", {}))).toBeNull();
   });
 
-  it("serves at the root with basePath \"/\"", async () => {
+  it('serves at the root with basePath "/"', async () => {
     const host = createAssistantHost({ ...fakeApp().opts, basePath: "/" });
     const req = new Request(`${SITE}/context`, {
       method: "POST",
@@ -201,6 +201,98 @@ describe("handle", () => {
       [WORKSPACE, ["B"], undefined, "k2"],
       [WORKSPACE, [], undefined, "k3"],
     ]);
+  });
+
+  /** An in-memory `once` as the README asks: an atomic claim that expires on its own after `ttl` ms. */
+  function expiringOnce(ttl: number) {
+    let now = 0;
+    const held = new Map<string, number>();
+    return {
+      tick: (ms: number) => (now += ms),
+      once: {
+        claim: async (key: string) => {
+          const until = held.get(key);
+          if (until !== undefined && until > now) return false;
+          held.set(key, now + ttl);
+          return true;
+        },
+        release: async (key: string) => {
+          held.delete(key);
+        },
+      },
+    };
+  }
+
+  it("a claim left by a request killed before release expires, and then the repeat succeeds", async () => {
+    const clock = expiringOnce(120_000);
+    let calls = 0;
+    const host = createAssistantHost({
+      ...fakeApp().opts,
+      once: clock.once,
+      // The first call never ends: the platform killed the request mid-work, so release never runs.
+      saveDraft: async () => (++calls === 1 ? new Promise<never>(() => {}) : { draft_id: "d_1", edit_url: null }),
+    });
+    const draft = () => post("/drafts", { text: "Hi.", thread: [], media: [] }, { "idempotency-key": "add:1" });
+    void host.handle(draft());
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await host.handle(draft()))!.status).toBe(409);
+    clock.tick(120_001);
+    const res = (await host.handle(draft()))!;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ draft_id: "d_1", edit_url: null });
+  });
+
+  it("two requests with one key at once: one runs, the other is 409; a finished key replays its answer", async () => {
+    const clock = expiringOnce(120_000);
+    const saved = new Map<string, { draft_id: string; edit_url: null }>();
+    let made = 0;
+    const host = createAssistantHost({
+      ...fakeApp().opts,
+      once: clock.once,
+      saveDraft: async (ws, _d, key) => {
+        await new Promise((r) => setTimeout(r, 5));
+        const earlier = saved.get(`${ws}/${key}`);
+        if (earlier) return earlier;
+        const answer = { draft_id: `d_${++made}`, edit_url: null };
+        saved.set(`${ws}/${key}`, answer);
+        return answer;
+      },
+    });
+    const draft = () => post("/drafts", { text: "Hi.", thread: [], media: [] }, { "idempotency-key": "add:1" });
+    const [a, b] = await Promise.all([host.handle(draft()), host.handle(draft())]);
+    expect([a!.status, b!.status].sort()).toEqual([200, 409]);
+    const again = (await host.handle(draft()))!;
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ draft_id: "d_1", edit_url: null });
+    expect(made).toBe(1);
+  });
+
+  it.each([
+    ["a saved draft stays 200", "/drafts", { text: "Hi.", thread: [], media: [] }, {}, 200],
+    ["out of credits stays 402", "/charge", { cost_usd: 0.01, ref: "r1" }, { credits_left: 0 }, 402],
+  ])("a release that fails never changes the answer: %s", async (_name, path, body, setup, status) => {
+    const onError = vi.fn();
+    const host = createAssistantHost({
+      ...fakeApp(setup).opts,
+      onError,
+      once: { claim: async () => true, release: async () => Promise.reject(new Error("kv is down")) },
+    });
+    const res = (await host.handle(post(path, body, { "idempotency-key": "k1" })))!;
+    expect(res.status).toBe(status);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(onError.mock.calls[0][1]).toBe(`release ${WORKSPACE}/${path.slice(1)}/k1`);
+  });
+
+  it("reports a function's error to onError instead of console.error", async () => {
+    const onError = vi.fn();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const boom = new Error("boom");
+    const host = createAssistantHost({ ...fakeApp().opts, onError, context: async () => Promise.reject(boom) });
+    expect((await host.handle(post("/context", {})))!.status).toBe(500);
+    expect(onError).toHaveBeenCalledWith(boom, "context");
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
   });
 
   it("works without once", async () => {

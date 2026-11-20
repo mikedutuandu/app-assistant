@@ -2,7 +2,7 @@
 
 Host the app-assistant writing bot in a JavaScript app. It implements your side of
 [contract 1](https://github.com/mikedutuandu/app-assistant/blob/main/docs/integration.md) on Web `Request`/`Response`,
-so it runs on Cloudflare Workers, Next.js, Hono, Deno and Node 18+.
+so it runs on Cloudflare Workers, Next.js, Hono, Deno and Node 20+ (it needs the global Web Crypto).
 
 - `@app-assistant/host/server`: verifies the user's token and serves the bot's four endpoints and your pack from four
   functions you write; signs tokens for your signed-in users; calls the bot as a user. Web Crypto and `fetch` only.
@@ -53,9 +53,19 @@ export const assistant = createAssistantHost({
 
   // Optional: two requests with the same Idempotency-Key at once. claim → false while one is running (→ 409);
   // release is called when it ends. The key is "{workspace}/{drafts|material|charge}/{Idempotency-Key}".
-  once: { claim: (key) => kv.setIfAbsent(key, "1", { ttlSeconds: 60 }), release: (key) => kv.delete(key) },
+  once: { claim: (key) => kv.setIfAbsent(key, "1", { ttlSeconds: 120 }), release: (key) => kv.delete(key) },
+
+  // Optional: where caught errors go (a function that threw, a release that failed). Default: console.error.
+  onError: (error, where) => log.error(where, error),
 });
 ```
+
+**`once.claim` must be atomic and must expire on its own** (at least 60 s; 2 minutes is a good choice). `release`
+runs when a request ends, but not when the request is killed mid-work (a function timeout, a redeploy): a claim with
+no expiry would then stay forever, and every repeat of that key would get 409 (the bot doesn't retry a 409, so that
+draft could never be added). A failed `release` is reported to `onError` and never changes the answer. **Without
+`once`**, two requests with the same key can run at the same time, so your functions must be idempotent per key on
+their own (a unique index on the key, for example).
 
 `handle` answers what the contract says for you: 401 `unauthorized` for a missing or bad token, 400 `invalid` for a
 bad body or a missing `Idempotency-Key`, 402 `out_of_credits` with your sentence, 409 `in_flight`, and 500 `server`

@@ -62,11 +62,24 @@ export interface HostOptions {
    */
   charge(workspaceId: string, costUsd: number, ref: string): Promise<ChargeResult>;
   /**
-   * Requests with the same Idempotency-Key at the same time: `claim(key)` is false while another request with that
-   * key is still running (→ 409 `in_flight`), and `release(key)` is called when it ends, done or failed. The key is
-   * `{workspace}/{drafts|material|charge}/{Idempotency-Key}`. A row or KV entry with a short expiry works.
+   * Two requests with the same Idempotency-Key at the same time. `claim(key)` must be **atomic** (one winner) and
+   * **expire on its own** after at least 60 s (2 minutes is a good choice): it answers false while the key is held
+   * (→ 409 `in_flight`). `release(key)` is called when the request ends, done or failed, but it never runs when the
+   * request is killed mid-work (a function timeout, a redeploy): without expiry that key would stay held forever and
+   * every repeat would get 409. A KV entry or a row with an expiry time works. The key is
+   * `{workspace}/{drafts|material|charge}/{Idempotency-Key}`. A request that outlives its claim can release a later
+   * holder's claim: harmless, because your functions replay a finished key's answer.
+   *
+   * Without `once`, two requests with one key can run at the same time: your functions must then be idempotent per
+   * key on their own (a unique index on the key, for example).
    */
   once?: { claim(key: string): Promise<boolean>; release?(key: string): Promise<void> };
+  /**
+   * Errors the package catches: one of your functions threw (`where` is `context`, `drafts`, `material` or `charge`;
+   * the bot gets 500 `server`), or `release` failed (`where` is `release <key>`; the answer is unchanged). Default:
+   * `console.error`.
+   */
+  onError?(error: unknown, where: string): void;
 }
 
 export const PACK_PATH = "/.well-known/app-assistant.json";
@@ -152,10 +165,19 @@ export function createHandler(opts: HostOptions): (req: Request) => Promise<Resp
           e.userMessage === undefined ? { error: e.code } : { error: e.code, message: e.userMessage },
         );
       // The app's own error: logged on its server, never sent (it may say anything).
-      console.error(`app-assistant: ${name} failed`, e);
+      report(opts, e, name);
       return json(500, { error: "server" });
     }
   };
+}
+
+function report(opts: HostOptions, error: unknown, where: string): void {
+  try {
+    if (opts.onError) return opts.onError(error, where);
+  } catch {
+    // An onError that throws falls back to the log.
+  }
+  console.error(`app-assistant: ${where} failed`, error);
 }
 
 async function endpoint(opts: HostOptions, name: Endpoint, req: Request): Promise<unknown> {
@@ -189,7 +211,10 @@ async function endpoint(opts: HostOptions, name: Endpoint, req: Request): Promis
   try {
     return await work();
   } finally {
-    await opts.once?.release?.(slot);
+    // A failed release must not turn a saved draft (200) or an out-of-credits answer (402) into a 500.
+    await Promise.resolve()
+      .then(() => opts.once?.release?.(slot))
+      .catch((e) => report(opts, e, `release ${slot}`));
   }
 }
 
