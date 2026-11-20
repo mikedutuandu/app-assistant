@@ -163,8 +163,11 @@ class Llm:
         raw_calls: dict[int, dict[str, str]] = {}
         cost = 0.0
 
+        def sent() -> bool:
+            return on_text is not None and bool(parts)  # text nobody received can still fall back
+
         def fail(message: str) -> Exception:
-            return _Partial(message, cost) if parts else _Retryable(message, cost)
+            return _Partial(message, cost) if sent() else _Retryable(message, cost)
 
         try:
             async with self._client.stream(
@@ -213,11 +216,11 @@ class Llm:
                         if on_text is not None:
                             await on_text(piece)
         except httpx.TransportError as e:
-            if parts:
+            if sent():
                 raise _Partial(type(e).__name__, cost) from None
             raise
         except httpx.TimeoutException as e:
-            if parts:
+            if sent():
                 raise _Partial(type(e).__name__, cost) from None
             raise
         return "".join(parts), _tool_calls(raw_calls), cost

@@ -356,3 +356,19 @@ async def test_reasoning_is_sent_by_chat_json():
     route = respx.post(CHAT).mock(return_value=ok('{"a": 1}'))
     await Llm("k").chat_json(MSGS, "a/m", [], Out, 10, reasoning="low")
     assert json.loads(route.calls[0].request.content)["reasoning"]["effort"] == "low"
+
+
+@respx.mock
+async def test_chat_tools_without_on_text_falls_back_after_unsent_text():
+    route = respx.post(CHAT).mock(
+        side_effect=[
+            sse(
+                chunk({"choices": [{"delta": {"content": "Sure"}}]}),
+                chunk({"choices": [{"finish_reason": "error", "delta": {}}]}),
+            ),
+            sse(chunk({"choices": [{"delta": {"content": "ok"}}]}), "data: [DONE]\n\n"),
+        ]
+    )
+    turn = await Llm("k").chat_tools(MSGS, "a/m", ["b/m"], TOOLS, 100)
+    assert turn.text == "ok" and turn.model == "b/m"
+    assert len(route.calls) == 2
