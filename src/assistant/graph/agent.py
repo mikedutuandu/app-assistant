@@ -213,6 +213,17 @@ def _said_key(text: str) -> str:
     return " ".join(nfc(text).casefold().split())
 
 
+def _is_repeat(new: str, old: str) -> bool:
+    """The same words, or one a whole-word run inside the other that makes up most of it (>= 0.6 of its words)."""
+    a, b = re.findall(r"\w+", new), re.findall(r"\w+", old)
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    if not short or len(short) < 0.6 * len(long):
+        return False
+    return any(long[i : i + len(short)] == short for i in range(len(long) - len(short) + 1))
+
+
 def _after(text: str, key: str) -> str:
     """What `text` says after its start, which reads as `key` (see `_said_key`)."""
     for i in range(len(text) + 1):
@@ -371,7 +382,7 @@ class _Agent:
             if new.startswith(old) and new != old:
                 held = _after(held, old)
                 new = _said_key(held)
-            if not new or new == old or new in old or old in new:
+            if not new or new == old or _is_repeat(new, old):
                 return
         await self._show(held.lstrip())
 
