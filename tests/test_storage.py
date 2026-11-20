@@ -1,6 +1,8 @@
 """Storage against S3-compatible stores: the wire format of each call, and failures that must not be silent."""
 
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -15,7 +17,7 @@ from moto import mock_aws
 
 from assistant.config import Settings
 from assistant.files.storage import Storage, StorageError
-from assistant.main import create_app
+from assistant.main import cors_origins, create_app
 
 SUPABASE = "https://ref.supabase.co/storage/v1/s3"
 
@@ -237,9 +239,35 @@ async def test_cors_is_not_set_on_the_supabase_backend(test_settings, monkeypatc
     settings = _lifespan_settings(
         test_settings, fresh_schema, supabase_url="https://ref.supabase.co", supabase_service_key="sb_secret_x"
     )
-    async with create_app(settings).router.lifespan_context(create_app(settings)):
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
         pass
     assert calls == []
+
+
+def test_cors_origins_drop_empty_wildcard_and_invalid_entries(test_settings: Settings):
+    packs = {
+        "a": SimpleNamespace(allowed_origins=["", "*", "not-a-url", "ftp://x.example", "https://a.example/path"]),
+        "b": SimpleNamespace(allowed_origins=["http://localhost:3000"]),
+    }
+    settings = test_settings.model_copy(update={"public_base_url": "https://bot.example/demo"})
+    assert cors_origins(packs, settings) == ["https://a.example", "http://localhost:3000", "https://bot.example"]
+
+
+@pytest.mark.db
+async def test_a_hanging_cors_call_does_not_hold_up_startup(test_settings, monkeypatch, fresh_schema, capsys):
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+    release = threading.Event()
+    monkeypatch.setattr(Storage, "ensure_cors", lambda self, origins: release.wait(5))
+    monkeypatch.setattr("assistant.main.CORS_SECONDS", 0.1)
+    app = create_app(_lifespan_settings(test_settings, fresh_schema))
+    try:
+        async with app.router.lifespan_context(app):
+            pass
+    finally:
+        release.set()
+    assert capsys.readouterr().out.count("WARNING assistant.storage") == 1
 
 
 @pytest.mark.db

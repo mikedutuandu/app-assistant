@@ -165,7 +165,7 @@ Note on the demo's per-IP limit: the client IP is `x-vercel-forwarded-for`, then
 
 ### Neon Object Storage
 
-Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` from the Neon console, and leave `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` unset. Uploads then use an S3 presigned PUT (the startup log says `uploads: s3`), and at startup the bot sets the bucket's CORS itself (`PutBucketCors`: every app's `allowed_origins` and `PUBLIC_BASE_URL`'s origin; `GET` and `PUT`; headers `content-type` and `if-none-match`). If that call fails the bot logs one warning (`could not set the bucket's CORS`) and starts anyway: set the CORS by hand then. On the Supabase backend the bot does not touch CORS.
+Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` from the Neon console, and leave `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` unset. Uploads then use an S3 presigned PUT (the startup log says `uploads: s3`), and at startup the bot sets the bucket's CORS itself (`PutBucketCors`: every app's `allowed_origins` and `PUBLIC_BASE_URL`'s origin; `GET` and `PUT`; headers `content-type` and `if-none-match`). If that call fails the bot logs one warning (`could not set the bucket's CORS`) and starts anyway: set the CORS by hand then. At switch-over, check on the real bucket that the browser's `PUT` from the widget and from `/demo` passes CORS, and that a second `PUT` to the same link is refused (the `if-none-match` write-once header): Neon does not document that header. On the Supabase backend the bot does not touch CORS.
 
 ### Alternative: another S3-compatible store
 

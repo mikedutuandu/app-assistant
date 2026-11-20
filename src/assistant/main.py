@@ -47,15 +47,30 @@ def log_to_stdout() -> None:
     logger.propagate = False
 
 
-async def set_bucket_cors(storage: Storage, packs: dict[str, AppPack], settings: Settings) -> None:
-    """The browser PUTs files straight to the bucket: allow every pack's origins and the demo's. Never stops startup."""
+CORS_SECONDS = 8  # a hanging store must not hold up startup
+
+
+def cors_origins(packs: dict[str, AppPack], settings: Settings) -> list[str]:
+    """Every pack's origins and the demo's, as bare origins. One bad entry would fail the whole call, so entries that
+    are not http(s) origins (empty, "*", not a URL) are dropped: a wildcard would open the bucket to every site."""
     found = [o for pack in packs.values() for o in pack.allowed_origins] + [settings.public_base_url]
     origins = []
     for value in found:  # a pack's {base} carries the demo's path: CORS wants the origin alone
-        parts = urlsplit(value)
-        origins.append(f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else value)
+        parts = urlsplit(value.strip())
+        if parts.scheme in {"http", "https"} and parts.netloc:
+            origins.append(f"{parts.scheme}://{parts.netloc}")
+    return origins
+
+
+async def set_bucket_cors(storage: Storage, packs: dict[str, AppPack], settings: Settings) -> None:
+    """The browser PUTs files straight to the bucket: allow every pack's origins and the demo's. Never stops startup."""
     try:
-        await asyncio.to_thread(storage.ensure_cors, origins)
+        origins = cors_origins(packs, settings)
+        await asyncio.wait_for(asyncio.to_thread(storage.ensure_cors, origins), CORS_SECONDS)
+    except TimeoutError:
+        logging.getLogger("assistant.storage").warning(
+            "could not set the bucket's CORS: no answer in %ss", CORS_SECONDS
+        )
     except Exception as e:  # noqa: BLE001 - a CORS failure must not take the bot down
         logging.getLogger("assistant.storage").warning("could not set the bucket's CORS: %s", e)
 
