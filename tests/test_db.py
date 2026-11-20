@@ -279,3 +279,20 @@ async def test_several_first_starts_at_once_all_succeed(test_settings, monkeypat
         async with await AsyncConnection.connect(url, autocommit=True) as admin:
             for schema in schemas:
                 await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))
+
+
+async def test_app_pool_never_prepares_statements():
+    """Behind a transaction pooler (Neon's pooled URL) server-side prepared statements break: the app pool must not prepare."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    pool = await open_pool(url)
+    try:
+        async with pool.connection() as conn:
+            for _ in range(6):
+                await conn.execute("select 1")
+            cur = await conn.execute("select count(*) from pg_prepared_statements")
+            row = await cur.fetchone()
+        assert row is not None and row[0] == 0
+    finally:
+        await pool.close()

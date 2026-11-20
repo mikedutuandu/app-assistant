@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str
     database_url: str
+    # Neon (Vercel Marketplace) injects DATABASE_URL (pooled, PgBouncer) and DATABASE_URL_UNPOOLED (direct). LangGraph's
+    # checkpoint saver and migrations' locks want a session of their own, so the saver uses this one when set.
+    database_url_unpooled: str | None = None
     # Every table (LangGraph's checkpoints too) lives in this schema. On Supabase it must not be an exposed schema.
     db_schema: str = "assistant"
     db_pool_max: int = 2  # connections per instance for the app's queries
@@ -41,7 +44,9 @@ class Settings(BaseSettings):
             raise ValueError("DB_SCHEMA must be lowercase letters, digits and _, starting with a letter or _")
         return value
 
-    @field_validator("s3_endpoint", "cron_secret", "supabase_url", "supabase_service_key", mode="before")
+    @field_validator(
+        "s3_endpoint", "cron_secret", "database_url_unpooled", "supabase_url", "supabase_service_key", mode="before"
+    )
     @classmethod
     def _empty_is_none(cls, value: object) -> object:
         # `S3_ENDPOINT=` in an env file loads as "": treat it as unset (boto3 then uses AWS; uploads use S3 presigns).

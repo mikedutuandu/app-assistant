@@ -11,7 +11,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from assistant.api import chat, deps, internal, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
-from assistant.db import close_pool, migrate, open_pool, open_saver_pool
+from assistant.db import close_pool, migrate, open_pool, open_saver_pool, saver_url
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
@@ -60,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for pack in packs.values():
             pack.secret()  # fail at startup, not on every request, when a pack's secret is unset
         pool = await open_pool(settings.database_url, settings.db_schema, settings.db_pool_max)
-        saver_pool = await open_saver_pool(settings.database_url, settings.db_schema, settings.saver_pool_max)
+        saver_pool = await open_saver_pool(saver_url(settings), settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
