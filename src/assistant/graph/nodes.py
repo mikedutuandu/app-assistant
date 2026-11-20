@@ -393,6 +393,9 @@ async def check(state: ChatState, t: Turn) -> dict:
     return {"pieces": pieces, "problems": problems, "passed": passed, "capped": capped}
 
 
+MAX_CARD_FACTS = 30  # the API refuses to keep more than this many facts at once
+
+
 async def present(state: ChatState, t: Turn) -> dict:
     """Shows the pieces that passed and the ones dropped (with why), with the facts; nothing unchecked."""
     passed = set(state.get("passed", []))
@@ -411,7 +414,11 @@ async def present(state: ChatState, t: Turn) -> dict:
             await t.note(f"Dropped a post: {p.dropped}")
     if kept:
         await t.note("Checked: every number is from you")
-    card = {"pieces": [p.model_dump() for p in shown], "facts": [f.model_dump() for f in state.get("facts", [])]}
+    # Only the facts the shown pieces use, in first-use order: "Keep for next week" sends them back, and the server
+    # takes at most MAX_CARD_FACTS.
+    by_id = {f.id: f for f in state.get("facts", [])}
+    used = list(dict.fromkeys(i for p in shown for i in p.fact_ids if i in by_id))[:MAX_CARD_FACTS]
+    card = {"pieces": [p.model_dump() for p in shown], "facts": [by_id[i].model_dump() for i in used]}
     await t.emit("text", {"delta": INTRO})
     await t.emit("card", card)
     return {

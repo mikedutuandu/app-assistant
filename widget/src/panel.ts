@@ -253,7 +253,7 @@ export function createPanel(opts: PanelOptions) {
     const keep = h("button", { class: "btn", type: "button", text: "Keep for next week" });
     const err = h("div", { class: "small", role: "alert" });
     keep.addEventListener("click", async () => {
-      const body = fields.map(({ fact, input: i }) => ({ ...fact, text: i.value.trim() })).filter((f) => f.text);
+      const body = fields.map(({ fact, input: i }) => ({ ...fact, text: i.value.trim() })).filter((f) => f.text).slice(0, 30); // the server keeps at most 30
       if (!body.length) {
         err.textContent = "There are no facts to keep.";
         return;
