@@ -31,6 +31,13 @@ class ToolError(Exception):
         self.cost_usd = 0.0  # set by the graph to what the turn had spent when the call failed
 
 
+class KeptFact(BaseModel):
+    """A fact the user kept in an earlier chat and no post has told yet."""
+
+    id: str
+    text: str
+
+
 class AppContext(BaseModel):
     voice: str
     topics: list[str]
@@ -39,6 +46,7 @@ class AppContext(BaseModel):
     credits_left: float | None
     out_of_credits_message: str | None
     language: str = "en"
+    kept_facts: list[KeptFact] = []  # offered when the interview opens; the user's own words
 
 
 class SavedDraft(BaseModel):

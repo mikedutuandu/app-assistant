@@ -21,11 +21,13 @@ from assistant.graph.state import ChatState, Piece
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
 from assistant.llm import LlmError
 from assistant.packs import AppPack, WriteSpec
+from assistant.tools import KeptFact
 
 CONTEXT_TTL = 300  # seconds the app's context is reused within a thread
 MAX_ROUNDS = 2  # ask-back rounds before writing with what there is
 MAX_LINKS = 2  # links read from one message
 MAX_MESSAGES = 20  # conversation messages shown to a model
+MAX_KEPT = 10  # kept facts taken from the app's context
 
 NUMBER = "a number you didn't give ({})"
 RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
@@ -41,6 +43,8 @@ READ_NOTES = {
 _LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*")
 INTRO = "Here's what I wrote from what you told me:"
+KEPT_OFFER = "Last time you kept these — want to write from one?"
+KEPT_NOTE = "Offered the facts you kept"
 NOTHING_WRITTEN = "I couldn't write anything from that yet. Tell me a bit more?"
 _now = time.time
 
@@ -107,10 +111,16 @@ def _latest_user_text(state: ChatState) -> str:
     return ""
 
 
+def _kept(state: ChatState) -> list[KeptFact]:
+    ctx = state.get("context")
+    return list(ctx.kept_facts) if ctx else []
+
+
 def _source_texts(state: ChatState) -> list[str]:
-    """What the user said and showed in this thread: their messages and the readings' text (not `unsure`)."""
+    """What the user said and showed: this thread's messages, the readings' text (not `unsure`), and the facts they
+    kept in an earlier chat (their own words, told then)."""
     said = [nfc(_content(m)) for m in state.get("messages", []) if isinstance(m, HumanMessage)]
-    return said + [r.text for r in state.get("readings", [])]
+    return said + [r.text for r in state.get("readings", [])] + [k.text for k in _kept(state)]
 
 
 def _links(text: str) -> list[str]:
@@ -148,7 +158,7 @@ def _fact_blocks(facts: list[Fact]) -> str:
     return "Known facts:\n" + "\n".join(lines)
 
 
-def _material(state: ChatState, *, facts=False, context=False) -> str:
+def _material(state: ChatState, *, facts=False, context=False, kept=False) -> str:
     parts = ["Conversation so far, oldest first:"]
     for m in state.get("messages", [])[-MAX_MESSAGES:]:
         text = nfc(_content(m)).strip()
@@ -168,6 +178,9 @@ def _material(state: ChatState, *, facts=False, context=False) -> str:
             f"Recent posts and pieces (do not repeat):\n{recent}"
         )
         parts.append("About the app's user:\n" + data("context", about))
+    if kept and _kept(state):
+        blocks = "\n".join(data("kept", k.text, id=k.id) for k in _kept(state))
+        parts.append("Facts the user kept in an earlier chat (their own words, not used yet):\n" + blocks)
     if facts:
         parts.append(_fact_blocks(state.get("facts", [])))
     return "\n\n".join(parts)
@@ -256,7 +269,10 @@ async def load_context(state: ChatState, t: Turn) -> dict:
     if state.get("context") is not None and 0 <= _now() - state.get("context_at", 0.0) < CONTEXT_TTL:
         return {}
     ctx = await t.deps.tools_factory().context()
-    ctx = ctx.model_copy(update={"recent_posts": [nfc(p) for p in ctx.recent_posts]})
+    kept = [k.model_copy(update={"text": nfc(k.text).strip()}) for k in ctx.kept_facts[:MAX_KEPT]]
+    ctx = ctx.model_copy(
+        update={"recent_posts": [nfc(p) for p in ctx.recent_posts], "kept_facts": [k for k in kept if k.text]}
+    )
     return {"context": ctx, "context_at": _now()}
 
 
@@ -265,15 +281,22 @@ async def interview(state: ChatState, t: Turn) -> dict:
     if state.get("rounds_asked", 0) >= MAX_ROUNDS:
         return {"ready": True}
     system = _system(prompts.INTERVIEW, t.pack, state, guide=True)
-    out = await t.json(system, _material(state, facts=True), InterviewOut, max_tokens=300)
+    out = await t.json(system, _material(state, facts=True, kept=True), InterviewOut, max_tokens=300)
     return {"ready": out.enough or out.just_write, "just_write": out.just_write, "ask_hint": out.question}
 
 
 async def ask_back(state: ChatState, t: Turn) -> dict:
-    """Streams one short question and ends the turn."""
+    """Streams one short question and ends the turn. The thread's first one offers the facts the user kept earlier
+    instead, in fixed words (no model call); that offer is not one of the ask-back rounds."""
+    kept = _kept(state)
+    if kept and not state.get("kept_offered") and not state.get("facts"):
+        offer = "\n".join([KEPT_OFFER, *(f"- {' '.join(k.text.split())}" for k in kept)])
+        await t.emit("text", {"delta": offer})
+        await t.note(KEPT_NOTE)
+        return {"messages": [AIMessage(content=offer)], "kept_offered": True}
     system = _system(prompts.ASK_BACK, t.pack, state, guide=True, language=True)
     hint = state.get("ask_hint")
-    user = _material(state, facts=True) + (f"\n\nAsk about: {data('assistant', hint)}" if hint else "")
+    user = _material(state, facts=True, kept=True) + (f"\n\nAsk about: {data('assistant', hint)}" if hint else "")
     question = nfc(await t.stream(system, user, max_tokens=200)).strip()
     await t.note("Asked back for details")
     return {"messages": [AIMessage(content=question)], "rounds_asked": state.get("rounds_asked", 0) + 1}
@@ -282,7 +305,7 @@ async def ask_back(state: ChatState, t: Turn) -> dict:
 async def extract_facts(state: ChatState, t: Turn) -> dict:
     """Adds the new facts in the conversation and files to the thread's facts (deduplicated by text)."""
     system = _system(prompts.EXTRACT_FACTS, t.pack, state)
-    out = await t.json(system, _material(state, facts=True), ExtractOut, max_tokens=1500)
+    out = await t.json(system, _material(state, facts=True, kept=True), ExtractOut, max_tokens=1500)
     readings = {r.file_id: r for r in state.get("readings", [])}
     said = [Fact(numbers=numbers_in(text)) for text in _source_texts(state)]
     known = list(state.get("facts", []))

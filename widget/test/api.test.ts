@@ -57,6 +57,17 @@ describe("BotApi", () => {
     expect(calls[0].init.method).toBe("POST");
   });
 
+  it("asks for a session with a JSON body, the cookie included", async () => {
+    // An app's session route may refuse a POST that is not JSON (HookPlaybook answers 415).
+    handler = () => json([]);
+    await api().threads();
+    const session = calls.find((c) => c.url === "/session")!;
+    expect(session.init.method).toBe("POST");
+    expect(session.init.credentials).toBe("include");
+    expect(session.init.headers).toEqual({ "content-type": "application/json" });
+    expect(session.init.body).toBe("{}");
+  });
+
   it("does not loop when refresh also 401s", async () => {
     handler = () => json({ error: "expired" }, 401);
     await expect(api().threads()).rejects.toBeInstanceOf(AuthLost);

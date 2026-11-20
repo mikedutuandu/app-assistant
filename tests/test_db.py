@@ -112,6 +112,7 @@ def test_pool_sizes_default_to_a_small_budget(test_settings):
 async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema):
     url, schema = fresh_schema
     monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
     settings = Settings(
         **{
             **test_settings.model_dump(),
@@ -149,6 +150,16 @@ async def test_lifespan_fails_without_packs(test_settings):
     settings = Settings(**{**test_settings.model_dump(), "run_lifespan": True})  # packs_dir is an empty tmp dir
     app = create_app(settings)
     with pytest.raises(PackError, match="no app packs"):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+async def test_lifespan_fails_without_hookplaybooks_secret(test_settings, monkeypatch):
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.delenv("HOOKPLAYBOOK_SESSION_SECRET", raising=False)
+    settings = Settings(**{**test_settings.model_dump(), "packs_dir": Path("apps"), "run_lifespan": True})
+    app = create_app(settings)
+    with pytest.raises(PackError, match="HOOKPLAYBOOK_SESSION_SECRET"):
         async with app.router.lifespan_context(app):
             pass
 

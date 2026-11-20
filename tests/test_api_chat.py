@@ -327,6 +327,39 @@ async def test_message_streams_thread_card_done_and_charges_once(api: Api):
     assert [(t["id"], t["title"]) for t in r.json()] == [(thread["thread_id"], FACT[:60])]
 
 
+async def test_charge_ref_reaches_the_browser_only_after_the_charge(api: Api):
+    """The app charges once per ref: a browser that learned the ref first could spend it with a 0 charge."""
+    timeline: list[tuple[str, str]] = []
+    seen_at_charge: list[str] = []
+
+    class Recording(FakeTools):
+        async def charge(self, cost_usd: float, ref: str) -> None:
+            # What the browser could read right now: the thread, while the card is already stored.
+            [tid] = [json.loads(p)["thread_id"] for k, p in timeline if k == "thread"]
+            r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
+            seen_at_charge.append(r.text)
+            timeline.append(("charge", ref))
+            await super().charge(cost_usd, ref)
+
+    api.tools = Recording()
+    api.llm.script = happy_script()
+    pack = api.app.state.packs["real"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+
+    async def emit(kind: str, payload: dict) -> None:
+        timeline.append((kind, json.dumps(payload)))
+
+    await turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), emit)
+    kinds = [k for k, _ in timeline]
+    assert kinds.index("charge") < kinds.index("done") == len(kinds) - 1
+    ref = dict(timeline)["charge"]
+    assert json.loads(dict(timeline)["done"])["message_id"] == ref
+    before = [p for k, p in timeline[: kinds.index("charge")]]
+    assert all(ref not in p for p in before)
+    [read] = seen_at_charge
+    assert '"pieces":[{' in read.replace(" ", "") and ref not in read
+
+
 async def test_second_message_in_thread_has_no_thread_event(api: Api):
     api.llm.script = ask_script()
     first = await api.send("shipped auto-reply")

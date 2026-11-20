@@ -140,7 +140,13 @@ export class BotApi {
       try {
         let res: Response;
         try {
-          res = await fetch(this.sessionUrl, { method: "POST", credentials: "include" });
+          // A JSON body, so an app's session route that only takes JSON (HookPlaybook answers 415 otherwise) accepts it.
+          res = await fetch(this.sessionUrl, {
+            method: "POST",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          });
         } catch {
           throw new ApiError(0, "network", APP_UNREACHABLE); // offline, or the app is down: try again later
         }
