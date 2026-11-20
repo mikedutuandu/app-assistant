@@ -112,6 +112,26 @@ async def test_demo_save_draft_idempotent(api: Api):
     assert (await api.client.get("/demo/api/drafts")).json() == []
 
 
+async def test_demo_saves_a_thread(api: Api):
+    r = await session(api)
+    token, demo_id = r.json()["token"], r.cookies["demo_id"]
+    tools = await api.client.post("/demo/mcp", json=rpc("tools/list"), headers={"Authorization": f"Bearer {token}"})
+    save = next(t for t in tools.json()["result"]["tools"] if t["name"] == "save_draft")
+    assert save["inputSchema"]["properties"]["thread"]["type"] == "array"
+    long_post = "b" * 3000  # each post is its own text: the whole thread may pass one text's cap
+    args = {"text": "First post", "thread": [long_post, "Third post", "  "], "media": []}
+    saved = text_of(await call(api, token, "save_draft", args, key="t1"))
+    assert text_of(await call(api, token, "save_draft", args, key="t1")) == saved
+    assert await api.count("demo_drafts", f"demo:{demo_id}") == 1
+    api.client.cookies.set("demo_id", demo_id)
+    (listed,) = (await api.client.get("/demo/api/drafts")).json()
+    assert listed["text"] == "First post" and listed["thread"] == [long_post, "Third post"]
+    ctx = text_of(await call(api, token, "assistant_context", {}))
+    assert ctx["recent_posts"] == ["First post"]
+    too_many = {"text": "a", "thread": ["x"] * 30}
+    assert (await call(api, token, "save_draft", too_many, key="t2")).json()["result"]["isError"] is True
+
+
 async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
     r = await session(api)
     token, demo_id = r.json()["token"], r.cookies["demo_id"]
