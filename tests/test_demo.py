@@ -343,6 +343,145 @@ async def test_cleanup_deletes_a_dropped_threads_whole_storage_prefix(api: Api):
     assert storage.get(f"demo/{ws}/{kept}/stray_object") == b"x"
 
 
+class FailingDeletes:
+    """Storage whose delete_prefix raises for the keys in `bad` (a StorageError or a network blip)."""
+
+    def __init__(self, storage: Storage, bad: set[str]):
+        self._storage, self.bad = storage, bad
+
+    def delete_prefix(self, key: str) -> None:
+        if key in self.bad:
+            raise ConnectionError("blip")
+        self._storage.delete_prefix(key)
+
+    def __getattr__(self, name: str):
+        return getattr(self._storage, name)
+
+
+class LogSpy:
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def _add(self, msg: str, *args) -> None:
+        self.lines.append(msg % args)
+
+    warning = error = info = _add
+
+
+async def _old_pending(api: Api, ws: str, thread: str, name: str) -> str:
+    key = f"real/{ws}/{thread}/{name}"
+    api.storage.put(key, b"x", "image/png")
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "insert into files (id, app, workspace, thread_id, kind, mime, bytes, storage_key, expires_at)"
+            " values (%s, 'real', %s, %s, 'pending', 'image/png', 1, %s, now() - interval '1 minute')",
+            (name, ws, thread, key),
+        )
+    return key
+
+
+async def test_one_failing_delete_does_not_stop_the_rest_of_the_cleanup(api: Api, monkeypatch):
+    import assistant.demo.cleanup as cleanup_mod
+
+    storage = api.storage
+    real_thread = await api.thread_row(workspace="ws1", app="real")
+    bad_key = await _old_pending(api, "ws1", real_thread, "up_bad")
+    good_key = await _old_pending(api, "ws1", real_thread, "up_good")
+    # a day-old demo thread with a file, and a day-old draft with its image
+    ws = "demo:" + "d" * 32
+    old = datetime.now(UTC) - timedelta(days=2)
+    thread = await api.thread_row(workspace=ws, app="demo")
+    storage.put(f"demo/{ws}/{thread}/f1", b"x", "image/png")
+    storage.put(f"demo/{ws}/drafts/d1", b"x", "image/png")
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "insert into files (id, app, workspace, thread_id, kind, mime, bytes, storage_key) values"
+            " ('f1', 'demo', %s, %s, 'image', 'image/png', 1, %s)",
+            (ws, thread, f"demo/{ws}/{thread}/f1"),
+        )
+        await conn.execute(
+            "insert into demo_drafts (id, workspace, text, image_key, idem_key, created_at)"
+            " values ('d1', %s, 'old', %s, 'a', %s)",
+            (ws, f"demo/{ws}/drafts/d1", old),
+        )
+        await conn.execute("update threads set updated_at = %s where id = %s", (old, thread))
+    api.app.state.storage = FailingDeletes(storage, {bad_key})
+    spy = LogSpy()
+    monkeypatch.setattr(cleanup_mod, "log", spy)
+
+    result = await cleanup_demo(api.app.state)
+    assert result == {"drafts": 1, "facts": 0, "files": 1, "threads": 1, "pending": 1}
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id from files order by id")
+        assert [r[0] for r in await cur.fetchall()] == ["up_bad"]  # kept for the next run
+    assert storage.get(bad_key) == b"x"
+    for gone in (good_key, f"demo/{ws}/{thread}/f1", f"demo/{ws}/drafts/d1"):
+        with pytest.raises(Exception):  # noqa: B017 - botocore NoSuchKey
+            storage.get(gone)
+    # only the error's kind is logged: no key, workspace or thread id
+    assert spy.lines and all("ConnectionError" in line for line in spy.lines)
+    assert not any(part in line for line in spy.lines for part in ("ws1", real_thread, "up_bad", "blip"))
+
+    api.app.state.storage = storage  # the next run, with storage back
+    assert (await cleanup_demo(api.app.state))["pending"] == 1
+    with pytest.raises(Exception):  # noqa: B017 - botocore NoSuchKey
+        storage.get(bad_key)
+
+
+async def test_a_demo_threads_failing_delete_keeps_that_thread_for_the_next_run(api: Api):
+    storage = api.storage
+    ws = "demo:" + "e" * 32
+    old = datetime.now(UTC) - timedelta(days=2)
+    stuck, done = await api.thread_row(workspace=ws, app="demo"), await api.thread_row(workspace=ws, app="demo")
+    async with api.pool.connection() as conn:
+        for name, thread in (("f_stuck", stuck), ("f_done", done)):
+            storage.put(f"demo/{ws}/{thread}/{name}", b"x", "image/png")
+            await conn.execute(
+                "insert into files (id, app, workspace, thread_id, kind, mime, bytes, storage_key)"
+                " values (%s, 'demo', %s, %s, 'image', 'image/png', 1, %s)",
+                (name, ws, thread, f"demo/{ws}/{thread}/{name}"),
+            )
+        await conn.execute("update threads set updated_at = %s where id = any(%s)", (old, [stuck, done]))
+    api.app.state.storage = FailingDeletes(storage, {f"demo/{ws}/{stuck}/f_stuck"})
+
+    result = await cleanup_demo(api.app.state)
+    assert (result["threads"], result["files"]) == (1, 1)
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id from threads where app = 'demo'")
+        assert [r[0] for r in await cur.fetchall()] == [stuck]
+        cur = await conn.execute("select id from files")
+        assert [r[0] for r in await cur.fetchall()] == ["f_stuck"]
+
+    api.app.state.storage = storage
+    result = await cleanup_demo(api.app.state)
+    assert (result["threads"], result["files"]) == (1, 1)
+
+
+async def test_a_failing_step_does_not_stop_the_next_ones(api: Api):
+    """The pending step's query fails outright: the demo's own clean-up still runs."""
+    ws = "demo:" + "f" * 32
+    old = datetime.now(UTC) - timedelta(days=2)
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "insert into demo_facts (id, workspace, text, idem_key, created_at) values ('o', %s, 'old', 'a', %s)",
+            (ws, old),
+        )
+
+    class BrokenFirstQuery:
+        def __init__(self, pool):
+            self._pool, self.calls = pool, 0
+
+        def connection(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise ConnectionError("pooler down for a moment")
+            return self._pool.connection()
+
+    api.app.state.pool = BrokenFirstQuery(api.pool)
+    result = await cleanup_demo(api.app.state)
+    assert result["facts"] == 1
+
+
 def with_cron_secret(api: Api, secret: str | None) -> None:
     api.app.state.settings = api.app.state.settings.model_copy(update={"cron_secret": secret})
 
