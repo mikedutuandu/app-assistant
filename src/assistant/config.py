@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     packs_dir: Path = Path("apps")
     public_base_url: str
     demo_daily_usd_cap: float = 3.0
+    run_lifespan: bool = True
 
 
 @lru_cache
