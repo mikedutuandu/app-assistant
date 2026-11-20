@@ -41,6 +41,10 @@ class Storage:
             "get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=seconds
         )
 
+    def object_url(self, key: str) -> str:
+        """The object's address without a signature, as signed URLs spell it: the endpoint's path, the bucket, the key."""
+        return self.signed_url(key, 1).split("?", 1)[0]
+
     def delete_prefix(self, prefix: str) -> int:
         """Delete every object whose key starts with `prefix`; returns how many.
 

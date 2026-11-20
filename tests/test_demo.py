@@ -8,6 +8,8 @@ from test_api_chat import PNG, Api, api  # noqa: F401 - the shared fixture
 
 from assistant.auth import verify_session
 from assistant.demo.cleanup import cleanup_demo
+from assistant.demo.tools import image_allowed
+from assistant.files.storage import Storage
 from assistant.graph.build import thread_id
 
 pytestmark = pytest.mark.db
@@ -114,8 +116,8 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
     r = await session(api)
     token, demo_id = r.json()["token"], r.cookies["demo_id"]
     ws = f"demo:{demo_id}"
-    api.storage.put("demo/src/shot.png", PNG, "image/png")
-    url = api.storage.signed_url("demo/src/shot.png", 300)
+    api.storage.put(f"demo/{ws}/t1/f1", PNG, "image/png")  # a file this visitor uploaded to a thread
+    url = api.storage.signed_url(f"demo/{ws}/t1/f1", 300)
     served = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -128,7 +130,17 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
 
     bad = await call(api, token, "save_draft", {"text": "t", "media": [{"url": "https://evil.example/x.png"}]}, "i2")
     assert bad.json()["result"]["isError"] is True
-    assert served["n"] == 1  # the foreign URL was never fetched
+    api.storage.put("demo/demo:someone-else/t1/f1", PNG, "image/png")
+    for n, other in enumerate(
+        [
+            api.storage.signed_url("demo/demo:someone-else/t1/f1", 300),  # another visitor's file
+            api.storage.signed_url("real/ws1/t1/f1", 300),  # a real app's file
+            url.replace(f"/demo/{ws.replace(':', '%3A')}/t1/f1", f"/demo/{ws.replace(':', '%3A')}/../x/f1"),
+        ]
+    ):
+        refused = await call(api, token, "save_draft", {"text": "t", "media": [{"url": other}]}, f"o{n}")
+        assert refused.json()["result"]["isError"] is True, other
+    assert served["n"] == 1  # none of the refused URLs was fetched
     assert await api.count("demo_drafts", ws) == 1
 
     big = httpx.AsyncClient(
@@ -137,6 +149,24 @@ async def test_demo_save_draft_copies_the_image_from_our_storage_only(api: Api):
     api.app.state.http = big
     too_big = await call(api, token, "save_draft", {"text": "t", "media": [{"url": url}]}, key="i3")
     assert too_big.json()["result"]["isError"] is True
+
+
+def test_demo_image_prefix_follows_the_endpoint_path_and_bucket(test_settings):
+    supabase = test_settings.model_copy(
+        update={"s3_endpoint": "https://ref.supabase.co/storage/v1/s3", "s3_region": "ap-southeast-1"}
+    )
+    storage = Storage(supabase)
+    ws = "demo:abc"
+    assert image_allowed(storage, storage.signed_url(f"demo/{ws}/t1/f1", 300), ws)
+    assert image_allowed(storage, storage.signed_url(f"demo/{ws}/drafts/d1", 300), ws)
+    assert not image_allowed(storage, storage.signed_url("demo/demo:other/t1/f1", 300), ws)
+    assert not image_allowed(storage, "https://ref.supabase.co/rest/v1/secrets", ws)  # same host, not storage
+    assert not image_allowed(storage, "https://ref.supabase.co/storage/v1/s3/other-bucket/demo/demo%3Aabc/t1/f1", ws)
+    assert not image_allowed(storage, "http://ref.supabase.co/storage/v1/s3/test-bucket/demo/demo%3Aabc/t1/f1", ws)
+    assert not image_allowed(
+        storage, "https://ref.supabase.co/storage/v1/s3/test-bucket/demo/demo%3Aabc/../../../rest/v1/x", ws
+    )
+    assert not image_allowed(storage, "https://evil.example/storage/v1/s3/test-bucket/demo/demo%3Aabc/t1/f1", ws)
 
 
 async def test_demo_save_material_idempotent(api: Api):

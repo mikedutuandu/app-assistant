@@ -8,7 +8,7 @@ import json
 import logging
 import uuid
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
@@ -63,14 +63,20 @@ def draft_key(workspace: str, draft_id: str) -> str:
     return f"demo/{workspace}/drafts/{draft_id}"
 
 
-def _storage_host(storage) -> str:
-    """The host this deployment's storage signs URLs for: the configured endpoint, else AWS."""
-    return urlsplit(storage.signed_url("host-probe", 1)).netloc
-
-
-async def _copy_image(state, url: str, key: str) -> None:
+def image_allowed(storage, url: str, workspace: str) -> bool:
+    """Only a URL of this visitor's own files in our bucket: same scheme and host, and the path under
+    "<endpoint path>/<bucket>/demo/<workspace>/" (path-style: "/bucket/..." on S3, "/storage/v1/s3/bucket/..." on
+    Supabase). Anything else on the same host (another bucket, Supabase's REST API) is refused."""
+    allowed = urlsplit(storage.object_url(f"demo/{workspace}/"))
     parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or parts.netloc != _storage_host(state.storage):
+    if (parts.scheme, parts.netloc) != (allowed.scheme, allowed.netloc) or not parts.path.startswith(allowed.path):
+        return False
+    path = unquote(parts.path)
+    return "\\" not in path and not any(segment in (".", "..") for segment in path.split("/"))
+
+
+async def _copy_image(state, url: str, workspace: str, key: str) -> None:
+    if not image_allowed(state.storage, url, workspace):
         raise ToolFailure("That image is not one this demo can copy.")
     data = bytearray()
     mime = "application/octet-stream"
@@ -129,7 +135,7 @@ async def _save_draft(state, session: Session, args: dict, key: str) -> dict:
     first = media[0] if isinstance(media, list) and media and isinstance(media[0], dict) else None
     if first is not None and isinstance(first.get("url"), str):
         image_key = draft_key(session.workspace, draft_id)
-        await _copy_image(state, first["url"], image_key)
+        await _copy_image(state, first["url"], session.workspace, image_key)
     async with state.pool.connection() as conn:
         cur = await conn.execute(
             "insert into demo_drafts (id, workspace, text, image_key, idem_key) values (%s, %s, %s, %s, %s)"
