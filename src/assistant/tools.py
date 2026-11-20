@@ -39,6 +39,7 @@ class KeptFact(BaseModel):
 
 
 class AppContext(BaseModel):
+    name: str | None = None  # the user's name, when the app knows it
     voice: str
     topics: list[str]
     recent_posts: list[str]
@@ -46,7 +47,7 @@ class AppContext(BaseModel):
     credits_left: float | None
     out_of_credits_message: str | None
     language: str = "en"
-    kept_facts: list[KeptFact] = []  # offered when the interview opens; the user's own words
+    kept_facts: list[KeptFact] = []  # the user's own words, offered by the conversation model when relevant
 
 
 class SavedDraft(BaseModel):
@@ -57,7 +58,7 @@ class SavedDraft(BaseModel):
 class AppTools(Protocol):
     async def context(self) -> AppContext: ...
 
-    async def save_draft(self, text: str, media: list[dict], key: str) -> SavedDraft: ...
+    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft: ...
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None: ...
 
@@ -93,8 +94,12 @@ class McpHttpTools:
     async def context(self) -> AppContext:
         return self._model(AppContext, await self._call("context", {}))
 
-    async def save_draft(self, text: str, media: list[dict], key: str) -> SavedDraft:
-        return self._model(SavedDraft, await self._call("save_draft", {"text": text, "media": media}, key))
+    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
+        """`text` is the first post, `thread` the posts after it (left out for a single post)."""
+        args: dict[str, Any] = {"text": text, "media": media}
+        if thread:
+            args["thread"] = thread
+        return self._model(SavedDraft, await self._call("save_draft", args, key))
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None:
         args = {"facts": [f.model_dump() for f in facts], "draft_id": draft_id}

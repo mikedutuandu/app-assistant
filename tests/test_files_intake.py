@@ -32,15 +32,15 @@ def _pack(demo: bool = False, kinds: list[str] | None = None, image_mb: int = 10
             "mcp_url": "http://x/mcp",
             "secret_env": "X",
             "allowed_origins": [],
-            "interview_guide": "g",
-            "writes": [{"kind": "post", "count": 1, "instructions": "i"}],
+            "guide": "g",
+            "writes": [{"kind": "x_post", "count": 1, "instructions": "i"}],
             "tools": {
                 "context": "assistant_context",
                 "save_draft": "save_draft",
                 "save_material": "save_material",
                 "charge": "assistant_charge",
             },
-            "models": {"main": "a", "cheap": "b", "vision": "c"},
+            "models": {"chat": "a", "writer": "b", "main": "a", "cheap": "b", "vision": "c"},
             "files": {
                 "kinds": kinds or ["image", "voice"] if demo else ["image", "pdf", "voice"],
                 "image_mb": image_mb,

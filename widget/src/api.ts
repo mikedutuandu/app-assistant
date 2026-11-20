@@ -1,34 +1,27 @@
 /** The bot's HTTP API: session tokens, SSE over fetch, direct uploads to storage (XHR), actions and reads. */
 
-export interface Fact {
+export interface Draft {
   id: string;
-  text: string;
-  numbers: string[];
-  source: string;
-  file_id: string | null;
-}
-export interface Piece {
-  id: string;
-  spec_kind: string;
-  text: string;
-  image_file_id: string | null;
-  fact_ids: string[];
-  dropped: string | null;
+  kind: "x_post" | "x_thread" | string;
+  posts: string[];
+  image_file_id?: string | null;
+  /** Only on a draft read back from a thread. */
+  added?: boolean;
+  edit_url?: string | null;
 }
 export type BotEvent =
   | { event: "thread"; data: { thread_id: string; title: string } }
   | { event: "status"; data: { step: string } }
   | { event: "transcript"; data: { file_id: string; text: string } }
   | { event: "text"; data: { delta: string } }
-  | { event: "card"; data: { pieces: Piece[]; facts: Fact[] } }
+  | { event: "draft"; data: Draft }
+  | { event: "saved"; data: { kind: "facts"; items: string[] } }
   | { event: "note"; data: { text: string } }
   | { event: "done"; data: { message_id: string; cost_usd: number } }
   | { event: "failed"; data: { error: string; message: string } }
   | { event: string; data: any };
 
-export type ActionBody =
-  | { action_id: string; kind: "add_draft"; piece_id: string }
-  | { action_id: string; kind: "keep_facts"; facts: Fact[] };
+export type ActionBody = { action_id: string; kind: "add_draft"; draft_id: string };
 
 export class ApiError extends Error {
   constructor(
@@ -210,19 +203,20 @@ export class BotApi {
     return res.json();
   }
 
-  /** Streams one message's events. `onAccepted` runs once the server has taken the message, before any event. */
+  /** Streams one message's events (`draftId`: the draft a Shorter or Another angle message is about). `onAccepted` runs once the server has taken the message, before any event. */
   async send(
     threadId: string | null,
     text: string,
     fileIds: string[],
     onEvent: (e: BotEvent) => void,
     onAccepted?: () => void,
+    draftId?: string,
   ): Promise<void> {
     const res = await this.authed((token) =>
       fetch(this.url("/messages"), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ thread_id: threadId, text, file_ids: fileIds }),
+        body: JSON.stringify({ thread_id: threadId, text, file_ids: fileIds, ...(draftId ? { draft_id: draftId } : {}) }),
       }),
     );
     if (!res.ok) throw await errorOf(res);
@@ -270,7 +264,7 @@ export class BotApi {
     return this.request("GET", "/threads");
   }
 
-  thread(id: string): Promise<{ messages: { role: "user" | "assistant"; text: string; card?: any }[]; pieces: any[] }> {
+  thread(id: string): Promise<{ messages: { role: "user" | "assistant"; text: string; drafts?: Draft[]; saved?: string[] }[] }> {
     return this.request("GET", `/threads/${encodeURIComponent(id)}`);
   }
 }

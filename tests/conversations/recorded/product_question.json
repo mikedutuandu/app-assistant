@@ -1,0 +1,86 @@
+{
+  "case": "product_question",
+  "recorded_at": "2026-11-20T13:57:22+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "how many credits does a post cost?"
+    }
+  ],
+  "turns": [
+    {
+      "user": "how many credits does a post cost?",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "I don't have any details on credits or pricing, so I can't say what a post costs. Your account or the app's pricing page should have the exact number.",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.00754
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply says \"I don't have any details on credits or pricing\" and points Mike to \"Your account or the app's pricing page\", which is an honest admission plus a pointer to where to look.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The reply gives no credit price or any other number; it says \"I can't say what a post costs.\"",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply is a plain answer to a pricing question, with no post text and no story framing.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "a17c9ed42bd07d3e",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">how many credits does a post cost?</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "I don't have any details on credits or pricing, so I can't say what a post costs. Your account or the app's pricing page should have the exact number.",
+        "calls": [],
+        "cost_usd": 0.00754,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

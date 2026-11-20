@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 TOOL_KEYS = ("context", "save_draft", "save_material", "charge")
 
@@ -24,8 +24,9 @@ class FileCaps(BaseModel):
 
 
 class WriteSpec(BaseModel):
-    kind: str
-    count: int
+    kind: Literal["x_post", "x_thread"]
+    count: int = 1  # the default number of drafts
+    max_posts: int | None = None  # threads: the most posts in one thread
     max_chars: int | None = None
     no_links: bool = False
     no_dashes: bool = False
@@ -34,10 +35,19 @@ class WriteSpec(BaseModel):
 
 
 class Models(BaseModel):
+    chat: str
+    writer: str
+    writer_reasoning: Literal["none", "low"] = "low"
     main: str
     cheap: str
     vision: str
     fallbacks: list[str] = []
+    # The chat model's thinking. Sonnet 5.5 always thinks (high effort when none is asked), so "low" is its fastest;
+    # "none" sends nothing, which is right only for a model that may skip thinking.
+    chat_reasoning: Literal["none", "low"] = "low"
+    # Sampling temperature for the chat model, sent only when set. Neither Claude 5.5 model lists `temperature` among
+    # its parameters on OpenRouter (it is dropped there), so it is unset.
+    chat_temperature: float | None = Field(None, ge=0, le=1)
 
 
 class AppPack(BaseModel):
@@ -46,7 +56,7 @@ class AppPack(BaseModel):
     mcp_url: str
     secret_env: str
     allowed_origins: list[str]
-    interview_guide: str
+    guide: str
     writes: list[WriteSpec]
     tools: dict[Literal["context", "save_draft", "save_material", "charge"], str]
     models: Models
@@ -80,6 +90,8 @@ def load_packs(dir: Path, base_url: str = "") -> dict[str, AppPack]:
             raise PackError(f"{path}: invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise PackError(f"{path}: expected a mapping at the top level")
+        if "interview_guide" in raw:
+            raise PackError(f"{path}: `interview_guide` is gone: rename it to `guide`")
         try:
             pack = AppPack.model_validate(raw)
         except ValidationError as exc:

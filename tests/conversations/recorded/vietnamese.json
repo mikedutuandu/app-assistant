@@ -1,0 +1,141 @@
+{
+  "case": "vietnamese",
+  "recorded_at": "2026-11-20T13:57:29+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X"
+    }
+  ],
+  "turns": [
+    {
+      "user": "chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X. Tính năng này giúp ích nhất cho ai?",
+      "drafts": [],
+      "saved": [
+        "Tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.018262
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply \"Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X. Tính năng này giúp ích nhất cho ai?\" is entirely in natural Vietnamese, matching Mike's language.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "It restates cleanly that this week he launched the feature that automatically schedules posts on X: \"Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X.\"",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply has a single question, \"Tính năng này giúp ích nhất cho ai?\", and no post draft, only a restatement and the question.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "1dc86f79ef66553b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01SPJkeqgmtDRP21VtfUh7D1",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "Tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X."
+                }
+              ]
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.01002,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "5f14017ffbe37e57",
+        "messages_sha256": "f9fe002ff401a113",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 1 facts"
+          }
+        ]
+      },
+      "response": {
+        "text": "Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X. Tính năng này giúp ích nhất cho ai?",
+        "calls": [],
+        "cost_usd": 0.008242,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

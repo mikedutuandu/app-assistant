@@ -26,6 +26,7 @@
   li:first-child { border-top:0; padding-top:0; }
   .empty { color:var(--muted); font-size:14px; }
   .draft p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .draft p.more { margin-top:8px; padding-top:8px; border-top:1px dashed var(--line); }
   .draft img { display:block; max-width:100%; max-height:220px; border-radius:8px; margin-top:8px; }
   time { color:var(--muted); font-size:12px; }
   .log li { font-size:13px; padding:8px 0; overflow-wrap:anywhere; }
@@ -42,7 +43,7 @@
 <main>
   <h1>Shipnote: changelogs for small teams</h1>
   <p class="sub">Tell people what you shipped this week, in a few lines.</p>
-  <div class="note">This is a demo. The "Write with me" button is an assistant any app can add with one script tag. Tell it what you shipped, then add a draft and watch it land below.</div>
+  <div class="note">This is a demo. The "Write with me" button is an assistant any app can add with one script tag. It talks with you and asks one thing at a time. Tell it what you shipped and it writes a post, or a thread if there is more to say, from what you told it. It never makes up numbers. Save the draft and it lands below.</div>
   <div class="grid">
     <section aria-labelledby="drafts-title">
       <h2 id="drafts-title">Your drafts</h2>
@@ -78,6 +79,7 @@
         items.forEach(function (d) {
           var li = el("li", null, "draft");
           li.appendChild(el("p", d.text));
+          (d.thread || []).forEach(function (t) { li.appendChild(el("p", t, "more")); });
           if (d.image_url) {
             var img = document.createElement("img");
             img.src = d.image_url;

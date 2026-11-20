@@ -1,12 +1,18 @@
 """Fact and rule checks: pure functions, no I/O, no models."""
 
 import re
+import unicodedata
 from typing import Literal
 
 from pydantic import BaseModel, Field
 from ulid import ULID
 
 from assistant.packs import WriteSpec
+
+
+def nfc(text: str) -> str:
+    """Text in one Unicode form (NFC), so the same words compare equal whatever produced them."""
+    return unicodedata.normalize("NFC", text)
 
 
 class Fact(BaseModel):

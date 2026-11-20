@@ -1,13 +1,13 @@
 """Test doubles shared by the graph and chat API tests: a scripted Llm and recording AppTools."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
 
 from assistant.checks import Fact
-from assistant.llm import LlmResult
+from assistant.llm import LlmResult, ToolCall, ToolTurn
 from assistant.tools import AppContext, SavedDraft
 
 _MARKER = re.compile(r"^\[\[([A-Z_]+)\]\]")
@@ -19,6 +19,20 @@ class Out:
 
     value: Any
     cost: float | None = None
+
+
+@dataclass
+class Reply:
+    """One scripted `chat_tools` turn: streamed text and/or tool calls (ToolCall, or a dict of its fields; a dict
+    without an `id` gets one)."""
+
+    text: str = ""
+    calls: list = field(default_factory=list)
+
+
+def call(name: str, **arguments: Any) -> dict:
+    """A tool call for a `Reply`."""
+    return {"name": name, "arguments": arguments}
 
 
 def marker(messages: list[dict]) -> str:
@@ -33,14 +47,16 @@ def marker(messages: list[dict]) -> str:
 class FakeLlm:
     """Returns scripted outputs keyed by the prompt's marker, popped in order. Records every call.
 
-    A scripted value is the model's output (a str for chat, a dict for chat_json, a (text, seconds) tuple for
-    transcribe under the key "TRANSCRIBE"), an Exception to raise, or an `Out` carrying its own cost.
+    A scripted value is the model's output (a str for chat, a dict for chat_json, a str or a `Reply` for
+    chat_tools, a (text, seconds) tuple for transcribe under the key "TRANSCRIBE"), an Exception to raise, or an
+    `Out` carrying its own cost.
     """
 
     def __init__(self, script: dict[str, list] | None = None, cost: float = 0.001):
         self.script: dict[str, list] = {k: list(v) for k, v in (script or {}).items()}
         self.cost = cost
         self.calls: list[dict] = []
+        self._pending: dict = {}  # max_tokens and reasoning of the call being made
 
     def add(self, name: str, *values: Any) -> None:
         self.script.setdefault(name, []).extend(values)
@@ -49,7 +65,8 @@ class FakeLlm:
         return [c["name"] for c in self.calls]
 
     def _next(self, name: str, messages: list[dict] | None, model: str | None) -> tuple[Any, float]:
-        self.calls.append({"name": name, "messages": messages, "model": model})
+        self.calls.append({"name": name, "messages": messages, "model": model, **self._pending})
+        self._pending = {}
         queue = self.script.get(name)
         if not queue:
             raise AssertionError(f"FakeLlm: no scripted output left for {name}")
@@ -61,15 +78,30 @@ class FakeLlm:
             raise value
         return value, cost
 
-    async def chat(self, messages, model, fallbacks, max_tokens, on_text=None) -> LlmResult:
+    async def chat(self, messages, model, fallbacks, max_tokens, on_text=None, reasoning=None) -> LlmResult:
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning}
         text, cost = self._next(marker(messages), messages, model)
         if on_text is not None:
             await on_text(text)
         return LlmResult(text=text, cost_usd=cost, model=model)
 
-    async def chat_json(self, messages, model, fallbacks, schema: type[BaseModel], max_tokens):
+    async def chat_json(self, messages, model, fallbacks, schema: type[BaseModel], max_tokens, reasoning=None):
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning}
         value, cost = self._next(marker(messages), messages, model)
         return schema.model_validate(value), cost
+
+    async def chat_tools(
+        self, messages, model, fallbacks, tools, max_tokens, on_text=None, reasoning=None, temperature=None
+    ) -> ToolTurn:
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning, "tools": tools, "temperature": temperature}
+        value, cost = self._next(marker(messages), list(messages), model)  # a copy: the agent appends to its list
+        reply = value if isinstance(value, Reply) else Reply(text=value)
+        calls = []
+        for n, c in enumerate(reply.calls, 1):
+            calls.append(c if isinstance(c, ToolCall) else ToolCall.model_validate({"id": f"call_{n}", **c}))
+        if reply.text and on_text is not None:
+            await on_text(reply.text)
+        return ToolTurn(text=reply.text, calls=calls, cost_usd=cost, model=model)
 
     async def transcribe(self, audio: bytes, format: str) -> tuple[str, float, float]:
         (text, seconds), cost = self._next("TRANSCRIBE", None, None)
@@ -108,12 +140,12 @@ class FakeTools:
         self._record("context")
         return self._context
 
-    async def save_draft(self, text: str, media: list[dict], key: str) -> SavedDraft:
+    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
         self._record("save_draft")
         for d in self.drafts:
             if d["key"] == key:
                 return SavedDraft(id=d["id"], edit_url=d["edit_url"])
-        draft = {"id": f"draft-{len(self.drafts) + 1}", "text": text, "media": media, "key": key}
+        draft = {"id": f"draft-{len(self.drafts) + 1}", "text": text, "thread": thread, "media": media, "key": key}
         draft["edit_url"] = f"https://app.example/drafts/{draft['id']}"
         self.drafts.append(draft)
         return SavedDraft(id=draft["id"], edit_url=draft["edit_url"])

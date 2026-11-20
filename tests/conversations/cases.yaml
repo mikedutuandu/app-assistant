@@ -1,0 +1,254 @@
+# Conversation tests from real chats (spec: docs/superpowers/specs/2026-11-20-one-assistant-design.md,
+# "Conversation tests"). They start with what Mike saw on 20 Nov 2026: "hi" asked the same question twice, "my name
+# mike" became two posts, and drafts came with lists of check reasons.
+#
+# Each case is one chat in the HookPlaybook pack, run through `run_turn` with FakeTools and the context below.
+#
+# turns: what the user sends, in order. A turn is a message, or a mapping with
+#   text: the message
+#   file: an image under tests/conversations/fixtures/, uploaded and read through the normal read path
+#   shows: what that image shows, in words, for the judge (which never sees the image)
+#   draft: last   the message is about the latest draft so far (its draft_id is sent, as a tap on Shorter does)
+#
+# expect: plain-language notes a judge model (anthropic/claude-sonnet-5.5) decides one by one, true or false, by
+#   reading the whole chat. "The reply" in a one-turn case, "the last reply" or "the first reply" otherwise; "the
+#   draft" is a draft the assistant showed (with its buttons) in the turn named.
+#
+# hard: rules checked in code (scripts/converse_eval.py, check_hard), also on the recorded replays in CI.
+#   drafts, saved: how many drafts / saved fact lines the LAST turn showed: an exact number, ">=N", or "any"
+#   max_questions_per_reply: the most asks in any one reply of the chat: each question, each "tell me ..." /
+#     "let me know ..." sentence, and each "and whether ..." inside one (scripts/converse_eval.py, questions)
+#   language: vi | en   every reply and every draft of the chat is in it
+#   draft_kind: x_post | x_thread   every draft of the last turn
+#   shorter_than_previous_draft: true   the last turn's draft is shorter than the draft it is about
+#   said: words or numbers some reply of the chat must contain (whole words, any case)
+#   never_said: words no reply or draft of the chat may contain (whole words, any case)
+#   never_kept: words no draft and no saved fact of the chat may contain (whole words, any case)
+#   draft_numbers_from_user: on unless set to false   every number in every draft is one Mike gave (in a turn's
+#     text or in what its file shows), parsed and matched as the bot's own number check does
+#   Every turn must also end in `done`, never `failed`.
+
+context:
+  name: Mike
+  voice: casual and direct, short sentences, a solo founder building in public
+  topics: [building in public, SaaS, growing on X]
+  recent_posts:
+    - "shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up."
+    - "week 6 of building in public: 31 paying users, every one of them came from replies. zero ads."
+  credits_left: null
+  out_of_credits_message: null
+  language: en
+  kept_facts: []
+
+cases:
+  # ---- small talk is not news ----
+
+  - name: hi
+    turns: ["hi"]
+    expect:
+      - The reply greets Mike back in a friendly, natural way (using his name is fine).
+      - The reply asks at most one question, and if it asks one it is light and open (such as what he is working on), not about a specific product, feature or chatbot he never mentioned.
+      - The reply contains no post and does not mention facts, saving, tools or checks.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  - name: how_are_you
+    turns: ["hi", "how are you"]
+    expect:
+      - The last reply answers "how are you" the way a person would (for example, says it is doing well) instead of skipping it.
+      - The last reply does not ask again what the first reply asked (about Mike's work, his week or what he is up to), in the same or other words. A reciprocal question such as "How about you?" (asking how Mike is) is what a person says and is fine, as long as it is the only question in the last reply.
+      - No reply contains a post.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  - name: my_name_mike
+    turns: ["hi", "my name mike"]
+    expect:
+      - The last reply acknowledges the name warmly and uses it, like "Nice to meet you, Mike" (saying it already knew is fine too).
+      - The last reply treats the name as small talk; it does not call it news or a story, or suggest posting about it.
+      - No reply contains a post.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  - name: what_can_you_do
+    turns: ["what can you do?"]
+    expect:
+      - The reply says in plain words, in one to three sentences, that it helps Mike turn real things he did into posts for X.
+      - The reply is not a bulleted or numbered list.
+      - The reply contains no post.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  - name: nothing_to_post
+    turns: ["i dont know what to post today"]
+    expect:
+      - The reply asks for exactly one thing, an easy question to find something real Mike did, saw or learned recently; it asks nothing else (no extra "tell me ..." or "and whether ...").
+      - The reply is not a list of post ideas or a list of questions, and contains no post.
+      - The reply does not invent anything about Mike's week or his results.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  # ---- playing back in clean words ----
+
+  - name: playback_chatbot
+    turns: ["i deployed chat bot help user plan weet"]
+    expect:
+      - The reply says back what it understood in clean, correctly spelled words, that Mike shipped (deployed or launched) a chatbot that helps users plan their week (plan their week of posts is also fine).
+      - The reply does not repeat the typo "weet" or the rough wording "help user plan weet".
+      - The reply asks for exactly one thing. If the play-back is a question, the reply asks nothing else (no "tell me ...", no "and whether ...").
+      - The reply contains no post and invents no number, user count or result.
+    hard: {drafts: 0, saved: any, max_questions_per_reply: 1, never_said: ["weet"]}
+
+  - name: typos_come_back_clean
+    turns: ["finaly fixd the onbording. new users get to there first post in 3 min insted of 15"]
+    expect:
+      - The reply or the draft restates the news in clean, correctly spelled words, that onboarding was fixed and new users now reach their first post in 3 minutes instead of 15.
+      - The numbers 3 and 15 (minutes) are kept exactly as Mike gave them, and no other number appears in any reply or draft.
+      - No reply or draft repeats any of Mike's typos ("finaly", "fixd", "onbording", "insted").
+    hard: {drafts: any, saved: any, max_questions_per_reply: 1, never_said: ["finaly", "fixd", "onbording", "insted"]}
+
+  - name: story_over_turns
+    # The story is complete after the second message, so the bot may write then; "write it" afterwards may then get
+    # a new version, or a pointer to the draft above with an offer of another take (never the same post again).
+    turns: ["we launched dark mode today", "it was the most requested feature, 52 people asked for it", "write it"]
+    expect:
+      - The second reply builds on dark mode; it does not ask again what launched.
+      - By the end of the chat, a draft says dark mode launched and that 52 people asked for it, with 52 exactly.
+      - No draft invents another number, result or quote.
+      - The last reply does not repeat a draft's text, and if the last turn shows no new draft, the last reply points to the draft already shown or offers another take, without asking Mike for more details first.
+    hard: {drafts: any, saved: any, max_questions_per_reply: 1}
+
+  # ---- writing ----
+
+  - name: just_write_it_thin
+    turns: ["i deployed chat bot help user plan weet", "just write it"]
+    expect:
+      - After "just write it", the assistant writes exactly one draft instead of asking more questions first.
+      - The draft says only what Mike gave, that he shipped a chatbot that helps users plan their week (saying "plan their week of posts" is fine too); it invents no number, user count, result, quote or feature beyond that.
+      - The draft does not reuse numbers from Mike's earlier posts (such as 31 paying users).
+      - The last reply is one or two short sentences, does not repeat the draft's text, and does not lecture about missing details.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, never_said: ["weet"]}
+
+  - name: rich_story_write
+    turns: ["we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"]
+    expect:
+      - The assistant writes exactly one draft.
+      - The draft uses Mike's numbers exactly (2 minutes instead of 2 hours, 40 founders) and contains no other number or result.
+      - The reply is one or two short sentences and does not repeat the draft's text.
+      - Nothing in the assistant's replies (its own words) mentions checks, rules, facts it used, or anything "not added". The quiet saved line under a turn is the app's, by design, and is fine.
+    hard: {drafts: 1, saved: ">=1", max_questions_per_reply: 1, never_said: ["What I used", "Not added"]}
+
+  - name: shorter_after_draft
+    turns:
+      - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+      - {text: "shorter", draft: last}
+    expect:
+      - The last draft is a shorter version of the draft before it, about the same news (auto-reply now answers in 2 minutes instead of 2 hours).
+      - The last draft adds no number or claim that was not in the earlier draft or in Mike's message.
+      - The last reply is one short line and does not paste the draft's text again.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, shorter_than_previous_draft: true}
+
+  - name: another_angle
+    turns:
+      - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+      - {text: "another angle", draft: last}
+    expect:
+      - The last draft opens differently from the draft before it and puts a different fact or framing first, using only the given facts. The same first line, or the same sentences in a new order, fails.
+      - The last draft uses only what Mike gave (auto-reply shipped, 2 minutes instead of 2 hours, 40 beta founders use it every day) and invents nothing.
+      - The last reply does not repeat the draft's text.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1}
+
+  - name: give_me_3
+    turns:
+      - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day"
+      - "give me 3"
+    expect:
+      - The last turn shows three drafts, each with a different first line that leads with a different point (such as the speed, the 40 founders, or the launch itself). Sharing facts in their bodies is fine, as there are only three facts.
+      - Every draft uses only what Mike gave (auto-reply, 2 minutes instead of 2 hours, 40 beta founders every day) and invents nothing.
+      - The last reply is short and does not repeat any draft's text.
+    hard: {drafts: 3, saved: any, max_questions_per_reply: 1}
+
+  - name: give_me_a_thread
+    turns:
+      - "this month we shipped auto reply (replies go out in 2 min instead of 2 hours), a hook scorer anyone can use free, and dark mode. 40 founders use the beta every day"
+      - "give me a thread"
+    expect:
+      - The last turn's draft is a thread of several posts, not a single post.
+      - The thread covers what Mike listed (auto-reply at 2 minutes instead of 2 hours, the free hook scorer, dark mode, 40 beta founders every day) and adds no other number, feature or result.
+      - The last reply is short and does not repeat the thread's text.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, draft_kind: x_thread}
+
+  - name: screenshot_number
+    turns:
+      - text: "signups this week"
+        file: signups.png
+        shows: 'a HookPlaybook dashboard card, "Signups this week", with the number 184'
+      - "yes thats right, write a post"
+    expect:
+      - The first reply says back the number from the screenshot, 184 signups this week.
+      - The last turn's draft states 184 signups exactly and contains no other number.
+      - The last reply does not repeat the draft's text.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, said: ["184"]}
+
+  - name: say_10k_users
+    turns: ["i deployed chat bot help user plan weet", "say we have 10k users"]
+    expect:
+      - No draft states 10k users or any other user count.
+      - The last reply checks, kindly and in one question, whether 10k is Mike's real number, or says in one short sentence that posts only use real numbers and offers to write without it.
+      - The last reply does not lecture or scold Mike.
+    hard: {drafts: any, saved: any, max_questions_per_reply: 1, never_kept: ["10k", "10,000", "10000", "10 000", "10.000"]}
+
+  # ---- after a draft ----
+
+  - name: thanks_after_draft
+    turns:
+      - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+      - "thanks"
+    expect:
+      - The last reply is a short, warm answer to the thanks, as a person would give.
+      - The last turn writes no new draft and the last reply does not repeat the earlier draft's text.
+      - The last reply asks at most one light question and offers no list of options.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  - name: question_mid_writing
+    turns:
+      - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+      - "when should i post this?"
+    expect:
+      - The last reply answers the timing question naturally, or says plainly that it can't see his best posting times here and where he can find them.
+      - The last turn writes no new draft and does not rewrite the earlier one.
+      - The last reply invents no statistics about Mike's audience or account.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  # ---- questions about the app ----
+
+  - name: product_question
+    turns: ["how many credits does a post cost?"]
+    expect:
+      - The reply answers plainly, or says honestly that it doesn't know the exact cost and points Mike to where he can see it (such as Billing or HookPlaybook's Ask).
+      - The reply does not state a credit price or any number it was not given.
+      - The reply contains no post and does not treat the question as a story.
+    hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
+
+  # ---- Vietnamese ----
+
+  - name: vietnamese
+    turns: ["chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X"]
+    expect:
+      - The reply is written entirely in natural Vietnamese.
+      - The reply says back the news cleanly, that Mike launched a feature this week that schedules posts on X automatically.
+      - The reply asks at most one question and contains no post.
+    hard: {drafts: 0, saved: any, max_questions_per_reply: 1, language: vi}
+
+  - name: vietnamese_write
+    turns: ["chào bạn, tuần này mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X", "viết bài đi"]
+    expect:
+      - Every reply and the draft are in Vietnamese.
+      - The draft says only what Mike gave (this week he launched automatic post scheduling for X) and invents no number or result.
+      - The last reply does not repeat the draft's text.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi}
+
+  - name: vietnamese_button_tap
+    turns:
+      - "tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu. viết bài đi"
+      - {text: "Make it shorter", draft: last}
+    expect:
+      - Every reply and both drafts are in Vietnamese, including after the English button text "Make it shorter".
+      - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week; 30 beta users scheduled 500 posts in the first 3 days), and adds no number or result Mike didn't give.
+      - The last reply is one short line and does not paste the draft's text again.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi, shorter_than_previous_draft: true}

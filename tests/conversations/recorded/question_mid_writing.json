@@ -1,0 +1,287 @@
+{
+  "case": "question_mid_writing",
+  "recorded_at": "2026-11-20T13:57:18+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
+    },
+    {
+      "text": "when should i post this?"
+    }
+  ],
+  "turns": [
+    {
+      "user": "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Here's a fresh take on it, Mike. Want it punchier or with a different angle?",
+      "drafts": [
+        {
+          "id": "FA0A0C6E000008",
+          "kind": "x_post",
+          "posts": [
+            "replies used to go out in 2 hours. now it's 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day."
+          ]
+        }
+      ],
+      "saved": [
+        "They shipped auto reply last week.",
+        "Replies now go out in 2 minutes instead of 2 hours.",
+        "40 founders on the beta use it every day."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.0237458
+    },
+    {
+      "user": "when should i post this?",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "I don't have data on when your followers are most active, so I can't give you an exact time. Your X analytics will show when your audience is online. If you'd rather not dig into it, a weekday morning in your main audience's time zone is a safe default.",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.009684
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply says \"I don't have data on when your followers are most active\" and points him to his X analytics, plus a sensible default, which answers the timing question plainly.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "Turn 2 contains only text with no draft card, so nothing new is written and the earlier draft is not rewritten.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply gives no numbers about Mike's audience or account; it admits it lacks the data and offers only a generic default.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "09fffc3150311d63",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01D4C3sH5P8p2JzVVtrmedHr",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "They shipped auto reply last week."
+                },
+                {
+                  "text": "Replies now go out in 2 minutes instead of 2 hours."
+                },
+                {
+                  "text": "40 founders on the beta use it every day."
+                }
+              ]
+            },
+            "bad_arguments": null
+          },
+          {
+            "id": "toolu_011HBVufMDdcH56o5kspSaUi",
+            "name": "write_drafts",
+            "arguments": {
+              "brief": "Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.",
+              "kind": "x_post",
+              "language": "en",
+              "count": 1
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.009868,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "f07cf13ae7f856bc",
+        "system_sha256": "cacdba84fef7a77e",
+        "messages_sha256": "b4dc4262c3a0e752",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "replies used to go out in 2 hours. now it's 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2",
+                "F3"
+              ],
+              "image_file_id": null
+            }
+          ]
+        },
+        "cost_usd": 0.005108
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "62c552a7632e3663",
+        "messages_sha256": "5d3ae0db0e94e0e1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">replies used to go out in 2 hours. now it's 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 7.38e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "3f492db94cc70de7",
+        "messages_sha256": "8aa942ef03578635",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts",
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 3 facts"
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"FA0A0C6E000008\" kind=\"x_post\">replies used to go out in 2 hours. now it's 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's a fresh take on it, Mike. Want it punchier or with a different angle?",
+        "calls": [],
+        "cost_usd": 0.008696,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "3f492db94cc70de7",
+        "messages_sha256": "ae4b030813247b63",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Here's a fresh take on it, Mike. Want it punchier or with a different angle?"
+          },
+          {
+            "role": "user",
+            "content": "<data source=\"user\">when should i post this?</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "I don't have data on when your followers are most active, so I can't give you an exact time. Your X analytics will show when your audience is online. If you'd rather not dig into it, a weekday morning in your main audience's time zone is a safe default.",
+        "calls": [],
+        "cost_usd": 0.009684,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

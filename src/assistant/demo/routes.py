@@ -57,13 +57,21 @@ async def drafts(request: Request) -> list[dict]:
     state = request.app.state
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select id, text, image_key, created_at from demo_drafts where workspace = %s"
+            "select id, text, posts, image_key, created_at from demo_drafts where workspace = %s"
             " order by created_at desc, id desc limit %s",
             ("demo:" + demo_id, DRAFTS_LISTED),
         )
         rows = await cur.fetchall()
     out = []
-    for draft_id, text, image_key, created_at in rows:
+    for draft_id, text, posts, image_key, created_at in rows:
         url = await asyncio.to_thread(state.storage.signed_url, image_key, 300) if image_key else None
-        out.append({"id": draft_id, "text": text, "image_url": url, "created_at": created_at.isoformat()})
+        out.append(
+            {
+                "id": draft_id,
+                "text": text,
+                "thread": posts or [],
+                "image_url": url,
+                "created_at": created_at.isoformat(),
+            }
+        )
     return out

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 from chat_api import PNG, Api, parse_sse
-from fakes import default_context
+from fakes import Reply, call, default_context
 
 from assistant import auth
 from assistant.auth import AuthError, verify_delete_token, verify_session
@@ -64,8 +64,10 @@ def test_pack_values():
         "save_material": "save_material",
         "charge": "assistant_charge",
     }
-    [post] = p.writes  # no x_thread in Phase 2
-    assert (post.kind, post.count, post.max_chars) == ("x_post", 2, 280)
+    post, thread = p.writes
+    assert (post.kind, post.count, post.max_chars) == ("x_post", 1, 280)
+    assert (thread.kind, thread.count, thread.max_chars, thread.max_posts) == ("x_thread", 1, 280, 8)
+    assert thread.no_links and thread.no_dashes and thread.may_carry_image
     assert post.no_links and post.no_dashes and post.may_carry_image
     for words in ["voice", "hook", "one point", "plain words"]:
         assert words in post.instructions, words
@@ -81,8 +83,8 @@ def test_pack_values():
     assert p.demo is False
     demo = load_packs(APPS, base_url="http://testserver")["demo"]
     assert p.models == demo.models
-    for topic in ["what happened", "who it helps", "a number or result", "what they learned", "screenshot"]:
-        assert topic in p.interview_guide, topic
+    for topic in ["what happened", "who it helps", "number or result", "learned", "screenshot", "Never invent"]:
+        assert topic in p.guide, topic
 
 
 def test_pack_never_names_create_draft():
@@ -197,16 +199,20 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
         assert r.status_code == 200, r.text
         up = r.json()
         hp.llm.add("IMAGE_READER", {"text": "a chart", "unsure": []})
-        hp.llm.add("INTERVIEW", {"enough": True, "just_write": False, "question": None})
-        hp.llm.add("EXTRACT_FACTS", {"facts": [{"text": fact, "source": "typed", "file_id": None}]})
-        x_post = {"spec_kind": "x_post", "text": post, "fact_ids": ["F1"], "image_file_id": None}
-        hp.llm.add("WRITER", {"pieces": [x_post]})
+        write = [
+            call("save_facts", facts=[{"text": fact}]),
+            call("write_drafts", brief="the March milestone", kind="x_post"),
+        ]
+        hp.llm.add("CONVERSE", Reply(calls=write), "Here's one.")
+        hp.llm.add("DRAFT_WRITER", {"drafts": [{"posts": [post], "fact_ids": ["F1"], "image_file_id": None}]})
         hp.llm.add("CLAIM_CHECK", {"unsupported": []})
         body = {"thread_id": up["thread_id"], "text": fact, "file_ids": [up["file_id"]]}
         r = await hp.client.post("/v1/chat/hookplaybook/messages", json=body, headers=_widget(workspace))
         events = parse_sse(r.text)
         assert [k for k, _ in events][-1] == "done", events
-        keep = {"action_id": f"keep-{workspace}", "kind": "keep_facts", "facts": [{"text": fact}]}
+        assert [p["posts"] for k, p in events if k == "draft"] == [[post]]
+        [shown] = [p for k, p in events if k == "draft"]  # stored by its event; Add to Schedule makes an action
+        keep = {"action_id": f"add-{workspace}", "kind": "add_draft", "draft_id": shown["id"]}
         url = f"/v1/chat/hookplaybook/threads/{up['thread_id']}/actions"
         assert (await hp.client.post(url, json=keep, headers=_widget(workspace))).status_code == 200
         return up["thread_id"]

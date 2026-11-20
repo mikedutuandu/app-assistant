@@ -1,0 +1,138 @@
+{
+  "case": "how_are_you",
+  "recorded_at": "2026-11-20T13:54:37+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "hi"
+    },
+    {
+      "text": "how are you"
+    }
+  ],
+  "turns": [
+    {
+      "user": "hi",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Hi Mike! What are you working on these days?",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.007244
+    },
+    {
+      "user": "how are you",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "I'm doing well, thanks for asking! How about you?",
+      "drafts": [],
+      "saved": [],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.007336
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The last reply says \"I'm doing well, thanks for asking!\", which answers the question the way a person would.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The last reply's only question is \"How about you?\", a reciprocal question about how Mike is, and it does not repeat the first reply's \"What are you working on these days?\".",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "Neither reply contains a post: the first is a greeting plus a question, and the second is a short answer plus \"How about you?\".",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "634d376787d62b03",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">hi</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "Hi Mike! What are you working on these days?",
+        "calls": [],
+        "cost_usd": 0.007244,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "c15239b33efb20c9",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">hi</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Hi Mike! What are you working on these days?"
+          },
+          {
+            "role": "user",
+            "content": "<data source=\"user\">how are you</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "I'm doing well, thanks for asking! How about you?",
+        "calls": [],
+        "cost_usd": 0.007336,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

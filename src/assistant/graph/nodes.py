@@ -1,37 +1,23 @@
-"""The graph's nodes, one async function each: `(state, turn) -> state update`.
+"""The graph's first two nodes, one async function each: `(state, turn) -> state update`. The third, `converse`,
+is the conversation agent (`agent.py`).
 
-The graph has no free tool calling: the only app tool it reaches is `context()`. Everything a user, a file, a link
-or the app supplied goes to a model inside a `<data>` block. Every model call first checks the message's cost cap.
+The only app tool these reach is `context()`. Every model call (reading a file) first checks the message's cost cap.
 """
 
 import re
 import time
-import unicodedata
-from collections import Counter
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel, ConfigDict
+from langchain_core.messages import BaseMessage, HumanMessage
 
-from assistant.checks import Fact, numbers_in, repeats, rule_problems, unsupported_numbers
-from assistant.db import new_id
+from assistant.checks import nfc
 from assistant.files.intake import UploadError
-from assistant.graph import prompts
-from assistant.graph.prompts import data
-from assistant.graph.state import ChatState, Piece
+from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
-from assistant.packs import AppPack, WriteSpec
-from assistant.tools import KeptFact
 
 CONTEXT_TTL = 300  # seconds the app's context is reused within a thread
-MAX_ROUNDS = 2  # ask-back rounds before writing with what there is
 MAX_LINKS = 2  # links read from one message
-MAX_MESSAGES = 20  # conversation messages shown to a model
 MAX_KEPT = 10  # kept facts taken from the app's context
 
-NUMBER = "a number you didn't give ({})"
-RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
-REPEAT = "it repeats a recent post"
-CLAIM = "it says something you didn't tell me"
 READ_NOTES = {
     "voice": "Read your voice note",
     "image": "Read your screenshot",
@@ -40,66 +26,7 @@ READ_NOTES = {
 }
 
 _LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-_LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*")
-INTRO = "Here's what I wrote from what you told me:"
-KEPT_OFFER = "Last time you kept these — want to write from one?"
-KEPT_NOTE = "Offered the facts you kept"
-NOTHING_WRITTEN = "I couldn't write anything from that yet. Tell me a bit more?"
 _now = time.time
-
-
-# ---- structured outputs ----
-
-
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class InterviewOut(_Strict):
-    enough: bool
-    just_write: bool
-    question: str | None
-
-
-class FactOut(_Strict):
-    text: str
-    source: str
-    file_id: str | None
-
-
-class ExtractOut(_Strict):
-    facts: list[FactOut]
-
-
-class PieceOut(_Strict):
-    spec_kind: str
-    text: str
-    fact_ids: list[str]
-    image_file_id: str | None
-
-
-class WriterOut(_Strict):
-    pieces: list[PieceOut]
-
-
-class ClaimOut(_Strict):
-    unsupported: list[str]
-
-
-# ---- helpers ----
-
-
-def nfc(text: str) -> str:
-    return unicodedata.normalize("NFC", text)
-
-
-def _key(text: str) -> str:
-    return " ".join(nfc(text).casefold().split())
-
-
-def _kept_key(text: str) -> str:
-    """How an extracted fact is matched to a kept one: case, spacing and end punctuation aside."""
-    return _key(text).strip(" .!?;:,")
 
 
 def _content(message: BaseMessage) -> str:
@@ -115,18 +42,6 @@ def _latest_user_text(state: ChatState) -> str:
     return ""
 
 
-def _kept(state: ChatState) -> list[KeptFact]:
-    ctx = state.get("context")
-    return list(ctx.kept_facts) if ctx else []
-
-
-def _source_texts(state: ChatState) -> list[str]:
-    """What the user said and showed: this thread's messages, the readings' text (not `unsure`), and the facts they
-    kept in an earlier chat (their own words, told then)."""
-    said = [nfc(_content(m)) for m in state.get("messages", []) if isinstance(m, HumanMessage)]
-    return said + [r.text for r in state.get("readings", [])] + [k.text for k in _kept(state)]
-
-
 def _links(text: str) -> list[str]:
     found: list[str] = []
     for m in _LINK.finditer(text):
@@ -136,108 +51,13 @@ def _links(text: str) -> list[str]:
     return found[:MAX_LINKS]
 
 
-def _fmt(n: float) -> str:
-    return format(n, "f").rstrip("0").rstrip(".")
-
-
-def _language(tag: str) -> str:
-    """The app's language tag (en, vi, pt-BR), or "en" for anything else: it goes into a system prompt."""
-    return tag if _LANGUAGE_TAG.fullmatch(tag) else "en"
-
-
-def _system(prompt: str, pack: AppPack, state: ChatState, *, guide=False, language=False) -> str:
-    parts = [prompt, f"App: {pack.name}"]
-    if guide:
-        parts.append(f"The app's guide:\n{pack.interview_guide.strip()}")
-    if language:
-        ctx = state.get("context")
-        parts.append(f"Language: {_language(ctx.language if ctx else '')}")
-    return "\n\n".join(parts)
-
-
-def _fact_blocks(facts: list[Fact]) -> str:
-    if not facts:
-        return "Known facts: none yet."
-    lines = [data("user" if f.source == "typed" else f.source, f.text, fact=f"F{i}") for i, f in enumerate(facts, 1)]
-    return "Known facts:\n" + "\n".join(lines)
-
-
-def _material(state: ChatState, *, facts=False, context=False, kept=False) -> str:
-    parts = ["Conversation so far, oldest first:"]
-    for m in state.get("messages", [])[-MAX_MESSAGES:]:
-        text = nfc(_content(m)).strip()
-        if text:
-            parts.append(data("user" if isinstance(m, HumanMessage) else "assistant", text))
-    readings = state.get("readings", [])
-    if readings:
-        parts.append("Files and links the user shared:")
-        for r in readings:
-            text = r.text + (f"\nUnsure (not facts): {'; '.join(r.unsure)}" if r.unsure else "")
-            parts.append(data(r.kind, text, file_id=r.file_id))
-    ctx = state.get("context")
-    if context and ctx is not None:
-        recent = "\n".join(f"- {p}" for p in [*ctx.recent_posts, *state.get("past_pieces", [])])
-        about = (
-            f"Voice: {ctx.voice}\nTopics: {', '.join(ctx.topics)}\nPatterns that work: {'; '.join(ctx.patterns)}\n"
-            f"Recent posts and pieces (do not repeat):\n{recent}"
-        )
-        parts.append("About the app's user:\n" + data("context", about))
-    if kept and _kept(state):
-        blocks = "\n".join(data("kept", k.text, id=k.id) for k in _kept(state))
-        parts.append("Facts the user kept in an earlier chat (their own words, not used yet):\n" + blocks)
-    if facts:
-        parts.append(_fact_blocks(state.get("facts", [])))
-    return "\n\n".join(parts)
-
-
-def _spec_lines(specs: list[tuple[WriteSpec, int]]) -> str:
-    lines = []
-    for spec, count in specs:
-        rules = [f"at most {spec.max_chars} characters"] if spec.max_chars else []
-        rules += ["no links"] if spec.no_links else []
-        rules += ["no long dashes (— or –)"] if spec.no_dashes else []
-        rules += ["may carry an image"] if spec.may_carry_image else ["no image"]
-        lines.append(
-            f'- kind "{spec.kind}": exactly {count} piece(s). Rules: {"; ".join(rules)}.\n'
-            f"  Instructions: {spec.instructions.strip()}"
-        )
-    return "What to write:\n" + "\n".join(lines)
-
-
-def _problems(piece: Piece, spec: WriteSpec, facts: list[Fact], recent: list[str]) -> list[str]:
-    reasons = []
-    missing = unsupported_numbers(piece.text, facts)
-    if missing:
-        reasons.append(NUMBER.format(_fmt(missing[0])))
-    reasons += [RULES[code] for code in rule_problems(piece.text, spec)]
-    if repeats(piece.text, recent):
-        reasons.append(REPEAT)
-    return reasons
-
-
-def _image_allowed(piece: Piece, spec: WriteSpec, state: ChatState) -> bool:
-    images = {r.file_id for r in state.get("readings", []) if r.kind == "image"}
-    from_image = {f.id for f in state.get("facts", []) if f.file_id == piece.image_file_id}
-    return spec.may_carry_image and piece.image_file_id in images and bool(from_image & set(piece.fact_ids))
-
-
 # ---- nodes ----
 
 
 async def read_files(state: ChatState, t: Turn) -> dict:
     """Starts the turn: resets its work, reads this message's files and up to 2 links in its text."""
     t.cost = 0.0
-    update: dict = {
-        "file_ids": [],
-        "pieces": [],
-        "problems": {},
-        "passed": [],
-        "rewrites": 0,
-        "capped": False,
-        "ready": False,
-        "just_write": False,
-        "ask_hint": None,
-    }
+    update: dict = {"file_ids": [], "capped": False, "failed": False}
     readings = list(state.get("readings", []))
     seen = {r.file_id for r in readings}
     jobs = [(f, False) for f in state.get("file_ids", [])] + [(u, True) for u in _links(_latest_user_text(state))]
@@ -274,193 +94,5 @@ async def load_context(state: ChatState, t: Turn) -> dict:
     ctx = ctx.model_copy(
         update={"recent_posts": [nfc(p) for p in ctx.recent_posts], "kept_facts": [k for k in kept if k.text]}
     )
-    return {"context": ctx, "context_at": _now()}
-
-
-async def interview(state: ChatState, t: Turn) -> dict:
-    """Is there enough to write? After 2 ask-back rounds there is, by rule."""
-    await t.emit("status", {"step": "thinking"})
-    if state.get("rounds_asked", 0) >= MAX_ROUNDS:
-        return {"ready": True}
-    system = _system(prompts.INTERVIEW, t.pack, state, guide=True)
-    out = await t.json(system, _material(state, facts=True, kept=True), InterviewOut, max_tokens=300)
-    return {"ready": out.enough or out.just_write, "just_write": out.just_write, "ask_hint": out.question}
-
-
-async def ask_back(state: ChatState, t: Turn) -> dict:
-    """Streams one short question and ends the turn. The thread's first one offers the facts the user kept earlier
-    instead, in fixed words (no model call); that offer is not one of the ask-back rounds."""
-    kept = _kept(state)
-    if kept and not state.get("kept_offered") and not state.get("facts"):
-        offer = "\n".join([KEPT_OFFER, *(f"- {' '.join(k.text.split())}" for k in kept)])
-        await t.emit("text", {"delta": offer})
-        await t.note(KEPT_NOTE)
-        return {"messages": [AIMessage(content=offer)], "kept_offered": True}
-    system = _system(prompts.ASK_BACK, t.pack, state, guide=True, language=True)
-    hint = state.get("ask_hint")
-    user = _material(state, facts=True, kept=True) + (f"\n\nAsk about: {data('assistant', hint)}" if hint else "")
-    question = nfc(await t.stream(system, user, max_tokens=200)).strip()
-    await t.note("Asked back for details")
-    return {"messages": [AIMessage(content=question)], "rounds_asked": state.get("rounds_asked", 0) + 1}
-
-
-async def extract_facts(state: ChatState, t: Turn) -> dict:
-    """Adds the new facts in the conversation and files to the thread's facts (deduplicated by text)."""
-    system = _system(prompts.EXTRACT_FACTS, t.pack, state)
-    out = await t.json(system, _material(state, facts=True, kept=True), ExtractOut, max_tokens=1500)
-    readings = {r.file_id: r for r in state.get("readings", [])}
-    said = [Fact(numbers=numbers_in(text)) for text in _source_texts(state)]
-    # A kept fact is stored word for word with its own id: the app marks it used by that text when a post tells it.
-    kept = {_kept_key(k.text): k for k in _kept(state)}
-    known = list(state.get("facts", []))
-    keys = {_kept_key(f.text) for f in known}
-    for item in out.facts:
-        text = nfc(item.text).strip()
-        was_kept = kept.get(_kept_key(text))
-        if was_kept is not None:
-            text = was_kept.text
-        if not text or _kept_key(text) in keys:
-            continue
-        keys.add(_kept_key(text))
-        if unsupported_numbers(text, said):
-            continue  # a number the user never said or showed: the extractor made it up
-        if was_kept is not None:
-            known.append(Fact(id=was_kept.id, text=text, numbers=numbers_in(text)))
-            continue
-        reading = readings.get(item.file_id) if item.file_id else None
-        source = reading.kind if reading else "typed"
-        file_id = reading.file_id if reading else None
-        known.append(Fact(id=new_id(), text=text, numbers=numbers_in(text), source=source, file_id=file_id))
-    return {"facts": known}
-
-
-async def write(state: ChatState, t: Turn) -> dict:
-    """Writes every piece the pack asks for; on the second pass, rewrites only the failing ones."""
-    await t.emit("status", {"step": "writing"})
-    specs = {w.kind: w for w in t.pack.writes}
-    facts = state.get("facts", [])
-    labels = {f"F{i}": f.id for i, f in enumerate(facts, 1)} | {f.id: f.id for f in facts}
-    system = _system(prompts.WRITER, t.pack, state, language=True)
-    material = _material(state, context=True, facts=True)
-    problems = state.get("problems", {})
-    pieces = list(state.get("pieces", []))
-    failing = [p for p in pieces if p.id in problems]
-
-    def fact_ids(out: PieceOut) -> list[str]:
-        return list(dict.fromkeys(labels[x] for x in out.fact_ids if x in labels))
-
-    if not failing:
-        out = await t.json(
-            system + "\n\n" + _spec_lines([(w, w.count) for w in t.pack.writes]), material, WriterOut, 3000
-        )
-        counts: Counter[str] = Counter()
-        for p in out.pieces:
-            spec = specs.get(p.spec_kind)
-            text = nfc(p.text).strip()
-            if spec is None or not text or counts[spec.kind] >= spec.count:
-                continue
-            counts[spec.kind] += 1
-            pieces.append(
-                Piece(id=new_id(), spec_kind=spec.kind, text=text, fact_ids=fact_ids(p), image_file_id=p.image_file_id)
-            )
-        if not pieces:
-            await t.emit("text", {"delta": NOTHING_WRITTEN})
-            return {"pieces": [], "rounds_asked": 0, "just_write": False}
-        return {"pieces": pieces}
-
-    asks = [f"Rewrite these {len(failing)} piece(s), in this order, fixing the problems listed:"]
-    for n, p in enumerate(failing, 1):
-        asks.append(f'{n}. kind "{p.spec_kind}"; problems: {"; ".join(problems[p.id])}\n' + data("draft", p.text))
-    kinds = Counter(p.spec_kind for p in failing)
-    spec_system = system + "\n\n" + _spec_lines([(specs[k], c) for k, c in kinds.items()])
-    out = await t.json(spec_system, material + "\n\n" + "\n".join(asks), WriterOut, 3000)
-    by_kind: dict[str, list[PieceOut]] = {}
-    for o in out.pieces:
-        if nfc(o.text).strip():
-            by_kind.setdefault(o.spec_kind, []).append(o)
-    for i, p in enumerate(pieces):
-        # Rewrites pair with failing pieces of the same kind, in order. One with no match keeps its old text,
-        # so it fails again and is dropped.
-        if p.id in problems and by_kind.get(p.spec_kind):
-            o = by_kind[p.spec_kind].pop(0)
-            pieces[i] = p.model_copy(
-                update={"text": nfc(o.text).strip(), "fact_ids": fact_ids(o), "image_file_id": o.image_file_id}
-            )
-            await t.note("Rewrote a post that had a problem")
-    return {"pieces": pieces, "rewrites": 1}
-
-
-async def check(state: ChatState, t: Turn) -> dict:
-    """Numbers, the app's rules, repeats, then a cheap claim check. Failing pieces go to `problems`."""
-    await t.emit("status", {"step": "checking"})
-    specs = {w.kind: w for w in t.pack.writes}
-    facts = state.get("facts", [])
-    second = state.get("rewrites", 0) > 0
-    old = state.get("problems", {})
-    pieces = list(state.get("pieces", []))
-    passed = list(state.get("passed", []))
-    ctx = state.get("context")
-    recent = [*(ctx.recent_posts if ctx else []), *state.get("past_pieces", [])]
-    problems: dict[str, list[str]] = {}
-    capped = False
-    claim_system = _system(prompts.CLAIM_CHECK, t.pack, state)
-    try:
-        for i, p in enumerate(pieces):
-            if p.id in passed or (second and p.id not in old):
-                continue
-            spec = specs[p.spec_kind]
-            if p.image_file_id is not None and not _image_allowed(p, spec, state):
-                p = pieces[i] = p.model_copy(update={"image_file_id": None})
-            reasons = _problems(p, spec, facts, recent + [q.text for q in pieces if q.id in passed])
-            if not reasons:
-                user = _fact_blocks(facts) + "\n\nThe piece to check:\n" + data("draft", p.text)
-                if (await t.json(claim_system, user, ClaimOut, max_tokens=400, cheap=True)).unsupported:
-                    reasons = [CLAIM]
-            if reasons:
-                problems[p.id] = reasons
-            else:
-                passed.append(p.id)
-    except Capped:
-        await t.emit("text", {"delta": CAP_TEXT})
-        capped = True
-    if second:  # a rewritten piece the cap left unchecked keeps its first reasons
-        problems = {**{k: v for k, v in old.items() if k not in passed}, **problems}
-    return {"pieces": pieces, "problems": problems, "passed": passed, "capped": capped}
-
-
-MAX_CARD_FACTS = 30  # the API refuses to keep more than this many facts at once
-
-
-async def present(state: ChatState, t: Turn) -> dict:
-    """Shows the pieces that passed and the ones dropped (with why), with the facts; nothing unchecked."""
-    passed = set(state.get("passed", []))
-    problems = state.get("problems", {})
-    shown: list[Piece] = []
-    for p in state.get("pieces", []):
-        if p.id in passed:
-            shown.append(p)
-        elif p.id in problems:
-            shown.append(p.model_copy(update={"dropped": problems[p.id][0]}))
-    if not shown:
-        return {"pieces": []}
-    kept = [p for p in shown if p.dropped is None]
-    for p in shown:
-        if p.dropped:
-            await t.note(f"Dropped a post: {p.dropped}")
-    if kept:
-        await t.note("Checked: every number is from you")
-    # Only the facts the shown pieces use, in first-use order: "Keep for next week" sends them back, and the server
-    # takes at most MAX_CARD_FACTS.
-    by_id = {f.id: f for f in state.get("facts", [])}
-    used = list(dict.fromkeys(i for p in shown for i in p.fact_ids if i in by_id))[:MAX_CARD_FACTS]
-    card = {"pieces": [p.model_dump() for p in shown], "facts": [by_id[i].model_dump() for i in used]}
-    await t.emit("text", {"delta": INTRO})
-    await t.emit("card", card)
-    return {
-        "pieces": shown,
-        "problems": {},
-        "messages": [AIMessage(content="\n\n".join(p.text for p in kept), additional_kwargs={"card": card})],
-        "past_pieces": [*state.get("past_pieces", []), *(p.text for p in kept)],
-        "rounds_asked": 0,
-        "just_write": False,
-    }
+    name = nfc(ctx.name or "").strip() or None
+    return {"context": ctx, "context_at": _now(), "user_name": name}

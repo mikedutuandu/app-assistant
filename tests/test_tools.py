@@ -20,7 +20,7 @@ def make_pack() -> AppPack:
         mcp_url=URL,
         secret_env="X",
         allowed_origins=["https://app.test"],
-        interview_guide="",
+        guide="",
         writes=[],
         tools={
             "context": "assistant_context",
@@ -28,7 +28,7 @@ def make_pack() -> AppPack:
             "save_material": "save_material",
             "charge": "assistant_charge",
         },
-        models=Models(main="m", cheap="c", vision="v"),
+        models=Models(chat="chat/model", writer="writer/model", main="m", cheap="c", vision="v"),
         message_usd_cap=1.0,
     )
 
@@ -82,7 +82,7 @@ async def test_save_draft_sends_idempotency_key_and_media():
     route = respx.post(URL).mock(return_value=ok({"id": "d1", "edit_url": "https://app.test/d/d1"}))
     media = [{"file_id": "f1"}]
     async with httpx.AsyncClient() as client:
-        saved = await make_tools(client).save_draft("hello", media, "key-1")
+        saved = await make_tools(client).save_draft("hello", [], media, "key-1")
     assert saved == SavedDraft(id="d1", edit_url="https://app.test/d/d1")
     req = route.calls[0].request
     assert req.headers["idempotency-key"] == "key-1"
@@ -90,6 +90,15 @@ async def test_save_draft_sends_idempotency_key_and_media():
         "name": "save_draft",
         "arguments": {"text": "hello", "media": media},
     }
+
+
+@respx.mock
+async def test_save_draft_sends_the_rest_of_a_thread_as_thread():
+    route = respx.post(URL).mock(return_value=ok({"id": "d1", "edit_url": None}))
+    async with httpx.AsyncClient() as client:
+        await make_tools(client).save_draft("one", ["two", "three"], [], "key-2")
+    args = json.loads(route.calls[0].request.content)["params"]["arguments"]
+    assert args == {"text": "one", "thread": ["two", "three"], "media": []}
 
 
 @respx.mock
@@ -154,7 +163,7 @@ async def test_5xx_is_unavailable_after_one_retry():
     route = respx.post(URL).mock(return_value=httpx.Response(503))
     async with httpx.AsyncClient() as client:
         with pytest.raises(ToolError) as e:
-            await make_tools(client).save_draft("t", [], "key-9")
+            await make_tools(client).save_draft("t", [], [], "key-9")
     assert e.value.kind == "unavailable"
     assert route.call_count == 2
     assert {c.request.headers["idempotency-key"] for c in route.calls} == {"key-9"}
@@ -164,7 +173,7 @@ async def test_5xx_is_unavailable_after_one_retry():
 async def test_retry_recovers_after_one_transport_error():
     route = respx.post(URL).mock(side_effect=[httpx.ConnectError("x"), ok({"id": "d2", "edit_url": None})])
     async with httpx.AsyncClient() as client:
-        assert (await make_tools(client).save_draft("t", [], "k")).id == "d2"
+        assert (await make_tools(client).save_draft("t", [], [], "k")).id == "d2"
     assert route.call_count == 2
 
 
@@ -224,7 +233,7 @@ async def test_other_errors_are_refused():
     async with httpx.AsyncClient() as client:
         tools = make_tools(client)
         with pytest.raises(ToolError) as e1:
-            await tools.save_draft("", [], "k")
+            await tools.save_draft("", [], [], "k")
         with pytest.raises(ToolError) as e2:
             await tools.context()
         with pytest.raises(ToolError) as e3:

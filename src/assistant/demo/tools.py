@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
+from psycopg.types.json import Jsonb
 
 from assistant.api.deps import ApiError, bearer
 from assistant.auth import AuthError, Session, verify_session
@@ -22,6 +23,7 @@ log = logging.getLogger("assistant.demo")
 router = APIRouter()
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_TEXT_CHARS = 4000
+MAX_THREAD_POSTS = 25  # the later posts of a thread
 MAX_FACTS = 100
 MAX_DRAFTS_KEPT = 100  # per demo workspace, until the daily cleanup
 MAX_FACTS_KEPT = 300
@@ -38,7 +40,11 @@ TOOLS = [
         "description": "Save a draft post (with an optional image) for this visitor.",
         "inputSchema": {
             "type": "object",
-            "properties": {"text": {"type": "string"}, "media": {"type": "array", "items": _OBJECT}},
+            "properties": {
+                "text": {"type": "string"},
+                "thread": {"type": "array", "items": {"type": "string"}},
+                "media": {"type": "array", "items": _OBJECT},
+            },
             "required": ["text"],
         },
     },
@@ -122,6 +128,14 @@ async def _save_draft(state, session: Session, args: dict, key: str) -> dict:
     text = args.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
         raise ToolFailure("The draft needs some text.")
+    more = args.get("thread")
+    if more is None:
+        more = []
+    if not isinstance(more, list) or len(more) > MAX_THREAD_POSTS:
+        raise ToolFailure("The thread is too long.")
+    if not all(isinstance(p, str) and len(p) <= MAX_TEXT_CHARS for p in more):
+        raise ToolFailure("A post in the thread is not valid.")
+    more = [p.strip() for p in more if p.strip()]
     existing = await _existing_draft(state.pool, session.workspace, key)
     if existing is not None:
         return {"id": existing, "edit_url": None}
@@ -138,9 +152,9 @@ async def _save_draft(state, session: Session, args: dict, key: str) -> dict:
         await _copy_image(state, first["url"], session.workspace, image_key)
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "insert into demo_drafts (id, workspace, text, image_key, idem_key) values (%s, %s, %s, %s, %s)"
+            "insert into demo_drafts (id, workspace, text, posts, image_key, idem_key) values (%s, %s, %s, %s, %s, %s)"
             " on conflict (workspace, idem_key) do nothing returning id",
-            (draft_id, session.workspace, text.strip(), image_key, key),
+            (draft_id, session.workspace, text.strip(), Jsonb(more) if more else None, image_key, key),
         )
         inserted = await cur.fetchone()
     if inserted is None:  # a parallel call with the same key won; its row is the draft

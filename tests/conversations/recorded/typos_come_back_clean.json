@@ -1,0 +1,145 @@
+{
+  "case": "typos_come_back_clean",
+  "recorded_at": "2026-11-20T13:54:57+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "finaly fixd the onbording. new users get to there first post in 3 min insted of 15"
+    }
+  ],
+  "turns": [
+    {
+      "user": "finaly fixd the onbording. new users get to there first post in 3 min insted of 15",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15. What was the main thing that was slowing them down?",
+      "drafts": [],
+      "saved": [
+        "Mike fixed the onboarding.",
+        "New users now get to their first post in 3 minutes instead of 15."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.01678
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply says \"You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15,\" a clean, correctly spelled restatement.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "Only 3 and 15 minutes appear in the reply and in the saved line \"New users now get to their first post in 3 minutes instead of 15.\" No other numbers appear.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "Neither the reply nor the saved line contains \"finaly\", \"fixd\", \"onbording\" or \"insted\"; all are spelled correctly.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "267354da5def49a7",
+        "messages_sha256": "cb90c8fd9160abf0",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">finaly fixd the onbording. new users get to there first post in 3 min insted of 15</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01DoLVuyeWU6fDZZXaAhP3Xq",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "Mike fixed the onboarding."
+                },
+                {
+                  "text": "New users now get to their first post in 3 minutes instead of 15."
+                }
+              ]
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.008076,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "2256e37e42db18e0",
+        "messages_sha256": "7929a6ff220894c7",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">finaly fixd the onbording. new users get to there first post in 3 min insted of 15</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 2 facts"
+          }
+        ]
+      },
+      "response": {
+        "text": "You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15. What was the main thing that was slowing them down?",
+        "calls": [],
+        "cost_usd": 0.008704,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

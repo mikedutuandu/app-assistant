@@ -3,7 +3,7 @@ from assistant.packs import WriteSpec
 
 
 def spec(**kw) -> WriteSpec:
-    return WriteSpec(kind="post", count=1, instructions="x", **kw)
+    return WriteSpec(kind="x_post", count=1, instructions="x", **kw)
 
 
 def test_numbers_in_brief_case():

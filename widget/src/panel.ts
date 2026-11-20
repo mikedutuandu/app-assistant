@@ -1,5 +1,5 @@
 /** The button and the chat panel, in a shadow root. Server and user text only ever goes in through textContent. */
-import { ApiError, AuthLost, type BotApi, type BotEvent, type Fact, type Piece } from "./api";
+import { ApiError, AuthLost, type BotApi, type BotEvent, type Draft } from "./api";
 import { startRecording, type Recording } from "./recorder";
 import { CSS } from "./styles";
 
@@ -21,6 +21,10 @@ const STEP_LABELS: Record<string, string> = {
   writing: "Writing your posts…",
   checking: "Checking every number…",
 };
+const SHORTER = "Make it shorter";
+const ANOTHER_ANGLE = "Try another angle";
+const CHECK_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const MAX_RECORD_MS = 5 * 60_000;
 
 type Child = Node | string | null | undefined | false;
@@ -168,6 +172,7 @@ export function createPanel(opts: PanelOptions) {
     attach.disabled = busy || signedOut;
     mic.disabled = busy || signedOut;
     input.disabled = signedOut;
+    for (const sync of syncers) sync();
   }
   function stop(text: string) {
     signedOut = true;
@@ -207,9 +212,13 @@ export function createPanel(opts: PanelOptions) {
       const t = await api.thread(id);
       setThread(id);
       for (const m of t.messages) {
-        if (m.role === "user") addMsg("msg user", m.text);
-        else if (m.card && Array.isArray(m.card.pieces)) renderCard(m.card.pieces, m.card.facts ?? []);
-        else if (m.text) addMsg("msg bot", m.text);
+        if (m.role === "user") {
+          addMsg("msg user", m.text);
+          continue;
+        }
+        if (m.text) addMsg("msg bot", m.text);
+        for (const d of m.drafts ?? []) renderDraft(d);
+        if (m.saved?.length) renderSaved(m.saved);
       }
     } catch (e) {
       if (e instanceof AuthLost) stop(SIGN_IN);
@@ -221,88 +230,77 @@ export function createPanel(opts: PanelOptions) {
     }
   }
 
-  // ---- card ----
-  function renderCard(pieces: Piece[], facts: Fact[]) {
-    const card = h("div", { class: "card" });
-    for (const p of pieces) card.append(renderPiece(p));
-    // Keyed by the card's first piece, so the tap is the same action after a reload (no duplicate saves).
-    if (facts.length) card.append(renderFacts(facts, `keep:${pieces[0]?.id ?? facts[0].id}`));
-    list.append(card);
+  // ---- drafts and saved lines ----
+  const syncers = new Set<() => void>(); // each draft's buttons follow the panel: off while a turn runs
+  function renderDraft(d: Draft) {
+    const el = h("div", { class: "draft" });
+    const img = d.image_file_id ? imageUrls.get(d.image_file_id) : undefined;
+    if (img) el.append(h("img", { src: img, alt: "" }));
+    const posts = d.posts ?? [];
+    if (posts.length > 1) el.append(h("ol", { class: "posts" }, ...posts.map((p) => h("li", { class: "post", text: p }))));
+    else el.append(h("p", { class: "post", text: posts[0] ?? "" }));
+    const actionId = `add:${d.id}`; // the same for every render of this draft: a repeat tap, or after a reload
+    const row = h("div", { class: "row" });
+    const add = h("button", { class: "btn", type: "button" });
+    // The spoken name starts with the visible text (WCAG 2.5.3) and follows it: Add, Adding, Added.
+    const setAdd = (text: string, label: string) => {
+      add.textContent = text;
+      add.setAttribute("aria-label", label);
+    };
+    setAdd("Add to Schedule", "Add to Schedule: this draft");
+    const shorter = h("button", { class: "btn ghost", type: "button", text: "Shorter", "aria-label": "Make this draft shorter" });
+    const angle = h("button", { class: "btn ghost", type: "button", text: "Another angle", "aria-label": "Try another angle for this draft" });
+    const err = h("div", { class: "small", role: "alert" });
+    const buttons = [add, shorter, angle];
+    let pending = false;
+    const sync = () => {
+      for (const b of buttons) b.disabled = busy || signedOut;
+      if (pending || add.classList.contains("done")) add.disabled = true;
+    };
+    syncers.add(sync);
+    const markAdded = (editUrl: string | null | undefined) => {
+      setAdd("Added to your Schedule", "Added to your Schedule: this draft");
+      add.classList.add("done");
+      add.disabled = true;
+      const href = editUrl ? safeHref(editUrl) : null;
+      if (href) row.append(h("a", { class: "btn ghost", href, "aria-label": "Edit this draft in your Schedule", text: "Edit" }));
+    };
+    add.addEventListener("click", async () => {
+      pending = true;
+      add.disabled = true;
+      setAdd("Adding…", "Adding to Schedule: this draft");
+      err.textContent = "";
+      try {
+        const r = await api.act(threadId!, { action_id: actionId, kind: "add_draft", draft_id: d.id });
+        pending = false;
+        markAdded(r.edit_url);
+        window.dispatchEvent(new CustomEvent("assistant:saved", { detail: { draft_id: r.draft_id } }));
+      } catch (e) {
+        pending = false;
+        setAdd("Add to Schedule", "Add to Schedule: this draft");
+        sync();
+        if (e instanceof AuthLost) stop(SIGN_IN);
+        else err.textContent = errorText(e);
+      }
+    });
+    shorter.addEventListener("click", () => void sendTurn(SHORTER, [], d.id));
+    angle.addEventListener("click", () => void sendTurn(ANOTHER_ANGLE, [], d.id));
+    row.prepend(add, shorter, angle);
+    el.append(row, err);
+    if (d.added) markAdded(d.edit_url);
+    sync();
+    list.append(el);
     scroll();
   }
 
-  function renderPiece(p: Piece): HTMLElement {
-    const el = h("div", { class: "piece" + (p.dropped ? " dropped" : "") });
-    const img = p.image_file_id ? imageUrls.get(p.image_file_id) : undefined;
-    if (img) el.append(h("img", { src: img, alt: "" }));
-    el.append(h("p", { text: p.text }));
-    if (p.dropped) {
-      el.append(h("div", { class: "why", text: `Not added: ${p.dropped}` }));
-      return el;
-    }
-    const actionId = `add:${p.id}`; // the same for every render of this piece: a repeat tap, or after a reload
-    const row = h("div", { class: "row" });
-    const add = h("button", { class: "btn", type: "button", text: "Add to Schedule" });
-    const err = h("div", { class: "small", role: "alert" });
-    add.addEventListener("click", async () => {
-      add.disabled = true;
-      add.textContent = "Adding…";
-      err.textContent = "";
-      try {
-        const r = await api.act(threadId!, { action_id: actionId, kind: "add_draft", piece_id: p.id });
-        add.textContent = "Added";
-        add.classList.add("done");
-        window.dispatchEvent(new CustomEvent("assistant:saved", { detail: { draft_id: r.draft_id } }));
-        const href = r.edit_url ? safeHref(r.edit_url) : null;
-        if (href) row.append(h("a", { class: "btn ghost", href, text: "Edit" }));
-      } catch (e) {
-        add.disabled = false;
-        add.textContent = "Add to Schedule";
-        if (e instanceof AuthLost) stop(SIGN_IN);
-        else err.textContent = errorText(e);
-      }
-    });
-    row.append(add);
-    el.append(row, err);
-    return el;
-  }
-
-  function renderFacts(facts: Fact[], actionId: string): HTMLElement {
-    const box = h("div", { class: "facts" });
-    box.append(
-      h("h3", { text: "What I used" }),
-      h("p", { class: "hint", text: "Fix anything that's wrong, then keep it for next week." }),
-    );
-    const fields = facts.map((f) => {
-      const t = h("input", { class: "fact", type: "text", value: f.text, "aria-label": "Fact", maxlength: 500 });
-      box.append(t);
-      return { fact: f, input: t };
-    });
-    const keep = h("button", { class: "btn", type: "button", text: "Keep for next week" });
-    const err = h("div", { class: "small", role: "alert" });
-    keep.addEventListener("click", async () => {
-      const body = fields.map(({ fact, input: i }) => ({ ...fact, text: i.value.trim() })).filter((f) => f.text).slice(0, 30); // the server keeps at most 30
-      if (!body.length) {
-        err.textContent = "There are no facts to keep.";
-        return;
-      }
-      keep.disabled = true;
-      keep.textContent = "Keeping…";
-      err.textContent = "";
-      try {
-        await api.act(threadId!, { action_id: actionId, kind: "keep_facts", facts: body });
-        keep.textContent = "Kept";
-        keep.classList.add("done");
-        fields.forEach((f) => (f.input.disabled = true));
-      } catch (e) {
-        keep.disabled = false;
-        keep.textContent = "Keep for next week";
-        if (e instanceof AuthLost) stop(SIGN_IN);
-        else err.textContent = errorText(e);
-      }
-    });
-    box.append(keep, err);
-    return box;
+  /** The quiet line under a turn: what the bot remembered. Not a message, nothing to press. */
+  function renderSaved(items: string[]) {
+    const text = items.join("; ");
+    const el = h("div", { class: "saved" });
+    el.insertAdjacentHTML("afterbegin", CHECK_ICON);
+    el.append(h("span", { text }));
+    list.append(el);
+    scroll();
   }
 
   // ---- files ----
@@ -395,16 +393,26 @@ export function createPanel(opts: PanelOptions) {
   mic.addEventListener("contextmenu", (e) => e.preventDefault());
 
   // ---- sending ----
-  async function submit() {
+  /** Sends the typed text and ready files. */
+  function submit() {
     if (busy || signedOut || chips.some((c) => c.state === "uploading")) return;
     const text = input.value.trim();
     const sent = chips.filter((c) => c.state === "ready");
     if (!text && !sent.length) return;
+    void sendTurn(text, sent);
+  }
+
+  /** One turn. `draftId` is set when it is a Shorter or Another angle about that draft (then nothing typed is taken). */
+  async function sendTurn(text: string, sent: Chip[], draftId?: string) {
+    if (busy || signedOut) return;
+    const fromComposer = draftId === undefined;
     busy = true;
     refresh();
     const mine = addMsg("msg user", [text, ...sent.map((c) => `📎 ${c.file.name}`)].filter(Boolean).join("\n"));
-    input.value = "";
-    for (const c of chips.splice(0)) c.el.remove();
+    if (fromComposer) {
+      input.value = "";
+      for (const c of chips.splice(0)) c.el.remove();
+    }
     let accepted = false;
     const accept = () => {
       accepted = true;
@@ -412,6 +420,7 @@ export function createPanel(opts: PanelOptions) {
     // Refused before the server took it (offline, a limit, a bad file): give the text and files back to send again.
     const giveBack = () => {
       mine.remove();
+      if (!fromComposer) return;
       if (!input.value) input.value = text;
       chips.unshift(...sent);
       chipsEl.prepend(...sent.map((c) => c.el));
@@ -434,16 +443,25 @@ export function createPanel(opts: PanelOptions) {
           bubble = null; // whatever the bot says next goes below the indicator
           showWorking(d.step);
           break;
-        case "text":
+        case "text": {
+          // A new bubble never starts with blank lines (the bot's paragraph break before a draft or a status).
+          const delta = bubble ? String(d.delta ?? "") : String(d.delta ?? "").replace(/^\s+/, "");
+          if (!delta) break;
           hideWorking();
           if (!bubble) bubble = addMsg("msg bot", "");
-          bubble.textContent += d.delta;
+          bubble.textContent += delta;
           scroll();
           break;
-        case "card":
+        }
+        case "draft":
           hideWorking();
           bubble = null;
-          renderCard(d.pieces ?? [], d.facts ?? []);
+          renderDraft(d);
+          break;
+        case "saved":
+          hideWorking();
+          bubble = null;
+          if (Array.isArray(d.items) && d.items.length) renderSaved(d.items);
           break;
         case "note":
           window.dispatchEvent(new CustomEvent("assistant:note", { detail: { text: d.text } }));
@@ -455,7 +473,7 @@ export function createPanel(opts: PanelOptions) {
       }
     };
     try {
-      await api.send(threadId, text, sent.map((c) => c.fileId!), onEvent, accept);
+      await api.send(threadId, text, sent.map((c) => c.fileId!), onEvent, accept, draftId);
     } catch (e) {
       if (!accepted) giveBack();
       if (e instanceof AuthLost) stop(SIGN_IN);
@@ -467,13 +485,13 @@ export function createPanel(opts: PanelOptions) {
       if (!signedOut) input.focus();
     }
   }
-  send.addEventListener("click", () => void submit());
+  send.addEventListener("click", submit);
   const coarse = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   input.addEventListener("keydown", (e) => {
     const k = e as KeyboardEvent;
     if (k.key === "Enter" && !k.shiftKey && !k.isComposing && !coarse()) {
       e.preventDefault();
-      void submit();
+      submit();
     }
   });
   input.addEventListener("input", () => {

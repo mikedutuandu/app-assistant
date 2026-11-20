@@ -128,7 +128,7 @@ describe("BotApi", () => {
     let n = 0;
     handler = () => (++n === 1 ? json({ error: "server", message: "x" }, 502) : json({ draft_id: "d", edit_url: null }));
     const a = api();
-    const body = { action_id: "abc-1", kind: "add_draft" as const, piece_id: "p1" };
+    const body = { action_id: "abc-1", kind: "add_draft" as const, draft_id: "d1" };
     await expect(a.act("t1", body)).rejects.toBeInstanceOf(ApiError);
     await expect(a.act("t1", body)).resolves.toEqual({ draft_id: "d", edit_url: null });
     const posts = calls.filter((c) => c.url.endsWith("/actions"));
@@ -291,5 +291,14 @@ describe("SseParser", () => {
     p.feed(": ping\r\n\r\nevent: note\r\ndata: {\"text\":\"a\"}\r\n\r\nevent: done\ndata: {\"message_id\":\"m\",\ndata: \"cost_usd\":0}\n\n");
     expect(got.map((e) => e.event)).toEqual(["note", "done"]);
     expect(got[1].data).toEqual({ message_id: "m", cost_usd: 0 });
+  });
+});
+
+describe("send with a draft", () => {
+  it("posts the draft id with the message", async () => {
+    handler = () => sse(["event: done\ndata: {}\n\n"]);
+    await api().send("t1", "Make it shorter", [], () => {}, undefined, "d1");
+    const post = calls.find((c) => c.url.endsWith("/messages"))!;
+    expect(JSON.parse(post.init.body as string)).toEqual({ thread_id: "t1", text: "Make it shorter", file_ids: [], draft_id: "d1" });
   });
 });

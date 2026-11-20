@@ -1,14 +1,18 @@
 # app-assistant
 
-A private chat bot that any web app adds with one script tag. It asks the user a few plain questions about what they did, keeps only the facts they confirm, and writes drafts (posts, changelog entries, scripts) using nothing but those facts. The app decides what a draft looks like and where it goes. The bot never publishes anything.
+A private chat bot that any web app adds with one script tag. It talks with the user like a person, asks one thing at a time about what they did, and writes a post or a thread from what they said or showed it, never inventing a number. The app decides where a draft goes. The bot never publishes anything.
 
 ## How it works
 
 1. The app's page loads `widget.js`; the widget asks the app's own server for a session token.
 2. The app signs a short-lived token (up to 1 hour) for the signed-in user's workspace and hands it to the widget.
 3. The widget talks to this service with that token. The service sends the same token to the app's MCP, which exposes four tools: read context, save a draft, save material, report the cost.
-4. Every number and claim in a draft must come from the facts list. The facts are shown to the user before they are kept, and a draft that fails the check is written once more, then dropped.
-5. Saving happens only when the user taps. The bot has no tool that publishes.
+4. A chat model (`models.chat`) holds the conversation and has tools to keep what the user says as facts and to ask a writer model (`models.writer`) for a draft. Every number and claim in a draft must come from the facts the user gave or a file showed; the draft is checked in code, written once more if it fails, then dropped. What the bot kept shows in the chat as a "Saved" line.
+5. Saving a draft to the app happens only when the user taps Add (the `add_draft` action). The bot has no tool that publishes.
+
+A message streams back these events (`POST /v1/chat/{app}/messages`, which also takes the `draft_id` of the draft a tap such as "Make it shorter" is about; one that is not a draft of the thread is a 404): `thread` (a new chat's id and title), `status` (what the bot is doing: reading, listening, thinking, writing, checking), `text` (the reply, in deltas), `transcript` (a voice note's words), `draft` (`{id, kind, posts, image_file_id?}`: `kind` is `x_post` or `x_thread`, shown with its Add button), `saved` (`{kind: "facts", items}`: facts the bot kept from the message; stored, so a reload shows it), `failed` (`{error, message}`), then `done`. `GET /v1/chat/{app}/threads/{id}` returns the messages, each assistant one with its `drafts` (`id, kind, posts, added, edit_url`) and `saved` lines, so a reload shows what the stream did.
+
+One action: `POST /v1/chat/{app}/threads/{id}/actions` with `{action_id, kind: "add_draft", draft_id}` saves that draft to the app through `save_draft` (`posts[0]` as `text`, `posts[1:]` as `thread`, the picture on the first post) and its facts through `save_material`. It runs once per `action_id`; a repeat gets the same result. (The old `keep_facts` action is gone: facts are kept by the bot as the chat goes.)
 
 FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
 
@@ -32,6 +36,33 @@ TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
 uv run ruff check . && uv run ruff format --check .
 cd widget && npm install && npm test
 ```
+
+### Conversation tests
+
+`tests/conversations/cases.yaml` holds about 20 real chats (Mike's "hi", "my name mike", "just write it", a screenshot with a number, Vietnamese, "say we have 10k users"...), each with `expect` notes a judge model decides and `hard` rules checked in code (drafts and saved facts on the last turn, at most one question per reply, the language, words that must or must never come back). Each case runs through the whole bot (`run_turn`) in the HookPlaybook pack, with FakeTools and the context at the top of the file, on a fresh schema of `TEST_DATABASE_URL`.
+
+```bash
+export TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live            # the real models, then the judge (anthropic/claude-sonnet-5.5)
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --record   # and save each case to tests/conversations/recorded/
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --case hi  # one case (repeat --case for more)
+uv run python scripts/converse_eval.py                                          # replay the recordings, hard rules only, no key
+```
+
+It prints a table (case, PASS or FAIL, hard rules, judge, what the bot spent, why) and exits non-zero when any case fails. Every case also has a hard rule that is on by default: each number in a draft must be one the user gave in the case (in a message, or in what an attached file shows).
+
+Run it live before every release that changes the prompts, the tools or the models. When a case fails, fix the prompt or the tools, not the case, and run it again. `--record` saves only a case that passed every hard rule and every judge note. A failing case is saved in your temp folder (`converse_eval_failed/`) for you to look at, and the table says where. Commit `tests/conversations/recorded/`: CI then replays each recording through the bot (`tests/test_conversations.py`) with no key. It checks that each case's hard rules hold and that every note held when the case was recorded.
+
+A recording holds the chat as the bot showed it, the judge's verdicts, the pack's models, and every model call in order (a request summary with hashes, and the raw response). The replay fails with "re-record this case" when any of these changed since the recording:
+
+- a prompt (any of them, with what is built into it)
+- the conversation
+- a model or its settings
+- the case's turns or notes
+
+So run `--live --record` again after any such change.
+
+`REQUIRE_CONVERSATION_RECORDINGS=1` makes an empty `recorded/` fail instead of being skipped. Set it in CI once the first recordings are committed.
 
 ## Build the widget
 
@@ -160,7 +191,7 @@ HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools
 
 - **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production and Preview), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
 - **Origin.** Only `https://hookplaybook.com` (the dashboard is at `/dashboard` on it) may use the widget.
-- **Posts.** Two X posts per card (280 characters, no links, no long dashes, may carry one of the user's pictures). Saving goes through `save_draft`, which copies the picture into the draft.
+- **Posts.** The pack writes an `x_post` or an `x_thread` (up to 8 posts), each post at most 280 characters, no links, no long dashes, the first may carry one of the user's pictures. Saving goes through `save_draft`, which copies the picture into the draft.
 - **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.
 - **Charge.** `assistant_charge` is called once per model call, as it ends, with the ref `"<message id>:<n>"` (n counts the message's calls from 1), and charges once per `ref`: a message makes several charges. The browser first sees the message id in the `done` event, after every charge.
 
@@ -179,10 +210,10 @@ Two parts: a pack file here, and a few things in the app.
 | `mcp_url` | The app's MCP endpoint. `{base}` becomes `PUBLIC_BASE_URL`. |
 | `secret_env` | Name of the environment variable holding the app's signing secret. Set it here and in the app. |
 | `allowed_origins` | Origins allowed to use the widget; the `Origin` header is checked on every `/v1` request. |
-| `interview_guide` | What to ask about, in plain words. |
-| `writes` | What to write: per item `kind`, `count`, `instructions`, and optional `max_chars`, `no_links`, `no_dashes`, `may_carry_image`. |
+| `guide` | What a good story from this app has, in plain words, and what the bot must never do (`interview_guide` is the old name and is refused). It steers the conversation and the writer. |
+| `writes` | What to write: per item `kind` (`x_post` or `x_thread`), `count`, `instructions`, and optional `max_posts` (threads), `max_chars`, `no_links`, `no_dashes`, `may_carry_image`. |
 | `tools` | The app's tool names for `context`, `save_draft`, `save_material`, `charge`. |
-| `models` | `main`, `cheap`, `vision` (OpenRouter ids) and optional `fallbacks`. |
+| `models` | OpenRouter ids: `chat` (the conversation) with `chat_reasoning` (`none` or `low`; default `low`) and optional `chat_temperature`, `writer` (the drafts) with `writer_reasoning` (`none` or `low`), `main`, `cheap`, `vision`, and optional `fallbacks`. A model whose thinking is mandatory (Sonnet 5.5) thinks at high effort when sent `none`: use `low`. |
 | `files` | Optional caps: `image_mb`, `pdf_mb`, `pdf_pages`, `voice_seconds`, `per_message`, `kinds` (image, pdf, voice). |
 | `message_usd_cap` | Most the bot may spend on one message. |
 | `demo` | `true` only for the public demo (daily caps, files deleted after a day). |
@@ -190,8 +221,8 @@ Two parts: a pack file here, and a few things in the app.
 ### 2. Four tools on the app's MCP
 
 - `assistant_context`: what the bot may know about the workspace: `voice`, `topics`, `recent_posts`, `patterns`, `credits_left`, `out_of_credits_message`, `language`, and optionally `kept_facts` (`[{"id", "text"}]`, facts the user kept earlier and has not used, offered when the chat opens).
-- `save_draft`: saves a draft the user tapped, with its `media` (images) if any.
-- `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft.
+- `save_draft`: saves a draft the user tapped: `{text, thread?, media?}`. `text` is the first post; `thread` is the posts after it (a list of strings, left out for a single post); `media` is `[{url, alt?}]` and the picture stays on the first post.
+- `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft (the tap that adds a draft marks its facts told this way).
 - `assistant_charge`: records the cost of one model call, once per `ref` (`"<message id>:<n>"`). A message makes several calls, so it is charged several times, each ref once; a retry with the same ref adds nothing.
 
 The app's MCP accepts the session token as `Authorization: Bearer` and treats it as a "draft" key for that workspace only.
