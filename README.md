@@ -23,7 +23,7 @@ cp .env.example .env                                    # then fill it in
 uv run uvicorn assistant.main:create_app --factory --reload
 ```
 
-Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` to use that Postgres. Every variable is explained in `.env.example`. Open `http://localhost:8000/demo` for the Shipnote demo.
+Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` to use that Postgres. Every variable is explained in `.env.example`. Open `http://localhost:8000/demo` for the Shipnote demo. Set `DEMO_SESSION_SECRET` in `.env` first (any long random string, for example from `openssl rand -hex 32`): the server will not start without it.
 
 ## Test
 
@@ -87,20 +87,33 @@ The app's MCP accepts the session token as `Authorization: Bearer` and treats it
 
 ### 3. A session endpoint in the app
 
-For the signed-in user, return an HS256 token signed with the pack's secret, with claims `iss` (the app id), `sub` (the workspace id: letters, digits and `: _ . -`, up to 200), `access: "draft"`, `iat`, and `exp` at most 1 hour after `iat`.
+The widget calls `POST <data-session-url>` with `credentials: "include"`, so the endpoint is authenticated by the app's own sign-in cookie. It answers JSON `{"token": "<jwt>"}`:
+
+```json
+{ "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+```
+
+Any non-2xx answer (or a body without a `token`) makes the widget show "Please sign in again." The token is HS256, signed with the pack's secret, with claims `iss` (the app id), `sub` (the workspace id: letters, digits and `: _ . -`, up to 200), `access: "draft"`, `iat`, and `exp` at most 1 hour after `iat`.
 
 ```python
 import time, jwt
+
+# SECRET: the value of the pack's `secret_env` environment variable, shared with the bot.
+
 
 def mint(workspace_id: str) -> str:
     now = int(time.time())
     return jwt.encode(
         {"iss": "myapp", "sub": workspace_id, "access": "draft", "iat": now, "exp": now + 3600},
-        SECRET, algorithm="HS256")
+        SECRET,
+        algorithm="HS256",
+    )
 ```
 
 ```ts
 import jwt from "jsonwebtoken";
+
+// SECRET: the value of the pack's `secret_env` environment variable, shared with the bot.
 
 export const mint = (workspaceId: string) => {
   const now = Math.floor(Date.now() / 1000);
