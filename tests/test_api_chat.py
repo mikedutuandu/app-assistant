@@ -472,6 +472,146 @@ async def test_thread_of_other_workspace_404(api: Api):
     assert [m["text"] for m in r.json()["messages"]] == ["shipped auto-reply", "What changed for users?"]
 
 
+# ---- host-chosen thread ids, outside context, deleting one thread ----
+
+HOST_ID = "01KA0000000000000000000001"
+
+
+async def test_new_thread_with_host_id(api: Api):
+    api.llm.script = ask_script()
+    events = await api.send("shipped auto-reply", thread=HOST_ID, new_thread=True)
+    assert events[0] == ("thread", {"thread_id": HOST_ID, "title": "shipped auto-reply"})
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select app, workspace from threads where id = %s", (HOST_ID,))
+        assert await cur.fetchone() == ("real", "ws1")
+
+
+async def test_new_thread_existing_own_continues(api: Api):
+    api.llm.script = ask_script()
+    await api.send("shipped auto-reply", thread=HOST_ID, new_thread=True)
+    api.llm.script = ask_script()
+    second = await api.send("it is fast", thread=HOST_ID, new_thread=True)
+    assert "thread" not in [k for k, _ in second]
+    assert of(second, "done")
+    assert await api.count("threads") == 1
+    state = await api.checkpointer.aget_tuple({"configurable": {"thread_id": thread_id("real", "ws1", HOST_ID)}})
+    humans = [m for m in state.checkpoint["channel_values"]["messages"] if m.type == "human"]
+    assert len(humans) == 2
+
+
+async def test_new_thread_foreign_id_404(api: Api):
+    api.llm.script = ask_script()
+    await api.send("shipped auto-reply", thread=HOST_ID, new_thread=True)
+    r = await api.post_message("hi", thread=HOST_ID, workspace="ws2", new_thread=True)
+    assert (r.status_code, r.json()) == (404, {"error": "thread"})
+    r = await api.post_message("hi", thread=HOST_ID, app="demo", new_thread=True)
+    assert (r.status_code, r.json()) == (404, {"error": "thread"})
+    assert await api.count("threads", "ws2") == 0
+
+
+async def test_new_thread_bad_id_400(api: Api):
+    r = await api.post_message("hi", thread="abc", new_thread=True)
+    assert (r.status_code, r.json()) == (400, {"error": "thread"})
+    r = await api.post_message("hi", thread=HOST_ID.lower(), new_thread=True)
+    assert (r.status_code, r.json()) == (400, {"error": "thread"})
+    assert await api.count("threads") == 0
+
+
+async def test_new_thread_without_id_is_the_normal_start(api: Api):
+    api.llm.script = ask_script()
+    events = await api.send("shipped auto-reply", new_thread=True)
+    assert of(events, "thread")[0]["thread_id"] != HOST_ID
+
+
+async def test_context_reaches_model(api: Api):
+    api.llm.script = ask_script()
+    ctx = [{"role": "user", "text": "when to post?"}, {"role": "assistant", "text": "Post at 9am <b>"}]
+    r = await api.post_message("write it", context=ctx)
+    assert r.status_code == 200
+    [converse] = [c for c in api.llm.calls if c["name"] == "CONVERSE"]
+    system = converse["messages"][0]["content"]
+    assert '<data source="ask">user: when to post?\nassistant: Post at 9am <b></data>' in system
+
+
+async def test_no_context_leaves_the_system_prompt_without_an_ask_block(api: Api):
+    api.llm.script = ask_script()
+    await api.send("shipped auto-reply")
+    [converse] = [c for c in api.llm.calls if c["name"] == "CONVERSE"]
+    assert 'source="ask"' not in converse["messages"][0]["content"]
+
+
+async def test_context_too_long_400(api: Api):
+    turns = [{"role": "user", "text": "x"}] * 11
+    r = await api.post_message("hi", context=turns)
+    assert (r.status_code, r.json()["error"]) == (400, "too_long")
+    r = await api.post_message("hi", context=[{"role": "user", "text": "x" * 2001}])
+    assert (r.status_code, r.json()["error"]) == (400, "too_long")
+    r = await api.post_message("hi", context=[{"role": "user", "text": "x" * 2000}] * 10)
+    assert r.status_code == 200
+
+
+async def test_delete_thread_removes_rows_checkpoint_storage(api: Api):
+    up = (await api.start_upload(len(PNG), thread=HOST_ID, new_thread=True)).json()
+    api.put(up, PNG)
+    up["file_id"] = (await api.finish(up["upload_id"], HOST_ID)).json()["file_id"]
+    api.llm.script = happy_script()
+    api.llm.add("IMAGE_READER", {"text": "a screenshot", "unsure": []})
+    await api.send(FACT, thread=HOST_ID, file_ids=[up["file_id"]])
+    await api.piece_row(HOST_ID)
+    other = (await api.upload(PNG)).json()  # ws1's other thread
+    other_ws = (await api.upload(PNG, workspace="ws2")).json()
+    config = {"configurable": {"thread_id": thread_id("real", "ws1", HOST_ID)}}
+    assert await api.checkpointer.aget_tuple(config) is not None
+
+    r = await api.client.delete(f"/v1/chat/real/threads/{HOST_ID}", headers=api.headers())
+    assert (r.status_code, r.json()) == (200, {"deleted": True})
+    async with api.pool.connection() as conn:
+        for table, column in [
+            ("threads", "id"),
+            *[(t, "thread_id") for t in ("files", "pieces", "actions", "saved_lines")],
+        ]:
+            cur = await conn.execute(f"select count(*) from {table} where {column} = %s", (HOST_ID,))
+            assert (await cur.fetchone())[0] == 0, table
+    assert await api.checkpointer.aget_tuple(config) is None
+    listed = api.storage._client.list_objects_v2(Bucket=api.storage.bucket)
+    keys = sorted(o["Key"] for o in listed.get("Contents", []))
+    assert keys == sorted(
+        [f"real/ws1/{other['thread_id']}/{other['file_id']}", f"real/ws2/{other_ws['thread_id']}/{other_ws['file_id']}"]
+    )
+    assert await api.count("threads") == 1 and await api.count("threads", "ws2") == 1
+
+
+async def test_delete_thread_foreign_404(api: Api):
+    tid = await api.thread_row()
+    r = await api.client.delete(f"/v1/chat/real/threads/{tid}", headers=api.headers("ws2"))
+    assert (r.status_code, r.json()) == (404, {"error": "thread"})
+    r = await api.client.delete(f"/v1/chat/real/threads/{new_id()}", headers=api.headers())
+    assert (r.status_code, r.json()) == (404, {"error": "thread"})
+    assert await api.count("threads") == 1
+
+
+async def test_delete_thread_is_limited_per_workspace(api: Api):
+    for _ in range(chat.THREAD_DELETES_PER_HOUR):
+        await api.client.delete(f"/v1/chat/real/threads/{new_id()}", headers=api.headers())
+    r = await api.client.delete(f"/v1/chat/real/threads/{new_id()}", headers=api.headers())
+    assert (r.status_code, r.json()["error"]) == (429, "limit")
+
+
+async def test_upload_new_thread_with_host_id(api: Api):
+    r = await api.start_upload(len(PNG), thread=HOST_ID, new_thread=True)
+    assert r.status_code == 200
+    assert r.json()["thread_id"] == HOST_ID
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id from threads where workspace = 'ws1'")
+        assert [x[0] for x in await cur.fetchall()] == [HOST_ID]
+    # a second upload to the same id continues it
+    assert (await api.start_upload(len(PNG), thread=HOST_ID, new_thread=True)).status_code == 200
+    r = await api.start_upload(len(PNG), thread=HOST_ID, new_thread=True, workspace="ws2")
+    assert (r.status_code, r.json()) == (404, {"error": "thread"})
+    r = await api.start_upload(len(PNG), thread="abc", new_thread=True)
+    assert (r.status_code, r.json()) == (400, {"error": "thread"})
+
+
 # ---- demo ----
 
 

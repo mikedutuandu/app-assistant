@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from datetime import timedelta
 from typing import Annotated, Literal
 
@@ -30,6 +31,10 @@ THREADS_LISTED = 30
 MAX_TEXT_CHARS = 4000
 UPLOADS_PER_HOUR = 30
 ACTIONS_PER_HOUR = 60
+THREAD_DELETES_PER_HOUR = 60
+MAX_CONTEXT_TURNS = 10
+MAX_CONTEXT_CHARS = 2000
+HOST_THREAD_ID = re.compile(r"^[0-9A-Z]{26}$")  # a ULID, like the ids the bot makes itself
 UPLOAD_THREAD_TITLE = "Files"
 PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again after this
 
@@ -48,6 +53,28 @@ async def owned_thread(pool, session: Session, chat_id: str) -> None:
             raise ApiError(404, "thread")
 
 
+def host_thread_id(chat_id: str) -> str:
+    """A thread id the host app chose for its own chat: a 26-character ULID, or 400."""
+    if not HOST_THREAD_ID.fullmatch(chat_id):
+        raise ApiError(400, "thread")
+    return chat_id
+
+
+async def open_host_thread(pool, session: Session, chat_id: str, title: str) -> bool:
+    """Creates the thread with the host's id for this workspace, or continues it when it is already this
+    workspace's; 404 when the id belongs to another workspace or app. True when it was just created."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "insert into threads (id, app, workspace, title) values (%s, %s, %s, %s) on conflict (id) do nothing"
+            " returning 1",
+            (chat_id, session.app, session.workspace, title),
+        )
+        created = await cur.fetchone() is not None
+    if not created:
+        await owned_thread(pool, session, chat_id)
+    return created
+
+
 # ---- uploads ----
 
 
@@ -57,6 +84,7 @@ async def owned_thread(pool, session: Session, chat_id: str) -> None:
 
 class UploadIn(BaseModel):
     thread_id: str | None = None
+    new_thread: bool = False  # with a thread_id: open the thread with that id (the host's), or continue it
     name: Annotated[str, StringConstraints(max_length=500)] = ""  # the browser's; never trusted or stored
     mime: Annotated[str, StringConstraints(max_length=200)] = ""
     size: int = Field(ge=0)
@@ -93,7 +121,9 @@ async def start_uploading(body: UploadIn, request: Request, auth: Auth) -> dict:
         raise ApiError(429, "limit", "You've uploaded a lot this hour. Try again a bit later.")
     chat_id = body.thread_id
     created = chat_id is None
-    if chat_id is None:
+    if chat_id is not None and body.new_thread:
+        created = await open_host_thread(state.pool, session, host_thread_id(chat_id), UPLOAD_THREAD_TITLE)
+    elif chat_id is None:
         chat_id = new_id()
         async with state.pool.connection() as conn:
             await conn.execute(
@@ -132,8 +162,15 @@ async def finish_uploading(upload_id: str, body: FinishIn, request: Request, aut
 # ---- messages ----
 
 
+class ContextTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str
+
+
 class MessageIn(BaseModel):
     thread_id: str | None = None
+    new_thread: bool = False  # with a thread_id: open the thread with that id (the host's), or continue it
+    context: list[ContextTurn] = []  # the chat's other turns, answered by the app's own assistant, oldest first
     text: str = ""
     file_ids: list[str] = []
     draft_id: str | None = None  # the draft the message is about: its Shorter or Another angle
@@ -158,7 +195,18 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
     if len(file_ids) > pack.files.per_message:
         n = pack.files.per_message
         raise ApiError(400, "too_many_files", f"You can send up to {n} file{'s' if n != 1 else ''} at a time.")
-    if body.thread_id is not None:
+    if len(body.context) > MAX_CONTEXT_TURNS or any(len(c.text) > MAX_CONTEXT_CHARS for c in body.context):
+        raise ApiError(400, "too_long", "That chat is too long to send along.")
+    opens = body.new_thread and body.thread_id is not None
+    if opens:
+        chat_id = host_thread_id(body.thread_id)
+        async with pool.connection() as conn:
+            cur = await conn.execute("select app, workspace from threads where id = %s", (chat_id,))
+            row = await cur.fetchone()
+        if row is not None and row != (session.app, session.workspace):
+            raise ApiError(404, "thread")
+        opens = row is None  # a thread that exists and is this workspace's is simply continued
+    elif body.thread_id is not None:
         await owned_thread(pool, session, body.thread_id)
     if body.draft_id is not None:
         if body.thread_id is None:
@@ -181,7 +229,8 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
             )
             if (await cur.fetchone())[0] != len(file_ids):
                 raise ApiError(404, "file")
-    turn = TurnInput(pack, session, body.thread_id, text, file_ids, client_ip(request), body.draft_id)
+    ask = [(c.role, c.text.strip()) for c in body.context if c.text.strip()]
+    turn = TurnInput(pack, session, body.thread_id, text, file_ids, client_ip(request), body.draft_id, opens, ask)
     return EventSourceResponse(_events(start(request.app.state, turn)))
 
 
@@ -393,6 +442,29 @@ def _draft_out(r) -> dict:
     if r[5] is not None:
         draft["image_file_id"] = r[5]
     return draft
+
+
+@router.delete("/threads/{thread_id}")
+async def delete_thread(thread_id: str, request: Request, auth: Auth) -> dict:
+    """Removes one thread of the session's workspace: checkpoints, rows (files, drafts, saved lines) and storage."""
+    pack, session = auth
+    state = request.app.state
+    if not await hit(
+        state.pool, f"thread-delete:{session.app}:{session.workspace}", timedelta(hours=1), THREAD_DELETES_PER_HOUR
+    ):
+        raise ApiError(429, "limit", "You've deleted a lot this hour. Try again a bit later.")
+    await owned_thread(state.pool, session, thread_id)
+    await state.checkpointer.adelete_thread(graph_thread_id(session.app, session.workspace, thread_id))
+    async with state.pool.connection() as conn, conn.transaction():
+        # the rows of files, actions, pieces and saved_lines go with it (on delete cascade)
+        await conn.execute(
+            "delete from threads where id = %s and app = %s and workspace = %s",
+            (thread_id, session.app, session.workspace),
+        )
+    # Rows first, storage last: a retry after a storage failure still finds the thread gone but the objects by prefix.
+    await asyncio.to_thread(state.storage.delete_prefix, f"{session.app}/{session.workspace}/{thread_id}/")
+    log.info("thread deleted app=%s", pack.id)
+    return {"deleted": True}
 
 
 # ---- deletion (server to server) ----

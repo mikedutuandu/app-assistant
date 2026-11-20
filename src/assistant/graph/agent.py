@@ -296,6 +296,12 @@ class _Agent:
             if ctx.kept_facts:
                 kept = "\n".join(data("kept", k.text, id=k.id) for k in ctx.kept_facts)
                 parts.append("Facts they kept in an earlier chat, not used in a post yet:\n" + kept)
+        ask = self.state.get("ask") or []
+        if ask:
+            turns = "\n".join(f"{role}: {text}" for role, text in ask)
+            parts.append(
+                "The same chat's other turns, answered by the app's own assistant, newest last:\n" + data("ask", turns)
+            )
         facts = "\n".join(data("fact", f.text) for f in self.facts) or "none yet"
         parts.append("Facts saved in this chat:\n" + facts)
         readings = self.state.get("readings", [])
@@ -618,7 +624,13 @@ class _Agent:
         await self._emit("text", {"delta": CAP_TEXT})
 
     def update(self, capped: bool = False, failed: bool = False) -> dict:
-        out: dict = {"facts": self.facts, "drafts": self.drafts, "draft_family": self.family, "draft_id": None}
+        out: dict = {
+            "facts": self.facts,
+            "drafts": self.drafts,
+            "draft_family": self.family,
+            "draft_id": None,
+            "ask": [],
+        }
         if self.parts:
             out["messages"] = [AIMessage(content="\n\n".join(self.parts))]
         if capped:

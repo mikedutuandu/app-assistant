@@ -17,7 +17,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -73,6 +73,8 @@ class TurnInput:
     file_ids: list[str]
     ip: str
     draft_id: str | None = None  # the draft this message is about (a tap on its Shorter or Another angle)
+    opens: bool = False  # thread_id is the host's own id for a thread that does not exist yet: create it with that id
+    ask: list[tuple[str, str]] = field(default_factory=list)  # the chat's other turns (role, text), oldest first
 
 
 class _Refused(Exception):
@@ -132,6 +134,14 @@ async def _gate(state: Any, t: TurnInput, tools: AppTools) -> None:
 async def _open_thread(pool, t: TurnInput) -> tuple[str, bool]:
     """The turn's thread id and whether it was just created; touches updated_at."""
     async with pool.connection() as conn:
+        if t.thread_id is not None and t.opens:
+            cur = await conn.execute(
+                "insert into threads (id, app, workspace, title) values (%s, %s, %s, %s) on conflict (id) do nothing"
+                " returning 1",
+                (t.thread_id, t.session.app, t.session.workspace, t.text[:TITLE_CHARS]),
+            )
+            if await cur.fetchone() is not None:
+                return t.thread_id, True
         if t.thread_id is not None:
             await conn.execute(
                 "update threads set updated_at = now() where id = %s and app = %s and workspace = %s",
@@ -311,7 +321,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     try:
         # the turn's id rides on the user's message, so a reload can show each turn's drafts under its reply
         human = HumanMessage(t.text, additional_kwargs={"turn": message_id})
-        inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id}
+        inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id, "ask": t.ask}
         final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
         capped = bool(final.get("capped"))
