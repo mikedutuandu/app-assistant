@@ -60,9 +60,10 @@ request to say who the user is. A bad or expired token gets 401.
 All routes are under the bot's address, for example `https://bot.example.com`. Each takes
 `Authorization: Bearer <token>` (access `draft`). A browser request's `Origin` must be one of your pack's
 `allowed_origins` (else 403 `origin`). Errors are JSON `{"error": "<code>", "message"?: "<words for the user>"}`:
-401 `invalid` | `expired` | `wrong_app` | `wrong_access`, 403 `origin`, 404 `app` | `thread` | `draft` | `file` |
-`upload`, 400 for a bad body (`empty`, `too_long`, `too_many_files`, `thread`, an upload's own code), 429 `limit`,
-503 `unavailable` (your pack can't be had right now).
+401 `invalid` | `expired` | `wrong_app` | `wrong_access`, 403 `origin` | `workspace` (a delete token for another
+workspace), 404 `app` | `thread` | `draft` | `file` | `upload`, 400 for a bad body (`empty`, `too_long`,
+`too_many_files`, `thread`, an upload's own code), 429 `limit`, 503 `unavailable` (your pack can't be had right now;
+`/messages` tells this as a `failed` event in its stream instead).
 
 **The easy way:** `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`
 (optional `data-label`, `data-position="left"`). It does everything below.
@@ -103,7 +104,7 @@ for your app), `server` (the bot's own fault).
 
 ### Add a draft: `POST /v1/chat/{app}/threads/{thread_id}/actions`
 
-`{"action_id": "<your unique id>", "kind": "add_draft", "draft_id": "<a draft event's id>"}`. The bot calls your
+`{"action_id": "<your unique id, up to 100 characters>", "kind": "add_draft", "draft_id": "<a draft event's id>"}`. The bot calls your
 `/drafts` (and `/material` with the facts) and answers `{"draft_id", "edit_url"}` from your answer. It runs once per
 `action_id`; a repeat gets the same answer, and one still running is 409 `pending`. A failure is 402 (out of credits)
 or 502 with `{error, message}`.
@@ -126,8 +127,14 @@ or 502 with `{error, message}`.
 - `Content-Type: application/json`, `Accept: application/json`
 - `Idempotency-Key: <key>` on `/drafts`, `/material` and `/charge`
 
-Answer JSON with status 200. Errors are JSON `{"error": "<code>", "message"?: "<words for the user>"}`. If you give a
-`message`, the user sees it as it is: write a sentence, not a code.
+Answer JSON with status 200. Errors are JSON `{"error": "<code>", "message"?: "<words for the user>"}`. A code is
+lowercase snake_case: lowercase letters and digits, words joined by `_` (`unauthorized`, `invalid`, `in_flight`,
+`out_of_credits`). The codes below are fixed; the message is yours. If you give a `message`, the user sees it as it
+is: write a sentence, not a code.
+
+- **401 `unauthorized`** on any endpoint when the token is missing or fails a check (see Tokens).
+- **400 `invalid`** for a body that isn't what this page says, a `/drafts` with an empty `text`, or a missing
+  `Idempotency-Key` on `/drafts`, `/material` or `/charge`.
 
 ### `POST /context`
 
@@ -188,8 +195,10 @@ work **at most once per key per workspace**:
 - the first request with a key does the work and stores its answer;
 - a later request with a key that finished gets the same answer again (for `/drafts`, the same `draft_id`);
 - a request whose key is still being worked on gets **409** `{"error": "in_flight", "message": "Still saving that. Try again in a moment."}`.
+- a request that failed (400, 402) did nothing: free the key, so the same key may be tried again.
 
-Keep keys at least a day. Keys are at most 200 characters.
+Keep keys at least a day. Keys are at most 200 characters. The bot does not retry a 409: the user sees your message
+and taps again.
 
 ### Status codes, and what the user sees
 
@@ -204,9 +213,10 @@ Keep keys at least a day. Keys are at most 200 characters.
 | 5xx, no answer in 20 s, connection refused | retried once with the same body and key, then `unavailable` | your `message`, or the same line |
 | 3xx | `refused`: redirects are not followed | the same line |
 
-The bot shows your `message` (or, without one, an `error` that is a sentence). A code is never shown: `error:
-"out_of_credits"` or `"unauthorized"` alone gives the bot's own line, and `message: "out_of_credits: You're out of
-credits."` is shown without its code.
+The bot shows your `message`, or without one your `error` when it is not a code (so `"error": "NOT_FOUND"` or
+`"error": "Drafts are full."` is shown as it is). A code is never shown: `error: "out_of_credits"` or
+`"unauthorized"` alone gives the bot's own line, and `message: "out_of_credits: You're out of credits."` is shown
+without its code.
 
 **Timeouts.** 20 seconds per request, one retry on a 5xx, a timeout or a lost connection (so at most about 40 s).
 Answer `/charge` and `/context` fast: they are on the path of every turn.
@@ -279,24 +289,35 @@ lowered value is logged.
 
 ## Using the JS package
 
-For a JavaScript app (Next.js, Hono, Cloudflare Workers, Node), the npm package `@app-assistant/host` does all of this:
+Coming in the same release as this page. For a JavaScript app (Next.js, Hono, Cloudflare Workers, Node), the npm
+package `@app-assistant/host` does all of this:
 `/server` signs tokens and serves the four endpoints, the pack and the session route from four functions you write;
 `/react` is the chat window. Its README has a worked Next.js example.
 
 ## Checking your app
 
-`tests/contract/scenarios.json` in the bot's repo lists the calls the bot makes, each with:
+`tests/contract/scenarios.json` in the bot's repo lists the calls the bot makes. Each scenario has:
 
-- `setup`: the app's state first: `token` (`valid`, `expired` or `wrong_secret`), `context` (what `/context`
-  answers), `credits_left`, `done` (keys already answered: `{path, key, answer}`), `in_flight` (keys being worked
-  on), `faults` (attempts that fail before one reaches the app: a timeout, a refused connection or a status), and
-  `broken: true` for an app that breaks the contract and answers `response_status`/`response_body` as they are;
-- `call`: what the bot does, `request`: what it sends (`<token>` stands for the user's token; a `null` header is
-  absent), `response_status`/`response_body`: what a correct app answers, `expect`: what the bot then does (a
-  return value, or an error kind with the message the user sees, and how many attempts).
+- `setup`: the app's state before the request:
+  - `token`: which token the request carries: `valid` (the default), `expired`, `wrong_secret`, `wrong_iss` (another
+    app's id), `delete_access` (`access: "delete"`) or `too_long` (`exp - iat` over 3600);
+  - `context`: what `/context` answers for the workspace; `credits_left`: the workspace's credits;
+  - `done`: keys already answered (`{path, key, answer}`: a repeat gets `answer`); `in_flight`: keys being worked on;
+  - `faults`: attempts that fail before one reaches the app (a timeout, a refused connection or a status): bot-side;
+  - `broken: true`: the app breaks this page and answers `response_status`/`response_body` as they are: bot-side only;
+  - `app_only: true`: a request the bot never sends (no `Authorization` header): app-side only.
+- `call`: what the bot does. `request`: what it sends: `method`, `path` (under `api_base`), `headers` (`<token>`
+  stands for the token; a `null` header is absent) and `body`.
+- `response_status` and `response_body`: what the bot's fake app answers.
+- `match`: what any app must answer, or `null` (a bot-side scenario). The status must equal `response_status`, and the
+  JSON body must match `match`: an object matches when each of its keys is present and matches (other keys are
+  allowed); `"<string>"` matches any non-empty string, `"<string|null>"` any string or `null`; a list matches item by
+  item; anything else must be equal. So error codes and `ok: true` are fixed, while ids, URLs and messages are yours.
+- `expect`: what the bot then does (a return value, or an error kind and the message the user sees, and how many
+  attempts). It is the bot's side only: an app ignores it.
 
-Send each `request` to your endpoints in the `setup` state and compare your answer with `response_status` and
-`response_body` (skip the `broken` ones: they are the bot's side only).
+To check your app: for each scenario whose `match` is not `null`, put your app in the `setup` state, send `request`
+once to your `api_base` with a token of the named kind, and compare as above.
 
 ## Contract versions
 

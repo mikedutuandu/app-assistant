@@ -63,6 +63,28 @@
       "credits_left": 12.5,
       "out_of_credits_message": "You're out of credits. Top up in Billing."
     },
+    "match": {
+      "language": "en",
+      "name": "Mai",
+      "voice": "Plain, short sentences, no hype.",
+      "topics": [
+        "release notes"
+      ],
+      "recent_posts": [
+        "We shipped dark mode."
+      ],
+      "patterns": [
+        "Lead with the number."
+      ],
+      "kept_facts": [
+        {
+          "id": "f1",
+          "text": "Sign-ups doubled in March"
+        }
+      ],
+      "credits_left": 12.5,
+      "out_of_credits_message": "You're out of credits. Top up in Billing."
+    },
     "expect": {
       "returns": {
         "language": "en",
@@ -114,6 +136,9 @@
     "response_body": {
       "language": "vi"
     },
+    "match": {
+      "language": "vi"
+    },
     "expect": {
       "returns": {
         "name": null,
@@ -152,6 +177,9 @@
     "response_body": {
       "error": "unauthorized"
     },
+    "match": {
+      "error": "unauthorized"
+    },
     "expect": {
       "error": "unauthorized",
       "message": null
@@ -179,6 +207,9 @@
     },
     "response_status": 401,
     "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
       "error": "unauthorized"
     },
     "expect": {
@@ -211,6 +242,7 @@
       "error": "forbidden",
       "message": "Your plan has no assistant."
     },
+    "match": null,
     "expect": {
       "error": "unauthorized",
       "message": "Your plan has no assistant."
@@ -240,6 +272,7 @@
     "response_body": {
       "voice": "Plain."
     },
+    "match": null,
     "expect": {
       "error": "refused",
       "message": null
@@ -267,6 +300,7 @@
     },
     "response_status": 200,
     "response_body": "<!doctype html><html><body>Sign in</body></html>",
+    "match": null,
     "expect": {
       "error": "refused",
       "message": null
@@ -294,6 +328,7 @@
     },
     "response_status": 302,
     "response_body": "",
+    "match": null,
     "expect": {
       "error": "refused",
       "message": null
@@ -323,6 +358,7 @@
     "response_body": {
       "error": "server_error"
     },
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": null,
@@ -353,6 +389,7 @@
     "response_body": {
       "error": "We're updating. Back in a minute."
     },
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": "We're updating. Back in a minute.",
@@ -389,6 +426,9 @@
     },
     "response_status": 200,
     "response_body": {
+      "language": "en"
+    },
+    "match": {
       "language": "en"
     },
     "expect": {
@@ -435,6 +475,7 @@
     },
     "response_status": null,
     "response_body": null,
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": null,
@@ -470,6 +511,9 @@
     },
     "response_status": 200,
     "response_body": {
+      "language": "en"
+    },
+    "match": {
       "language": "en"
     },
     "expect": {
@@ -516,6 +560,7 @@
     },
     "response_status": null,
     "response_body": null,
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": null,
@@ -547,6 +592,7 @@
       "error": "rate_limited",
       "message": "Slow down, try in a minute."
     },
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": "Slow down, try in a minute."
@@ -583,6 +629,10 @@
     "response_body": {
       "draft_id": "d_1",
       "edit_url": "https://app.example/drafts/d_1"
+    },
+    "match": {
+      "draft_id": "<string>",
+      "edit_url": "<string|null>"
     },
     "expect": {
       "returns": {
@@ -641,6 +691,10 @@
       "draft_id": "d_1",
       "edit_url": "https://app.example/drafts/d_1"
     },
+    "match": {
+      "draft_id": "<string>",
+      "edit_url": "<string|null>"
+    },
     "expect": {
       "returns": {
         "id": "d_1",
@@ -691,6 +745,10 @@
       "draft_id": "d_7",
       "edit_url": null
     },
+    "match": {
+      "draft_id": "d_7",
+      "edit_url": null
+    },
     "expect": {
       "returns": {
         "id": "d_7",
@@ -737,6 +795,9 @@
       "error": "in_flight",
       "message": "Still saving that. Try again in a moment."
     },
+    "match": {
+      "error": "in_flight"
+    },
     "expect": {
       "error": "refused",
       "message": "Still saving that. Try again in a moment."
@@ -773,6 +834,9 @@
     "response_body": {
       "error": "invalid",
       "message": "The draft is empty."
+    },
+    "match": {
+      "error": "invalid"
     },
     "expect": {
       "error": "refused",
@@ -812,6 +876,7 @@
     "response_body": {
       "id": "d_1"
     },
+    "match": null,
     "expect": {
       "error": "refused",
       "message": null
@@ -848,6 +913,7 @@
     },
     "response_status": 502,
     "response_body": "Bad gateway",
+    "match": null,
     "expect": {
       "error": "unavailable",
       "message": null,
@@ -887,6 +953,9 @@
     "response_body": {
       "ok": true
     },
+    "match": {
+      "ok": true
+    },
     "expect": {
       "returns": null
     }
@@ -923,6 +992,9 @@
     "response_body": {
       "ok": true
     },
+    "match": {
+      "ok": true
+    },
     "expect": {
       "returns": null
     }
@@ -955,6 +1027,9 @@
     },
     "response_status": 200,
     "response_body": {
+      "ok": true
+    },
+    "match": {
       "ok": true
     },
     "expect": {
@@ -991,6 +1066,9 @@
     "response_body": {
       "error": "out_of_credits",
       "message": "You're out of credits. Top up in Billing."
+    },
+    "match": {
+      "error": "out_of_credits"
     },
     "expect": {
       "error": "out_of_credits",
@@ -1036,6 +1114,9 @@
     "response_body": {
       "ok": true
     },
+    "match": {
+      "ok": true
+    },
     "expect": {
       "returns": null
     }
@@ -1070,6 +1151,7 @@
     "response_body": {
       "error": "out_of_credits"
     },
+    "match": null,
     "expect": {
       "error": "out_of_credits",
       "message": null
@@ -1106,6 +1188,7 @@
       "error": "out_of_credits",
       "message": "out_of_credits: You're out of credits."
     },
+    "match": null,
     "expect": {
       "error": "out_of_credits",
       "message": "You're out of credits."
@@ -1141,9 +1224,389 @@
     "response_body": {
       "ok": false
     },
+    "match": null,
     "expect": {
       "error": "refused",
       "message": null
+    }
+  },
+  {
+    "name": "drafts: an error that is not a code is shown",
+    "setup": {
+      "broken": true
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Hi.",
+        "thread": [],
+        "media": [],
+        "key": "add-6"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-6"
+      },
+      "body": {
+        "text": "Hi.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 400,
+    "response_body": {
+      "error": "Drafts are full this month."
+    },
+    "match": null,
+    "expect": {
+      "error": "refused",
+      "message": "Drafts are full this month."
+    }
+  },
+  {
+    "name": "context: a token for another app is 401",
+    "setup": {
+      "token": "wrong_iss"
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "context: a delete token is 401",
+    "setup": {
+      "token": "delete_access"
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "context: a token longer than an hour is 401",
+    "setup": {
+      "token": "too_long"
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "context: no Authorization header is 401",
+    "setup": {
+      "app_only": true
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": null,
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {}
+  },
+  {
+    "name": "drafts: an expired token is 401",
+    "setup": {
+      "token": "expired"
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Hi.",
+        "thread": [],
+        "media": [],
+        "key": "add-7"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-7"
+      },
+      "body": {
+        "text": "Hi.",
+        "thread": [],
+        "media": []
+      }
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "material: an expired token is 401",
+    "setup": {
+      "token": "expired"
+    },
+    "call": {
+      "method": "save_material",
+      "args": {
+        "facts": [
+          "A fact"
+        ],
+        "draft_id": null,
+        "key": "m7:facts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/material",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m7:facts"
+      },
+      "body": {
+        "facts": [
+          "A fact"
+        ]
+      }
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "charge: an expired token is 401",
+    "setup": {
+      "token": "expired"
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m7:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m7:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m7:1"
+      }
+    },
+    "response_status": 401,
+    "response_body": {
+      "error": "unauthorized"
+    },
+    "match": {
+      "error": "unauthorized"
+    },
+    "expect": {
+      "error": "unauthorized",
+      "message": null
+    }
+  },
+  {
+    "name": "material: a key still being saved is 409",
+    "setup": {
+      "in_flight": [
+        {
+          "path": "/material",
+          "key": "add-1:facts"
+        }
+      ]
+    },
+    "call": {
+      "method": "save_material",
+      "args": {
+        "facts": [
+          "A fact"
+        ],
+        "draft_id": "d_1",
+        "key": "add-1:facts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/material",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-1:facts"
+      },
+      "body": {
+        "facts": [
+          "A fact"
+        ],
+        "draft_id": "d_1"
+      }
+    },
+    "response_status": 409,
+    "response_body": {
+      "error": "in_flight",
+      "message": "Still saving that. Try again in a moment."
+    },
+    "match": {
+      "error": "in_flight"
+    },
+    "expect": {
+      "error": "refused",
+      "message": "Still saving that. Try again in a moment."
+    }
+  },
+  {
+    "name": "charge: a ref still being charged is 409",
+    "setup": {
+      "credits_left": 5,
+      "in_flight": [
+        {
+          "path": "/charge",
+          "key": "m8:1"
+        }
+      ]
+    },
+    "call": {
+      "method": "charge",
+      "args": {
+        "cost_usd": 0.01,
+        "ref": "m8:1"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/charge",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "m8:1"
+      },
+      "body": {
+        "cost_usd": 0.01,
+        "ref": "m8:1"
+      }
+    },
+    "response_status": 409,
+    "response_body": {
+      "error": "in_flight",
+      "message": "Still saving that. Try again in a moment."
+    },
+    "match": {
+      "error": "in_flight"
+    },
+    "expect": {
+      "error": "refused",
+      "message": "Still saving that. Try again in a moment."
     }
   }
 ]

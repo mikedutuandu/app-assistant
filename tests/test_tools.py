@@ -302,3 +302,29 @@ async def test_rest_calls_are_timed_by_endpoint():
         await tools.save_draft("hello", [], [], "k1")
         await tools.charge(0.01, "m:1")
     assert [s["name"] for s in tools.timer.summary()["tool"]] == ["drafts", "charge"]
+
+
+@respx.mock
+async def test_rest_error_codes_are_lowercase_snake_case_and_anything_else_is_a_sentence():
+    from datetime import UTC, datetime
+
+    from assistant.tools import RestHttpTools
+
+    base = "https://app.test/api/assistant"
+    respx.post(f"{base}/context").mock(
+        side_effect=[
+            httpx.Response(404, json={"error": "not_found"}),
+            httpx.Response(404, json={"error": "unknown"}),
+            httpx.Response(404, json={"error": "NOT_FOUND"}),
+        ]
+    )
+    rest = AppPack.model_validate({**make_pack().model_dump(), "mcp_url": None, "tools": None, "api_base": base})
+    session = Session(app="demo", workspace="w1", access="draft", token=TOKEN, expires_at=datetime.now(UTC))
+    async with httpx.AsyncClient() as client:
+        tools = RestHttpTools(rest, session, client)
+        shown = []
+        for _ in range(3):
+            with pytest.raises(ToolError) as e:
+                await tools.context()
+            shown.append(e.value.user_message)
+    assert shown == [None, None, "NOT_FOUND"]

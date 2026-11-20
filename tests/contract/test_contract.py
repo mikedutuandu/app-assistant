@@ -27,11 +27,50 @@ API_BASE = f"{SITE}/api/assistant"
 
 
 def token(kind: str = "valid") -> str:
+    """A token as `setup.token` names it: valid, expired, wrong_secret, wrong_iss, delete_access or too_long."""
     now = int(time.time())
-    iat, exp = (now - 7200, now - 3600) if kind == "expired" else (now, now + 600)
+    iat, exp = {"expired": (now - 7200, now - 3600), "too_long": (now, now + 3700)}.get(kind, (now, now + 600))
     secret = "o" * 64 if kind == "wrong_secret" else APP_SECRET
-    claims = {"iss": APP_ID, "sub": WORKSPACE, "access": "draft", "iat": iat, "exp": exp}
+    claims = {
+        "iss": "another-app" if kind == "wrong_iss" else APP_ID,
+        "sub": WORKSPACE,
+        "access": "delete" if kind == "delete_access" else "draft",
+        "iat": iat,
+        "exp": exp,
+    }
     return jwt.encode(claims, secret, algorithm="HS256")
+
+
+def matches(answer, template) -> bool:
+    """An app's answer against a scenario's `match` (docs/integration.md, "Checking your app")."""
+    if template == "<string>":
+        return isinstance(answer, str) and answer != ""
+    if template == "<string|null>":
+        return answer is None or isinstance(answer, str)
+    if isinstance(template, dict):
+        return isinstance(answer, dict) and all(k in answer and matches(answer[k], v) for k, v in template.items())
+    if isinstance(template, list):
+        return isinstance(answer, list) and len(answer) == len(template) and all(map(matches, answer, template))
+    return answer == template and type(answer) is type(template)
+
+
+def make_app(setup: dict) -> FakeApp:
+    return FakeApp(
+        APP_ID,
+        APP_SECRET,
+        context=setup.get("context"),
+        credits_left=setup.get("credits_left"),
+        done=setup.get("done", []),
+        in_flight=setup.get("in_flight", []),
+        workspace=WORKSPACE,
+    )
+
+
+def check_app_answer(scenario: dict, answer: httpx.Response) -> None:
+    """The fake app's own answer: what the scenario says, and so within its `match`."""
+    assert answer.status_code == scenario["response_status"]
+    assert answer.json() == scenario["response_body"]
+    assert matches(answer.json(), scenario["match"]), scenario["match"]
 
 
 def rest_pack() -> AppPack:
@@ -102,19 +141,14 @@ async def run_call(tools: RestHttpTools, call: dict):
     raise AssertionError(f"unknown call {call['method']}")
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["name"] for s in SCENARIOS])
+BOT_SIDE = [s for s in SCENARIOS if not s["setup"].get("app_only")]
+
+
+@pytest.mark.parametrize("scenario", BOT_SIDE, ids=[s["name"] for s in BOT_SIDE])
 async def test_scenario(scenario: dict):
     setup = scenario["setup"]
     tok = token(setup.get("token", "valid"))
-    app = FakeApp(
-        APP_ID,
-        APP_SECRET,
-        context=setup.get("context"),
-        credits_left=setup.get("credits_left"),
-        done=setup.get("done", []),
-        in_flight=setup.get("in_flight", []),
-        workspace=WORKSPACE,
-    )
+    app = make_app(setup)
     wire = Wire(scenario, app)
     session = Session(app=APP_ID, workspace=WORKSPACE, access="draft", token=tok, expires_at=datetime.now(UTC))
     expect = scenario["expect"]
@@ -144,19 +178,47 @@ async def test_scenario(scenario: dict):
 
     # What an app that follows the doc answers: the fake app's own answer is the scenario's.
     for answer in wire.answered:
-        assert answer.status_code == scenario["response_status"]
-        assert answer.json() == scenario["response_body"]
+        check_app_answer(scenario, answer)
+
+
+APP_SIDE = [s for s in SCENARIOS if s["match"] is not None]
+
+
+@pytest.mark.parametrize("scenario", APP_SIDE, ids=[s["name"] for s in APP_SIDE])
+async def test_the_fake_app_answers_each_request_as_the_doc_says(scenario: dict):
+    """How an app checks itself: each `request` sent once, in the `setup` state, answered within `match`."""
+    want = scenario["request"]
+    tok = token(scenario["setup"].get("token", "valid"))
+    headers = {k: v.replace("<token>", tok) for k, v in want["headers"].items() if v is not None}
+    transport = httpx.ASGITransport(app=make_app(scenario["setup"]).app)
+    async with httpx.AsyncClient(transport=transport) as client:
+        answer = await client.request(want["method"], API_BASE + want["path"], json=want["body"], headers=headers)
+    check_app_answer(scenario, answer)
+
+
+def test_match_wildcards():
+    assert matches(
+        {"draft_id": "x", "edit_url": None, "extra": 1}, {"draft_id": "<string>", "edit_url": "<string|null>"}
+    )
+    assert not matches({"draft_id": ""}, {"draft_id": "<string>"})
+    assert not matches({"error": "invalid_body"}, {"error": "invalid"})
+    assert not matches({"ok": 1}, {"ok": True})
 
 
 def test_scenarios_are_well_formed():
-    keys = {"name", "setup", "call", "request", "response_status", "response_body", "expect"}
+    keys = {"name", "setup", "call", "request", "response_status", "response_body", "match", "expect"}
     calls = {"context": "/context", "save_draft": "/drafts", "save_material": "/material", "charge": "/charge"}
     for s in SCENARIOS:
         assert set(s) == keys, s["name"]
         assert calls[s["call"]["method"]] == s["request"]["path"], s["name"]
         keyed = s["request"]["path"] != "/context"
         assert (s["request"]["headers"]["idempotency-key"] is not None) == keyed, s["name"]
-        assert ("returns" in s["expect"]) != ("error" in s["expect"]), s["name"]
+        if s["setup"].get("app_only"):
+            assert s["expect"] == {} and s["match"] is not None, s["name"]
+        else:
+            assert ("returns" in s["expect"]) != ("error" in s["expect"]), s["name"]
+        if s["setup"].get("broken"):
+            assert s["match"] is None, s["name"]
     assert len({s["name"] for s in SCENARIOS}) == len(SCENARIOS)
 
 
