@@ -55,7 +55,7 @@ cases:
     turns: ["hi", "how are you"]
     expect:
       - The last reply answers "how are you" the way a person would (for example, says it is doing well) instead of skipping it.
-      - The last reply does not ask the same question the first reply asked, in the same or other words.
+      - The last reply does not ask again what the first reply asked (about Mike's work, his week or what he is up to), in the same or other words. A reciprocal question such as "How about you?" (asking how Mike is) is what a person says and is fine, as long as it is the only question in the last reply.
       - No reply contains a post.
     hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
 
