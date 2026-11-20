@@ -106,7 +106,7 @@ def test_db_schema_refuses_other_names(test_settings, name):
 
 
 def test_pool_sizes_default_to_a_small_budget(test_settings):
-    assert (test_settings.db_schema, test_settings.db_pool_max, test_settings.saver_pool_max) == ("assistant", 5, 2)
+    assert (test_settings.db_schema, test_settings.db_pool_max, test_settings.saver_pool_max) == ("assistant", 2, 1)
 
 
 async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema):

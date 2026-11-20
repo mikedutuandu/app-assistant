@@ -10,7 +10,7 @@ A private chat bot that any web app adds with one script tag. It asks the user a
 4. Every number and claim in a draft must come from the facts list. The facts are shown to the user before they are kept, and a draft that fails the check is written once more, then dropped.
 5. Saving happens only when the user taps. The bot has no tool that publishes.
 
-FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Google Cloud Run with the data on Supabase.
+FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
 
 ## Run locally
 
@@ -35,84 +35,73 @@ cd widget && npm install && npm test
 
 ## Build the widget
 
-The built file `src/assistant/static/widget.js` is committed, so the server and the Docker image need no Node. After changing `widget/`:
+The built file `src/assistant/static/widget.js` is committed, so the server and the Vercel build need no Node. After changing `widget/`:
 
 ```bash
 cd widget && npm run build
 ```
 
-## Deploy on Google Cloud Run
+## Deploy on Vercel
 
-The service runs on Cloud Run, built from the repo's `Dockerfile`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket through its S3-compatible API. (Cloud SQL and Cloud Storage work too: see the alternative at the end.) Replace the placeholders (`PROJECT_ID`, `REGION`, `REF`, and so on) with your own. Run the commands in a terminal where you are signed in with `gcloud auth login`; you paste secrets yourself, nobody else needs to see them. Pick a Cloud Run region close to the Supabase project's region.
+The service runs on Vercel as one Python Function (Fluid compute), built from the repo's `pyproject.toml` and `vercel.json`; the entrypoint is `src/assistant/asgi.py`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket. Files go from the browser straight to Supabase (Vercel caps a request body at 4.5 MB); the bot only issues the upload link and then checks the stored file.
 
-**1. Switch on the Google services it uses.**
+*20 Nov 2026: hosting moved from Cloud Run to Vercel.*
 
-```bash
-gcloud config set project PROJECT_ID
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
-```
-
-**2. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
+**1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
 - Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
-- Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and Cloud Run reaches the internet over IPv4.
+- Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and a Vercel Function reaches the internet over IPv4.
 
 **Keep the tables private.** Supabase serves the schemas listed under Project Settings → Data API → **Exposed schemas** (`public` by default) to anyone holding the project's public key. The bot keeps every table, LangGraph's checkpoints included, in its own schema, `DB_SCHEMA` (default `assistant`), which it creates on its first start. **Never add that schema to Exposed schemas**, and never set `DB_SCHEMA=public`. After the first deploy, the Table Editor shows the bot's tables under the `assistant` schema and nothing new under `public`.
 
-**3. Files in Supabase Storage.**
+**2. Files in Supabase Storage.**
 
-1. Storage → **New bucket**: give it a name (`BUCKET`) and leave **Public bucket** off.
+1. Storage → **New bucket**: give it a name (`BUCKET`) and leave **Public bucket** off. Set its **file size limit** to `25 MB` (`file_size_limit` 26214400: the largest cap of any kind, a voice note) and its **allowed MIME types** (`allowed_mime_types`) to the kinds the bot accepts, with no wildcard:
+
+   ```text
+   image/png, image/jpeg, image/jpg, image/pjpeg, image/webp, image/gif,
+   application/pdf,
+   audio/webm, audio/ogg, audio/opus, audio/mp4, audio/m4a, audio/x-m4a, audio/mpeg, audio/mp3, audio/wav, audio/x-wav, audio/wave,
+   video/mp4, video/webm,
+   application/octet-stream
+   ```
+
+   The bot sniffs the stored bytes and deletes anything that is not an image, a PDF or a voice format (webm, ogg, mp4/m4a, mp3, wav); the bucket's list is a second fence in front of it. (`application/octet-stream` is for a browser that does not know a file's type.) The per-app caps (image 10 MB, PDF 20 MB, voice 25 MB) are enforced by the bot, not by the bucket.
 2. Storage's **S3** settings page (`https://supabase.com/dashboard/project/REF/storage/s3`): make sure the S3 connection is enabled; it shows the endpoint and the region.
-3. Create an **access key** there: it shows an access key id and a secret once. They give full access to every bucket of the project (they bypass Storage's row-level policies), so they go into Secret Manager only.
+3. Create an **access key** there: it shows an access key id and a secret once. They give full access to every bucket of the project (they bypass Storage's row-level policies), so they go into Vercel environment variables only (mark them Sensitive).
+4. From Project Settings → API: the project URL (`SUPABASE_URL`, `https://REF.supabase.co`) and the **secret (service role) key** (`SUPABASE_SERVICE_KEY`). The bot uses them to ask Supabase for the signed upload links.
 
-The values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co/storage/v1/s3`; the `https://REF.storage.supabase.co/storage/v1/s3` form works too), `S3_REGION=` the region shown there (for example `ap-southeast-1`), `S3_BUCKET=BUCKET`, and the key id and secret as `S3_ACCESS_KEY` and `S3_SECRET_KEY`.
+> **Warning.** If either `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing, uploads **silently fall back to the S3 presigned PUT** (see "Alternative: another S3-compatible store"). Nothing fails at startup, and on Supabase's S3 endpoint that fallback may not work from a browser. Set both.
 
-**4. Connection budget.** Each Cloud Run instance opens up to `DB_POOL_MAX` (default 5) connections for its own queries plus `SAVER_POOL_MAX` (default 2) for LangGraph's checkpoints. Keep `instances × (DB_POOL_MAX + SAVER_POOL_MAX)` under the Session pooler's pool size (Database settings → Connection pooling; 15 by default on every compute size up to Medium). Start with `--max-instances 2`: 2 × 7 = 14. To run more instances, raise the pool size (a larger compute) or lower `DB_POOL_MAX` first.
+The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co/storage/v1/s3`; the `https://REF.storage.supabase.co/storage/v1/s3` form works too), `S3_REGION=` the region shown there (for example `ap-southeast-1`), `S3_BUCKET=BUCKET`, and the key id and secret as `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The bot still reads, checks and deletes files through them.
 
-**5. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `HOOKPLAYBOOK_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
+**3. Connection budget.** Each active instance opens up to `DB_POOL_MAX` (default 2) connections for its own queries plus `SAVER_POOL_MAX` (default 1) for LangGraph's checkpoints: 3 per instance. Fluid compute runs many requests on one instance, so a demo's traffic is a few instances at most, but Vercel can start more under load. Keep `active instances × (DB_POOL_MAX + SAVER_POOL_MAX)` under the Session pooler's pool size (Database settings → Connection pooling; 15 by default on every compute size up to Medium: about 5 instances). To go beyond that, raise the pool size (a larger compute) or lower `DB_POOL_MAX` first.
 
-```bash
-openssl rand -hex 32 | gcloud secrets create DEMO_SESSION_SECRET --data-file=-
-printf '%s' 'THE_VALUE' | gcloud secrets create OPENROUTER_API_KEY --data-file=-   # same for the others
-```
+**4. Import the project.** In Vercel: **Add New → Project**, import the GitHub repo. The framework preset is **FastAPI**; Python 3.12 comes from `.python-version`. Leave the build and output settings alone: `vercel.json` sets the function (300 s, test files left out) and the daily clean-up cron.
 
-Let the service read them (the default compute service account is used unless you pass `--service-account`):
+**5. Environment variables.** Settings → Environment Variables, for Production (mark every secret Sensitive). Everything in `.env.example`:
 
-```bash
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor
-```
+| Variable | Value |
+|---|---|
+| `OPENROUTER_API_KEY` | the OpenRouter key |
+| `DATABASE_URL` | the Supabase **Session pooler** string (port 5432) |
+| `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the Supabase S3 values above |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key, for the signed upload links |
+| `CRON_SECRET` | `openssl rand -hex 32`: Vercel Cron sends it as `Authorization: Bearer ...` to `/internal/cleanup`, which refuses everything else (and is off while it is unset) |
+| `PUBLIC_BASE_URL` | the production domain, `https://bot.example.com` (no trailing slash) |
+| `DEMO_SESSION_SECRET` | `openssl rand -hex 32` |
+| `HOOKPLAYBOOK_SESSION_SECRET` | the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`; the service refuses to start without it |
 
-**6. First deploy.** This one sets every secret and variable:
+Do not set `RUN_LIFESPAN=false` in production (it skips the database and storage). `SHUTDOWN_DRAIN_SECONDS` stays at `0.4`: Vercel gives a function about 500 ms at shutdown.
 
-```bash
-gcloud run deploy app-assistant --source . --region REGION --allow-unauthenticated \
-  --no-cpu-throttling --min-instances 0 --max-instances 2 --timeout 3600 --concurrency 40 --memory 1Gi \
-  --set-secrets OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,DEMO_SESSION_SECRET=DEMO_SESSION_SECRET:latest,HOOKPLAYBOOK_SESSION_SECRET=HOOKPLAYBOOK_SESSION_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,S3_ACCESS_KEY=S3_ACCESS_KEY:latest,S3_SECRET_KEY=S3_SECRET_KEY:latest \
-  --set-env-vars S3_ENDPOINT=https://REF.supabase.co/storage/v1/s3,S3_REGION=SUPABASE_REGION,S3_BUCKET=BUCKET,PUBLIC_BASE_URL=https://TEMP
-```
+**6. Deploy.** Deploy once; after that every push to `main` redeploys. A change to an environment variable applies from the next deployment (redeploy to pick it up). Migrations run on a cold start, under a Postgres advisory lock, so several instances starting together run them once.
 
-- `--no-cpu-throttling`: a chat turn finishes and is charged even if the user closes the chat, and the demo's clean-up runs in the background; both need CPU between requests.
-- `--timeout 3600`: answers are streamed and may stay open for a while.
-- `--max-instances 2`: the connection budget above.
+**7. Check.** `curl https://<domain>/health` answers `{"ok":true}`; then open `https://<domain>/demo` on a phone. If a pack's secret variable is missing, the function fails to start and the logs say which one.
 
-`PUBLIC_BASE_URL` must be the service's own URL, which you only know after the first deploy. Copy the URL it prints (or map a custom domain such as `bot.example.com`) and set it; this makes a new revision with only that value changed:
+**Limits on the Hobby plan.** A function runs at most 300 s per request (a chat turn is one streamed response, so a turn is cut at 5 minutes); request bodies are at most 4.5 MB (files do not pass through the function); a cron runs at most once a day, which is why the demo's clean-up (`GET /internal/cleanup`, deleting the demo's data older than a day and every app's expired, unfinished uploads) is daily at 03:00 UTC. Nothing in the bot relies on work continuing after a response ends: every model call is charged as soon as it finishes, and there is no background loop.
 
-```bash
-gcloud run services update app-assistant --region REGION --update-env-vars PUBLIC_BASE_URL=https://THE-SERVICE-URL
-```
-
-**7. Redeploy after a code change.**
-
-```bash
-gcloud run deploy app-assistant --source . --region REGION
-```
-
-Leave out `--set-env-vars` and `--set-secrets`: the new revision keeps the last one's variables and secrets, while `--set-env-vars` would replace all of them (and drop `PUBLIC_BASE_URL`). To change one value later, use `gcloud run services update app-assistant --region REGION --update-env-vars NAME=VALUE` (or `--update-secrets NAME=SECRET:latest`). Migrations run on start.
-
-**8. Check.** `curl https://<url>/health` answers `{"ok":true}`; then open `https://<url>/demo` on a phone. If a pack's secret variable is missing, the service refuses to start and says which one.
-
-**Check the bucket once.** Before the first real user, run this from your machine with the real `S3_*` values (and the rest of the settings) in `.env`. It does each call the service makes, against the real bucket, then cleans up:
+**Check the bucket once.** Before the first real user, run this from your machine with the real `S3_*` values (and the rest of the settings) in `.env`. It does each call the service makes, against the real bucket, then cleans up (the bytes are stored as `image/png` so the bucket's MIME list accepts them; the bot's own content check is not involved):
 
 ```bash
 uv run python - <<'PY'
@@ -121,9 +110,9 @@ from assistant.config import get_settings
 from assistant.files.storage import Storage
 
 s = Storage(get_settings())
-s.put("check/hello.txt", b"hello", "text/plain")                          # 1. put
-assert s.get("check/hello.txt") == b"hello"                                # 2. get
-url = s.signed_url("check/hello.txt", 60)
+s.put("check/hello.png", b"hello", "image/png")                            # 1. put
+assert s.get("check/hello.png") == b"hello"                                # 2. get
+url = s.signed_url("check/hello.png", 60)
 assert httpx.get(url).content == b"hello"                                  # 3. signed GET (how images reach the app)
 assert httpx.get(url.split("?")[0]).status_code in (400, 401, 403, 404)    # 4. unsigned GET refused: the bucket is private
 assert s.delete_prefix("check/") == 1                                      # 5. delete
@@ -133,34 +122,24 @@ PY
 
 It prints `bucket ok`. Any error names the call that failed; fix the bucket or keys before going on.
 
-Note on the demo's per-IP limit: Cloud Run appends the visitor's IP as the last `X-Forwarded-For` entry, and the limit relies on that. Putting a Google external load balancer in front adds its own IP last and would need a code change.
+**Then test one upload in a browser.** Open `https://<domain>/demo`, attach a small photo and send it with a message. The browser's network tab shows `POST /v1/chat/demo/uploads`, then a `PUT` straight to `https://REF.supabase.co/storage/v1/object/upload/sign/...` (not to the bot), then `POST .../uploads/.../finish`. If the `PUT` goes to an S3 address instead, `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing in Vercel. Also try a `.txt` file renamed to `.png`: the bot must refuse it.
 
-### Alternative: Cloud SQL and Cloud Storage
+Note on the demo's per-IP limit: the client IP is `x-vercel-forwarded-for`, then `x-real-ip`, then the rightmost `x-forwarded-for` entry. They are set by Vercel's edge, which replaces what a visitor sends. Putting another proxy in front (a CDN, say) changes what they hold and needs a code change in `client_ip`.
 
-Everything above stays the same except where the data lives.
+### Alternative: another S3-compatible store
 
-- **Postgres on Cloud SQL** (Postgres 16). Also enable `sqladmin.googleapis.com`, then:
+Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
 
-  ```bash
-  gcloud sql instances create INSTANCE --database-version=POSTGRES_16 --region=REGION --tier=db-f1-micro
-  gcloud sql databases create DB --instance=INSTANCE
-  gcloud sql users create USER --instance=INSTANCE --password=PASSWORD
-  gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/cloudsql.client
-  ```
+- methods `PUT` (and `GET` if you read from the browser);
+- allowed headers `if-none-match` and `content-type`.
 
-  `DATABASE_URL` is `postgresql://USER:PASSWORD@/DB?host=/cloudsql/PROJECT_ID:REGION:INSTANCE`, with the password percent-encoded as above, and the first deploy also needs `--add-cloudsql-instances PROJECT_ID:REGION:INSTANCE` (later redeploys keep it). The connection budget is the instance's `max_connections` (about 25 on `db-f1-micro`, a few of them reserved).
-- **Files in Cloud Storage** through its S3-compatible API:
+For example, on S3 or R2:
 
-  ```bash
-  gcloud storage buckets create gs://BUCKET --location=REGION --uniform-bucket-level-access --public-access-prevention
-  gcloud iam service-accounts create app-assistant-files
-  gcloud storage buckets add-iam-policy-binding gs://BUCKET \
-    --member=serviceAccount:app-assistant-files@PROJECT_ID.iam.gserviceaccount.com --role=roles/storage.objectAdmin
-  gcloud storage hmac create app-assistant-files@PROJECT_ID.iam.gserviceaccount.com
-  ```
+```json
+[{"AllowedOrigins": ["https://hookplaybook.com", "https://bot.example.com"], "AllowedMethods": ["PUT"], "AllowedHeaders": ["if-none-match", "content-type"], "MaxAgeSeconds": 600}]
+```
 
-  The last command prints an access id and a secret: `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The other values are `S3_ENDPOINT=https://storage.googleapis.com`, `S3_REGION=auto` and `S3_BUCKET=BUCKET`. Run the bucket check above against it too.
+Set `S3_ENDPOINT`, `S3_REGION` (`auto` for R2), `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` for it, and run the bucket check above against it too. The store must honour `If-None-Match` on a PUT, or an upload link could replace a file already checked.
 
 ## Apps
 
@@ -176,11 +155,6 @@ The service refuses to start while any pack's secret variable is unset.
 HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools on its MCP (`https://hookplaybook.com/api/v1/mcp`), the session route `/api/assistant/session`, and the call that deletes a workspace's data here when the workspace is deleted there.
 
 - **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
-  Until the bot moves to Vercel, it runs on Cloud Run: put the value in Secret Manager as `HOOKPLAYBOOK_SESSION_SECRET` (step 5 of the deploy) and, on a service deployed before HookPlaybook's pack, map it once (the service will not start without it):
-
-  ```bash
-  gcloud run services update app-assistant --region REGION --update-secrets HOOKPLAYBOOK_SESSION_SECRET=HOOKPLAYBOOK_SESSION_SECRET:latest
-  ```
 - **Origin.** Only `https://hookplaybook.com` (the dashboard is at `/dashboard` on it) may use the widget.
 - **Posts.** Two X posts per card (280 characters, no links, no long dashes, may carry one of the user's pictures). Saving goes through `save_draft`, which copies the picture into the draft.
 - **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.

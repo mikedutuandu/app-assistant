@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     database_url: str
     # Every table (LangGraph's checkpoints too) lives in this schema. On Supabase it must not be an exposed schema.
     db_schema: str = "assistant"
-    db_pool_max: int = 5  # connections per instance for the app's queries
-    saver_pool_max: int = 2  # connections per instance for LangGraph's checkpoints
+    db_pool_max: int = 2  # connections per instance for the app's queries
+    saver_pool_max: int = 1  # connections per instance for LangGraph's checkpoints
     s3_endpoint: str | None = None
     s3_bucket: str
     s3_access_key: str
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     run_lifespan: bool = True
     # Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}` to /internal/cleanup; unset, that endpoint is off.
     cron_secret: str | None = None
-    shutdown_drain_seconds: float = 8.0  # Cloud Run allows about 10 s after SIGTERM
+    shutdown_drain_seconds: float = 0.4  # Vercel gives a function about 500 ms at shutdown
 
     @field_validator("db_schema")
     @classmethod

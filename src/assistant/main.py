@@ -29,7 +29,7 @@ class _StdoutHandler(logging.StreamHandler):
 
 
 def log_to_stdout() -> None:
-    """The service's own lines (ids, timings, costs, error kinds) at INFO on stdout, where Cloud Run reads them.
+    """The service's own lines (ids, timings, costs, error kinds) at INFO on stdout, where the host reads them.
 
     Only the "assistant" logger, which does not propagate: the root logger is left alone, so libraries such as
     httpx (which logs every URL it calls) stay at their quiet defaults.

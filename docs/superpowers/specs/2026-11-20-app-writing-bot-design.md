@@ -2,6 +2,8 @@
 
 Date: 20 Nov 2026. Status: approved by Mike, 20 Nov 2026.
 20 Nov 2026: Mike moved hosting from Railway to Google Cloud Run.
+
+20 Nov 2026: Mike moved hosting from Cloud Run to Vercel.
 Working name: **the writing bot** (repo `app-assistant`; the product name is still open).
 
 ## Why

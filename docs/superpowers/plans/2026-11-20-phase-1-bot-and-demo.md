@@ -2,6 +2,8 @@
 
 20 Nov 2026: Mike moved hosting from Railway to Google Cloud Run.
 
+20 Nov 2026: Mike moved hosting from Cloud Run to Vercel.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A deployed bot service that any app adds with one script tag, plus a public demo app ("Shipnote") that anyone can try without signing up. The bot asks back for real facts (from text, screenshots, PDFs and voice notes), writes only from them, and saves drafts and facts through the app's own tools.

@@ -829,7 +829,7 @@ async def test_drain_waits_for_running_turns():
         public_base_url="http://t",
         shutdown_drain_seconds=0.05,
     )
-    assert Settings.model_fields["shutdown_drain_seconds"].default == 8.0
+    assert Settings.model_fields["shutdown_drain_seconds"].default == 0.4
     turn.track(asyncio.create_task(slow(0.01, "quick")))
     await turn.drain(settings.shutdown_drain_seconds)
     assert done == ["quick"]
