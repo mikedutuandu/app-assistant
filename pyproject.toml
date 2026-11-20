@@ -1,0 +1,49 @@
+[project]
+name = "app-assistant"
+version = "0.1.0"
+description = "A chat bot any web app adds with one script tag (FastAPI + LangGraph)."
+authors = [{ name = "Mike Du", email = "mikedutuandu@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.44.7",
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
+    "langgraph>=1.2.24",
+    "langgraph-checkpoint-postgres>=3.2.1",
+    "pillow>=13.0.0",
+    "psycopg[binary,pool]>=3.3.9",
+    "puremagic>=2.3.0",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
+    "pyjwt>=2.15.1",
+    "pypdf>=7.1.1",
+    "pypdfium2>=5.15.2",
+    "python-multipart>=0.0.34",
+    "python-ulid>=4.2.0",
+    "pyyaml>=6.0.3",
+    "selectolax>=1.0.2",
+    "sse-starlette>=3.7.0",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "assistant"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["db: needs TEST_DATABASE_URL"]
+
+[dependency-groups]
+dev = [
+    "moto[s3]>=5.2.5",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.6",
+]

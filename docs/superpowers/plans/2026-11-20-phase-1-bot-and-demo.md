@@ -1,5 +1,7 @@
 # The writing bot, Phase 1 (the bot and the public demo): implementation plan
 
+20 Nov 2026: Mike moved hosting from Railway to Google Cloud Run.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A deployed bot service that any app adds with one script tag, plus a public demo app ("Shipnote") that anyone can try without signing up. The bot asks back for real facts (from text, screenshots, PDFs and voice notes), writes only from them, and saves drafts and facts through the app's own tools.
@@ -13,7 +15,7 @@
 - Python 3.12 with uv: FastAPI, uvicorn, LangGraph, `langgraph-checkpoint-postgres`, `psycopg[binary,pool]`, httpx, pydantic v2, `pydantic-settings`, PyJWT, PyYAML, boto3, pypdf, pypdfium2, puremagic, `sse-starlette`.
 - Tests: pytest, pytest-asyncio, respx, moto, ruff.
 - Widget: TypeScript, esbuild, vitest.
-- Postgres 16. Hosted on Railway. Models through OpenRouter.
+- Postgres 16. Hosted on Google Cloud Run. Models through OpenRouter.
 
 **Spec:** `docs/superpowers/specs/2026-11-20-app-writing-bot-design.md` (approved 20 Nov 2026). Later phases get their own plans: HookPlaybook, designed images, StreakPlan, SiteSeed.
 
@@ -68,7 +70,7 @@
 
 ```
 app-assistant/
-  pyproject.toml  uv.lock  .python-version (3.12)  ruff.toml  .env.example  Dockerfile  railway.json  docker-compose.test.yml  README.md
+  pyproject.toml  uv.lock  .python-version (3.12)  ruff.toml  .env.example  Dockerfile  docker-compose.test.yml  README.md
   apps/demo.yaml                     # the demo's pack
   src/assistant/
     main.py                          # create_app(): routes, static, lifespan (db pool, checkpointer, packs)
@@ -583,17 +585,17 @@ app-assistant/
   7. Check it on a phone-width window.
 - [ ] **Step 5:** Commit "feat: widget" (including the built `static/widget.js`).
 
-### Task 15: Deploy on Railway
+### Task 15: Deploy on Google Cloud Run
 
 **Files:**
-- Create: `Dockerfile` (python:3.12-slim with uv, `uv sync --frozen --no-dev`, `CMD uvicorn assistant.main:create_app --factory --host 0.0.0.0 --port $PORT`), `railway.json` (Dockerfile builder, healthcheck `/health`, restart on failure)
+- Create: `Dockerfile` (python:3.12-slim with uv, `uv sync --frozen --no-dev`, `CMD uvicorn assistant.main:create_app --factory --host 0.0.0.0 --port $PORT`)
 - Modify: `.env.example` (every setting, including `DEMO_SESSION_SECRET`), `README.md` (what it is, run locally, test, deploy, add an app = a pack + its four tools)
 
 - [ ] **Step 1:** Run `docker build -t app-assistant .` and then `docker run -e … -p 8000:8000 app-assistant`. Expected: `curl localhost:8000/health` gives `{"ok":true}`.
-- [ ] **Step 2:** Commit "chore: Railway deploy". Push to `main` of the private repo.
-- [ ] **Step 3 (Mike, in Railway's dashboard; Claude never handles the secrets):**
+- [ ] **Step 2:** Commit "chore: deploy on Google Cloud Run". Push to `main` of the private repo.
+- [ ] **Step 3 (Mike, with gcloud, see the README; Claude never handles the secrets):**
   1. Create a project from the GitHub repo and add the Postgres plugin (`DATABASE_URL`).
-  2. Create a bucket. Railway's own, or Cloudflare R2: endpoint, keys, and bucket name `app-assistant`.
+  2. Create a bucket: a Cloud Storage bucket, or Cloudflare R2: endpoint, keys, and bucket name `app-assistant`.
   3. Set `OPENROUTER_API_KEY`, the `S3_*` values, `PUBLIC_BASE_URL`, and `DEMO_SESSION_SECRET` (`openssl rand -hex 32`).
   4. Optional: a domain, for example `bot.mikedutuandu.com`.
 - [ ] **Step 4:** Check with `curl https://<domain>/health` (gives `{"ok":true}`). Then open `https://<domain>/demo` and repeat Task 14 Step 4's walk-through on a phone.

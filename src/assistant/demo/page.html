@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipnote: changelogs for small teams</title>
+<style>
+  :root { --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --bg:#fafafa; --card:#fff; --accent:#4f46e5; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:var(--card); border-bottom:1px solid var(--line); }
+  .bar { max-width:960px; margin:0 auto; padding:14px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .logo { font-weight:700; font-size:18px; }
+  .logo span { color:var(--accent); }
+  nav { color:var(--muted); font-size:14px; display:flex; gap:16px; }
+  main { max-width:960px; margin:0 auto; padding:28px 20px 120px; }
+  h1 { font-size:28px; line-height:1.2; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .note { background:#eef2ff; border:1px solid #c7d2fe; border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:24px; }
+  .grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:20px; align-items:start; }
+  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  h2 { font-size:16px; margin:0 0 12px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { border-top:1px solid var(--line); padding:12px 0; }
+  li:first-child { border-top:0; padding-top:0; }
+  .empty { color:var(--muted); font-size:14px; }
+  .draft p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .draft img { display:block; max-width:100%; max-height:220px; border-radius:8px; margin-top:8px; }
+  time { color:var(--muted); font-size:12px; }
+  .log li { font-size:13px; padding:8px 0; overflow-wrap:anywhere; }
+  .log time { margin-right:6px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">Ship<span>note</span></div>
+    <nav><span>Changelog</span><span>Pricing</span><span>Docs</span></nav>
+  </div>
+</header>
+<main>
+  <h1>Shipnote: changelogs for small teams</h1>
+  <p class="sub">Tell people what you shipped this week, in a few lines.</p>
+  <div class="note">This is a demo. The "Write with me" button is an assistant any app can add with one script tag. Tell it what you shipped, then add a draft and watch it land below.</div>
+  <div class="grid">
+    <section aria-labelledby="drafts-title">
+      <h2 id="drafts-title">Your drafts</h2>
+      <ul id="drafts"><li class="empty">No drafts yet. Open the assistant and add one.</li></ul>
+    </section>
+    <section aria-labelledby="log-title">
+      <h2 id="log-title">What the bot is doing</h2>
+      <ul id="log" class="log"><li class="empty">Nothing yet.</li></ul>
+    </section>
+  </div>
+</main>
+<script>
+(function () {
+  var draftsEl = document.getElementById("drafts");
+  var logEl = document.getElementById("log");
+
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text != null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function loadDrafts() {
+    fetch("/demo/api/drafts", { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (items) {
+        draftsEl.textContent = "";
+        if (!items.length) {
+          draftsEl.appendChild(el("li", "No drafts yet. Open the assistant and add one.", "empty"));
+          return;
+        }
+        items.forEach(function (d) {
+          var li = el("li", null, "draft");
+          li.appendChild(el("p", d.text));
+          if (d.image_url) {
+            var img = document.createElement("img");
+            img.src = d.image_url;
+            img.alt = "";
+            li.appendChild(img);
+          }
+          li.appendChild(el("time", new Date(d.created_at).toLocaleString()));
+          draftsEl.appendChild(li);
+        });
+      })
+      .catch(function () {});
+  }
+
+  window.addEventListener("assistant:saved", loadDrafts);
+  window.addEventListener("assistant:note", function (e) {
+    var text = e && e.detail && e.detail.text;
+    if (!text) return;
+    if (logEl.firstChild && logEl.firstChild.className === "empty") logEl.textContent = "";
+    var li = el("li");
+    li.appendChild(el("time", new Date().toLocaleTimeString()));
+    li.appendChild(document.createTextNode(String(text)));
+    logEl.appendChild(li);
+  });
+  loadDrafts();
+})();
+</script>
+<script src="/widget.js" data-app="demo" data-session-url="/demo/api/assistant/session" data-label="Write with me"></script>
+</body>
+</html>

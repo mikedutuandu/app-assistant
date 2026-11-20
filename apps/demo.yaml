@@ -1,0 +1,50 @@
+id: demo
+name: Shipnote
+mcp_url: "{base}/demo/mcp"
+secret_env: DEMO_SESSION_SECRET
+allowed_origins: ["{base}"]
+demo: true
+message_usd_cap: 0.05
+
+interview_guide: |
+  Shipnote turns what a small team shipped into a launch post and a changelog entry.
+  Ask about these, one question at a time, in plain words:
+  - what was shipped
+  - who it is for
+  - one number or result (how many, how fast, what changed)
+  - what is coming next
+  Only use what the person tells you or shows you. If they have not given a number or a result, ask for one.
+
+writes:
+  - kind: launch_post
+    count: 2
+    max_chars: 280
+    no_links: true
+    no_dashes: true
+    may_carry_image: true
+    instructions: |
+      Write a launch post for X in the voice of a small team talking to its users.
+      Short, plain and warm. Say what shipped and why it matters, using one fact from the list.
+  - kind: changelog
+    count: 1
+    max_chars: 600
+    instructions: |
+      Write a short changelog entry. First line is a title. Then 2 to 4 bullet points,
+      one fact each, in plain words.
+
+tools:
+  context: assistant_context
+  save_draft: save_draft
+  save_material: save_material
+  charge: assistant_charge
+
+models:
+  main: openai/gpt-6-luna
+  cheap: openai/gpt-6-luna
+  vision: openai/gpt-6-luna
+  fallbacks: [deepseek/deepseek-v4.1-flash]
+
+files:
+  per_message: 2
+  voice_seconds: 60
+  kinds: [image, voice]
