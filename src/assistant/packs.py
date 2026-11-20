@@ -42,8 +42,12 @@ class Models(BaseModel):
     cheap: str
     vision: str
     fallbacks: list[str] = []
-    # The chat model's sampling temperature: lower keeps it to its rules (one ask per message) from run to run.
-    chat_temperature: float | None = Field(0.4, ge=0, le=1)
+    # The chat model's thinking. Sonnet 5.5 always thinks (high effort when none is asked), so "low" is its fastest;
+    # "none" sends nothing, which is right only for a model that may skip thinking.
+    chat_reasoning: Literal["none", "low"] = "low"
+    # Sampling temperature for the chat model, sent only when set. Neither Claude 5.5 model lists `temperature` among
+    # its parameters on OpenRouter (it is dropped there), so it is unset.
+    chat_temperature: float | None = Field(None, ge=0, le=1)
 
 
 class AppPack(BaseModel):

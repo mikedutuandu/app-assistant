@@ -83,7 +83,7 @@ def test_every_fixture_is_a_file_the_pack_takes():
 
 def test_the_models_are_the_packs_and_the_judge_is_sonnet():
     models = load_pack().models
-    assert models.chat == "anthropic/claude-haiku-5.5"
+    assert (models.chat, models.chat_reasoning) == ("anthropic/claude-sonnet-5.5", "low")
     assert (models.writer, models.writer_reasoning) == ("anthropic/claude-sonnet-5.5", "low")
     assert JUDGE_MODEL == "anthropic/claude-sonnet-5.5"
 

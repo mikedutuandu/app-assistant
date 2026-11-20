@@ -1,8 +1,8 @@
 {
   "case": "how_are_you",
-  "recorded_at": "2026-11-20T13:36:14+00:00",
+  "recorded_at": "2026-11-20T13:54:37+00:00",
   "models": {
-    "chat": "anthropic/claude-haiku-5.5",
+    "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
     "writer_reasoning": "low",
     "main": "openai/gpt-6-luna",
@@ -12,7 +12,8 @@
       "anthropic/claude-haiku-5.5",
       "openai/gpt-6-luna"
     ],
-    "chat_temperature": 0.4
+    "chat_reasoning": "low",
+    "chat_temperature": null
   },
   "judge_model": "anthropic/claude-sonnet-5.5",
   "inputs": [
@@ -29,12 +30,12 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Hi Mike! What are you working on lately?",
+      "reply": "Hi Mike! What are you working on these days?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0003622
+      "cost_usd": 0.007244
     },
     {
       "user": "how are you",
@@ -46,7 +47,7 @@
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0003668
+      "cost_usd": 0.007336
     }
   ],
   "verdicts": [
@@ -57,12 +58,12 @@
     },
     {
       "note": 2,
-      "why": "The last reply's only question is \"How about you?\", a reciprocal question about how Mike is, and it does not repeat the first reply's \"What are you working on lately?\"",
+      "why": "The last reply's only question is \"How about you?\", a reciprocal question about how Mike is, and it does not repeat the first reply's \"What are you working on these days?\".",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither reply contains a post; they are just a greeting and a short answer with a question.",
+      "why": "Neither reply contains a post: the first is a greeting plus a question, and the second is a short answer plus \"How about you?\".",
       "holds": true
     }
   ],
@@ -71,10 +72,9 @@
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -91,20 +91,19 @@
         ]
       },
       "response": {
-        "text": "Hi Mike! What are you working on lately?",
+        "text": "Hi Mike! What are you working on these days?",
         "calls": [],
-        "cost_usd": 0.0003622,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.007244,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     },
     {
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -112,7 +111,7 @@
         ],
         "tools_sha256": "86e72e53c355143a",
         "system_sha256": "267354da5def49a7",
-        "messages_sha256": "04064c2d7b0a2d0b",
+        "messages_sha256": "c15239b33efb20c9",
         "messages": [
           {
             "role": "user",
@@ -120,7 +119,7 @@
           },
           {
             "role": "assistant",
-            "content": "Hi Mike! What are you working on lately?"
+            "content": "Hi Mike! What are you working on these days?"
           },
           {
             "role": "user",
@@ -131,8 +130,8 @@
       "response": {
         "text": "I'm doing well, thanks for asking! How about you?",
         "calls": [],
-        "cost_usd": 0.0003668,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.007336,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     }
   ]

@@ -16,6 +16,8 @@ from assistant.llm import Llm, LlmError, ToolTurn
 from assistant.packs import AppPack
 from assistant.tools import AppTools
 
+CHAT_THINKING_TOKENS = 1024  # added to a chat call's max_tokens when it thinks (thinking counts toward it)
+
 CAP_TEXT = "That's as far as I can go on this message. Send another to continue."
 
 
@@ -71,14 +73,16 @@ class Turn:
         """One call of the pack's chat model, streamed to `on_text`, offering `tools` (none: it must answer in text)."""
         self.gate()
         models = self.pack.models
+        thinking = models.chat_reasoning == "low"
         try:
             out = await self.deps.llm.chat_tools(
                 list(messages),
                 models.chat,
                 models.fallbacks,
                 tools,
-                max_tokens,
+                max_tokens + (CHAT_THINKING_TOKENS if thinking else 0),
                 on_text=on_text,
+                reasoning="low" if thinking else None,
                 temperature=models.chat_temperature,
             )
         except LlmError as e:

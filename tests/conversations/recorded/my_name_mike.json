@@ -1,8 +1,8 @@
 {
   "case": "my_name_mike",
-  "recorded_at": "2026-11-20T13:36:18+00:00",
+  "recorded_at": "2026-11-20T13:54:41+00:00",
   "models": {
-    "chat": "anthropic/claude-haiku-5.5",
+    "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
     "writer_reasoning": "low",
     "main": "openai/gpt-6-luna",
@@ -12,7 +12,8 @@
       "anthropic/claude-haiku-5.5",
       "openai/gpt-6-luna"
     ],
-    "chat_temperature": 0.4
+    "chat_reasoning": "low",
+    "chat_temperature": null
   },
   "judge_model": "anthropic/claude-sonnet-5.5",
   "inputs": [
@@ -29,40 +30,40 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Hi Mike! What have you been working on lately?",
+      "reply": "Hi Mike! What are you working on these days?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0003627
+      "cost_usd": 0.007244
     },
     {
       "user": "my name mike",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Nice to meet you, Mike. What have you been building lately?",
+      "reply": "Nice to meet you, Mike! Good to have you here.",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.000368
+      "cost_usd": 0.007348
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The last reply says \"Nice to meet you, Mike,\" which is a warm acknowledgment that uses the name.",
+      "why": "The last reply says \"Nice to meet you, Mike! Good to have you here.\" which is warm and uses the name.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "It only greets Mike and asks \"What have you been building lately?\" without calling the name news or suggesting a post about it.",
+      "why": "The reply is plain small talk and never calls the name news or a story or suggests posting about it.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither reply contains a post; both are short greetings with a question, and no drafts are shown.",
+      "why": "Neither assistant reply contains a post, and no drafts appear in the chat.",
       "holds": true
     }
   ],
@@ -71,10 +72,9 @@
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -91,20 +91,19 @@
         ]
       },
       "response": {
-        "text": "Hi Mike! What have you been working on lately?",
+        "text": "Hi Mike! What are you working on these days?",
         "calls": [],
-        "cost_usd": 0.0003627,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.007244,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     },
     {
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -112,7 +111,7 @@
         ],
         "tools_sha256": "86e72e53c355143a",
         "system_sha256": "267354da5def49a7",
-        "messages_sha256": "0d73438dacc24336",
+        "messages_sha256": "aec91c213e907a76",
         "messages": [
           {
             "role": "user",
@@ -120,7 +119,7 @@
           },
           {
             "role": "assistant",
-            "content": "Hi Mike! What have you been working on lately?"
+            "content": "Hi Mike! What are you working on these days?"
           },
           {
             "role": "user",
@@ -129,10 +128,10 @@
         ]
       },
       "response": {
-        "text": "Nice to meet you, Mike. What have you been building lately?",
+        "text": "Nice to meet you, Mike! Good to have you here.",
         "calls": [],
-        "cost_usd": 0.000368,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.007348,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     }
   ]

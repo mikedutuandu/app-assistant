@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unicodedata
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -173,10 +174,15 @@ class TurnLog:
     ended: str  # "done" or "failed"
     failure: str | None = None  # the failed event's message
     cost_usd: float = 0.0
+    first_words_s: float | None = None  # seconds from the message to the first text the user saw (live runs only)
+    took_s: float | None = None  # seconds the whole turn took
+
+
+_TIMES = ("first_words_s", "took_s")  # how long a live turn took: not part of what the bot showed
 
 
 def transcript(logs: list[TurnLog]) -> list[dict]:
-    return [asdict(t) for t in logs]
+    return [{k: v for k, v in asdict(t).items() if k not in _TIMES} for t in logs]
 
 
 def logs_from(data: list[dict]) -> list[TurnLog]:
@@ -205,13 +211,14 @@ def _fits(n: int, rule: int | str) -> bool:
 
 
 # Asks that aren't phrased as questions: "Tell me what it does", "let me know", and an extra "and whether ..." or
-# "and if you ..." inside one ask (each counts as one more). English and Vietnamese.
+# "and if you ..." inside one ask (each counts as one more; "X, or Y?" offers a choice and stays one ask). English and
+# Vietnamese.
 _ASK = re.compile(
     r"(?<!\w)(tell me|let me know|share with me|send me|show me|cho (mình|tôi|em) biết|kể (mình|tôi|em) nghe)(?!\w)",
     re.IGNORECASE,
 )
 _ONE_MORE = re.compile(
-    r"(?<!\w)(and|or|và|hoặc)\s+(whether|if you|do you|did you|have you|has it|is it|are you|how|what|who|when|why|"
+    r"(?<!\w)(and|và)\s+(whether|if you|do you|did you|have you|has it|is it|are you|how|what|who|when|why|"
     r"where|liệu|bạn|anh|chị|mình)(?!\w)",
     re.IGNORECASE,
 )
@@ -665,7 +672,11 @@ async def run_case(
         thread: str | None = None
         events: list[tuple[str, dict]] = []  # the turn being run's
 
+        timing: dict[str, float | None] = {"start": 0.0, "first": None}
+
         async def emit(kind: str, payload: dict) -> None:
+            if kind == "text" and timing["first"] is None and payload.get("delta", "").strip():
+                timing["first"] = time.monotonic() - (timing["start"] or 0.0)
             events.append((kind, payload))
 
         with fixed_ids(case.name):
@@ -688,11 +699,14 @@ async def run_case(
                     draft_id = shown[-1]["id"]
                 events.clear()
                 turn = TurnInput(pack, session, thread, step.text, file_ids, "127.0.0.1", draft_id=draft_id)
+                timing.update(start=time.monotonic(), first=None)
                 await run_turn(state, turn, emit)
+                took = time.monotonic() - (timing["start"] or 0.0)
                 mismatch = getattr(llm, "mismatch", None)
                 if mismatch is not None:  # a stale recording, not a failure of the bot
                     raise mismatch
                 logs.append(_log(step, draft_id, events))
+                logs[-1].first_words_s, logs[-1].took_s = timing["first"], took
                 for kind, payload in events:
                     if kind == "thread":
                         thread = payload["thread_id"]
@@ -889,6 +903,7 @@ class Outcome:
     error: str | None = None
     cost_usd: float = 0.0
     saved_to: Path | None = None  # where --record wrote it
+    turns: list[TurnLog] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -958,6 +973,7 @@ async def run_one(
                 target = folder if outcome.passed else failed_folder
                 outcome.saved_to = save_recording(case, pack, logs, recorder.calls, outcome.verdicts, target)
         outcome.cost_usd = sum(t.cost_usd for t in logs)
+        outcome.turns = logs
     except Exception as e:  # noqa: BLE001 - one broken case is reported in the table, the others still run
         outcome.error = f"{type(e).__name__}: {e}"
     return outcome
@@ -990,7 +1006,30 @@ def table(outcomes: list[Outcome]) -> str:
         lines.append(f"{head}  {_cell(r[5], 160)}".rstrip())
     passed = sum(o.passed for o in outcomes)
     lines.append(f"\n{passed}/{len(outcomes)} passed, ${sum(o.cost_usd for o in outcomes):.4f} spent by the bot")
+    lines.append(timings(outcomes))
     return "\n".join(lines)
+
+
+def _median(xs: list[float]) -> float:
+    xs = sorted(xs)
+    mid = len(xs) // 2
+    return xs[mid] if len(xs) % 2 else (xs[mid - 1] + xs[mid]) / 2
+
+
+def timings(outcomes: list[Outcome]) -> str:
+    """Time to the first words and per turn (meaningful on a live run only; a replay answers at once)."""
+    turns = [t for o in outcomes for t in o.turns]
+    first = [t.first_words_s for t in turns if t.first_words_s is not None]
+    plain = [t.took_s for t in turns if t.took_s is not None and not t.drafts]
+    drafted = [t.took_s for t in turns if t.took_s is not None and t.drafts]
+    if not first:
+        return "time: no turns timed"
+    parts = [f"first words: mean {sum(first) / len(first):.1f}s, median {_median(first):.1f}s ({len(first)} turns)"]
+    if plain:
+        parts.append(f"turn without a draft: median {_median(plain):.1f}s")
+    if drafted:
+        parts.append(f"turn with a draft: median {_median(drafted):.1f}s")
+    return "time: " + "; ".join(parts)
 
 
 def _details(outcomes: list[Outcome]) -> str:

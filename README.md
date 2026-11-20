@@ -213,7 +213,7 @@ Two parts: a pack file here, and a few things in the app.
 | `guide` | What a good story from this app has, in plain words, and what the bot must never do (`interview_guide` is the old name and is refused). It steers the conversation and the writer. |
 | `writes` | What to write: per item `kind` (`x_post` or `x_thread`), `count`, `instructions`, and optional `max_posts` (threads), `max_chars`, `no_links`, `no_dashes`, `may_carry_image`. |
 | `tools` | The app's tool names for `context`, `save_draft`, `save_material`, `charge`. |
-| `models` | OpenRouter ids: `chat` (the conversation), `writer` (the drafts) with `writer_reasoning` (`none` or `low`), `main`, `cheap`, `vision`, and optional `fallbacks`. |
+| `models` | OpenRouter ids: `chat` (the conversation) with `chat_reasoning` (`none` or `low`; default `low`) and optional `chat_temperature`, `writer` (the drafts) with `writer_reasoning` (`none` or `low`), `main`, `cheap`, `vision`, and optional `fallbacks`. A model whose thinking is mandatory (Sonnet 5.5) thinks at high effort when sent `none`: use `low`. |
 | `files` | Optional caps: `image_mb`, `pdf_mb`, `pdf_pages`, `voice_seconds`, `per_message`, `kinds` (image, pdf, voice). |
 | `message_usd_cap` | Most the bot may spend on one message. |
 | `demo` | `true` only for the public demo (daily caps, files deleted after a day). |

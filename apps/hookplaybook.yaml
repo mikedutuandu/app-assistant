@@ -45,7 +45,8 @@ tools:
   charge: assistant_charge
 
 models:
-  chat: anthropic/claude-haiku-5.5
+  chat: anthropic/claude-sonnet-5.5
+  chat_reasoning: low  # Sonnet 5.5 always thinks; low is its fastest
   writer: anthropic/claude-sonnet-5.5
   writer_reasoning: low
   main: openai/gpt-6-luna

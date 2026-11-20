@@ -121,6 +121,7 @@ def test_every_reply_is_held_to_the_question_limit():
         ("Who is it for, and whether you have a number?", 2),
         ("Who is it for, and do you have a number yet?", 2),
         ("Want it shorter, or should I try another angle?", 1),
+        ("Is the 10k users real, or are you just pitching the number? I only want to use it if it's true.", 1),
         ("Want me to try a different angle, like the time saved or what the beta founders say?", 1),
         ("Bạn ra mắt tính năng tự động lên lịch đăng bài cho X tuần này đúng không?", 1),
         ("Cho mình biết ai dùng nó nhé.", 1),
@@ -510,3 +511,24 @@ def test_a_turns_reply_reads_as_the_widget_shows_it():
 def test_a_replay_pins_the_chat_temperature():
     asked = request_summary("chat_tools", [{"role": "user", "content": "hi"}], "chat/model", tools=[], temperature=0.4)
     assert asked["temperature"] == 0.4 and "temperature" in converse_eval._PINNED
+
+
+def test_timings_summarise_first_words_and_turns():
+    def t(first, took, drafts=()):
+        return TurnLog(
+            user="u",
+            file=None,
+            shows=None,
+            draft_id=None,
+            reply="r",
+            drafts=list(drafts),
+            saved=[],
+            ended="done",
+            first_words_s=first,
+            took_s=took,
+        )
+
+    o = converse_eval.Outcome(name="c", turns=[t(1.0, 2.0), t(3.0, 12.0, [{"id": "d"}]), t(None, 1.0)])
+    line = converse_eval.timings([o])
+    assert line.startswith("time: first words: mean 2.0s, median 2.0s (2 turns)")
+    assert "turn without a draft: median 1.5s" in line and "turn with a draft: median 12.0s" in line

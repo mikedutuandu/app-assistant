@@ -59,7 +59,8 @@ async def test_hi_gets_a_reply_and_no_draft():
     assert llm.names() == ["CONVERSE"]
     [c] = llm.calls
     assert c["model"] == "chat/model" and c["tools"] == TOOL_SPECS
-    assert c["temperature"] == 0.4  # the pack's chat_temperature (default): steadier on its rules
+    assert c["reasoning"] == "low" and c["temperature"] is None  # the pack's defaults
+    assert c["max_tokens"] == 1200 + 1024  # thinking counts toward max_tokens
     assert isinstance(state["messages"][-1], AIMessage)
     assert state["messages"][-1].content == "Hi! What are you working on today?"
     assert state.get("facts", []) == [] and state.get("drafts", []) == []

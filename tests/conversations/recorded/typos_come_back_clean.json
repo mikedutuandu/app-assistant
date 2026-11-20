@@ -1,8 +1,8 @@
 {
   "case": "typos_come_back_clean",
-  "recorded_at": "2026-11-20T13:36:42+00:00",
+  "recorded_at": "2026-11-20T13:54:57+00:00",
   "models": {
-    "chat": "anthropic/claude-haiku-5.5",
+    "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
     "writer_reasoning": "low",
     "main": "openai/gpt-6-luna",
@@ -12,7 +12,8 @@
       "anthropic/claude-haiku-5.5",
       "openai/gpt-6-luna"
     ],
-    "chat_temperature": 0.4
+    "chat_reasoning": "low",
+    "chat_temperature": null
   },
   "judge_model": "anthropic/claude-sonnet-5.5",
   "inputs": [
@@ -26,39 +27,31 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Cutting setup from 15 minutes to 3 is a big win for new users.",
-      "drafts": [
-        {
-          "id": "CD448F8B000007",
-          "kind": "x_post",
-          "posts": [
-            "fixed the onboarding. new users now get to their first post in 3 minutes instead of 15."
-          ]
-        }
-      ],
+      "reply": "You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15. What was the main thing that was slowing them down?",
+      "drafts": [],
       "saved": [
-        "I fixed the onboarding.",
+        "Mike fixed the onboarding.",
         "New users now get to their first post in 3 minutes instead of 15."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0059337
+      "cost_usd": 0.01678
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The draft reads \"fixed the onboarding. new users now get to their first post in 3 minutes instead of 15.\" which restates the news in clean, correctly spelled words.",
+      "why": "The reply says \"You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15,\" a clean, correctly spelled restatement.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "Both the reply (\"15 minutes to 3\") and the draft keep 3 and 15 exactly, and no other number appears anywhere in the reply or draft.",
+      "why": "Only 3 and 15 minutes appear in the reply and in the saved line \"New users now get to their first post in 3 minutes instead of 15.\" No other numbers appear.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither the reply nor the draft contains \"finaly\", \"fixd\", \"onbording\" or \"insted\"; all are spelled correctly (\"fixed\", \"onboarding\", \"instead\").",
+      "why": "Neither the reply nor the saved line contains \"finaly\", \"fixd\", \"onbording\" or \"insted\"; all are spelled correctly.",
       "holds": true
     }
   ],
@@ -67,10 +60,9 @@
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -90,12 +82,12 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_011Ff342h9VLhj15uHwta8vq",
+            "id": "toolu_01DoLVuyeWU6fDZZXaAhP3Xq",
             "name": "save_facts",
             "arguments": {
               "facts": [
                 {
-                  "text": "I fixed the onboarding."
+                  "text": "Mike fixed the onboarding."
                 },
                 {
                   "text": "New users now get to their first post in 3 minutes instead of 15."
@@ -103,99 +95,27 @@
               ]
             },
             "bad_arguments": null
-          },
-          {
-            "id": "toolu_01LUvkXnSuy2shYpGz1DVYjV",
-            "name": "write_drafts",
-            "arguments": {
-              "brief": "Solo founder fixed the onboarding; new users now reach their first post in 3 minutes instead of 15 minutes.",
-              "kind": "x_post",
-              "language": "en"
-            },
-            "bad_arguments": null
           }
         ],
-        "cost_usd": 0.0006168,
-        "model": "anthropic/claude-haiku-5.5"
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "DRAFT_WRITER",
-        "model": "anthropic/claude-sonnet-5.5",
-        "reasoning": "low",
-        "max_tokens": 4024,
-        "schema": "DraftsOut",
-        "schema_sha256": "f07cf13ae7f856bc",
-        "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "5b0f2cc022ae4129",
-        "messages": [
-          {
-            "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">I fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Solo founder fixed the onboarding; new users now reach their first post in 3 minutes instead of 15 minutes.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "drafts": [
-            {
-              "posts": [
-                "fixed the onboarding. new users now get to their first post in 3 minutes instead of 15."
-              ],
-              "fact_ids": [
-                "F1",
-                "F2"
-              ],
-              "image_file_id": null
-            }
-          ]
-        },
-        "cost_usd": 0.004786
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "CLAIM_CHECK",
-        "model": "openai/gpt-6-luna",
-        "reasoning": null,
-        "max_tokens": 400,
-        "schema": "ClaimOut",
-        "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "bdba83a28585c07e",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">I fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nThe piece to check:\n<data source=\"draft\">fixed the onboarding. new users now get to their first post in 3 minutes instead of 15.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "unsupported": []
-        },
-        "cost_usd": 6.03e-05
+        "cost_usd": 0.008076,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     },
     {
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "145f107771f6cc0a",
-        "messages_sha256": "83b65faf8d07cbd4",
+        "system_sha256": "2256e37e42db18e0",
+        "messages_sha256": "7929a6ff220894c7",
         "messages": [
           {
             "role": "user",
@@ -205,25 +125,20 @@
             "role": "assistant",
             "content": "",
             "tool_calls": [
-              "save_facts",
-              "write_drafts"
+              "save_facts"
             ]
           },
           {
             "role": "tool",
             "content": "saved 2 facts"
-          },
-          {
-            "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"CD448F8B000007\" kind=\"x_post\">fixed the onboarding. new users now get to their first post in 3 minutes instead of 15.</data>"
           }
         ]
       },
       "response": {
-        "text": "Cutting setup from 15 minutes to 3 is a big win for new users.",
+        "text": "You fixed the onboarding, so new users now reach their first post in 3 minutes instead of 15. What was the main thing that was slowing them down?",
         "calls": [],
-        "cost_usd": 0.0004706,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.008704,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     }
   ]

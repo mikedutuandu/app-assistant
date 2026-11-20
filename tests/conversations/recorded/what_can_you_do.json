@@ -1,8 +1,8 @@
 {
   "case": "what_can_you_do",
-  "recorded_at": "2026-11-20T13:36:21+00:00",
+  "recorded_at": "2026-11-20T13:54:44+00:00",
   "models": {
-    "chat": "anthropic/claude-haiku-5.5",
+    "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
     "writer_reasoning": "low",
     "main": "openai/gpt-6-luna",
@@ -12,7 +12,8 @@
       "anthropic/claude-haiku-5.5",
       "openai/gpt-6-luna"
     ],
-    "chat_temperature": 0.4
+    "chat_reasoning": "low",
+    "chat_temperature": null
   },
   "judge_model": "anthropic/claude-sonnet-5.5",
   "inputs": [
@@ -26,18 +27,18 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "I help you turn things you've actually done into posts for X, written in your own voice. What have you been working on lately?",
+      "reply": "I help you turn things you've actually done into posts for X, in your voice. What have you been working on lately?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0003715
+      "cost_usd": 0.00741
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply says \"I help you turn things you've actually done into posts for X, written in your own voice,\" which is plain and fits in two sentences.",
+      "why": "The reply says \"I help you turn things you've actually done into posts for X, in your voice,\" in plain words, within two sentences.",
       "holds": true
     },
     {
@@ -47,7 +48,7 @@
     },
     {
       "note": 3,
-      "why": "The reply only describes what it does and asks \"What have you been working on lately?\"; it has no post draft.",
+      "why": "The reply only describes what it does and asks \"What have you been working on lately?\"; it contains no post text and no draft is shown.",
       "holds": true
     }
   ],
@@ -56,10 +57,9 @@
       "request": {
         "method": "chat_tools",
         "marker": "CONVERSE",
-        "model": "anthropic/claude-haiku-5.5",
-        "reasoning": null,
-        "temperature": 0.4,
-        "max_tokens": 1200,
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
         "tools": [
           "write_drafts",
           "revise_draft",
@@ -76,10 +76,10 @@
         ]
       },
       "response": {
-        "text": "I help you turn things you've actually done into posts for X, written in your own voice. What have you been working on lately?",
+        "text": "I help you turn things you've actually done into posts for X, in your voice. What have you been working on lately?",
         "calls": [],
-        "cost_usd": 0.0003715,
-        "model": "anthropic/claude-haiku-5.5"
+        "cost_usd": 0.00741,
+        "model": "anthropic/claude-sonnet-5.5"
       }
     }
   ]

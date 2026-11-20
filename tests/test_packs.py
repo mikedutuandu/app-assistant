@@ -116,7 +116,8 @@ def test_pack_models_have_chat_and_writer():
     packs = load_packs(Path("apps"), base_url="http://testserver")
     for pack_id in ("hookplaybook", "demo"):
         m = packs[pack_id].models
-        assert m.chat == "anthropic/claude-haiku-5.5"
+        assert m.chat == "anthropic/claude-sonnet-5.5" and m.chat_reasoning == "low"
+        assert m.chat_temperature is None
         assert m.writer == "anthropic/claude-sonnet-5.5"
         assert m.writer_reasoning == "low"
         assert m.fallbacks == ["anthropic/claude-haiku-5.5", "openai/gpt-6-luna"]
