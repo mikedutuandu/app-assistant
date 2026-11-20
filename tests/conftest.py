@@ -18,6 +18,7 @@ from assistant.db import migrate
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.main import create_app
+from assistant.pack_store import PackStore
 
 
 @pytest.fixture
@@ -85,7 +86,7 @@ async def api(  # the chat API on a fresh schema, moto S3, FakeLlm and FakeTools
                 app.state.checkpointer = checkpointer
                 app.state.storage = storage
                 app.state.http = c
-                app.state.packs = {"real": make_pack(), "demo": make_pack("demo", demo=True)}
+                app.state.packs = PackStore({"real": make_pack(), "demo": make_pack("demo", demo=True)}, test_settings)
                 app.state.llm = api.llm
                 app.state.tools_for = lambda pack, session: api.tools
                 yield api

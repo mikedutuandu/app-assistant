@@ -1,0 +1,57 @@
+{
+  "name": "@app-assistant/host",
+  "version": "0.1.0",
+  "description": "Host the app-assistant writing bot in a JavaScript app: the contract's four endpoints, its pack and tokens on Web Request/Response, and the chat window for React.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikedutuandu/app-assistant.git",
+    "directory": "sdk/js"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "prepublishOnly": "npm test && npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^31.0.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsup": "^9.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1"
+  }
+}

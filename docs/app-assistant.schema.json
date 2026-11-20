@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "FileCaps": {
+      "properties": {
+        "image_mb": {
+          "default": 10,
+          "title": "Image Mb",
+          "type": "integer"
+        },
+        "pdf_mb": {
+          "default": 20,
+          "title": "Pdf Mb",
+          "type": "integer"
+        },
+        "pdf_pages": {
+          "default": 30,
+          "title": "Pdf Pages",
+          "type": "integer"
+        },
+        "voice_seconds": {
+          "default": 300,
+          "title": "Voice Seconds",
+          "type": "integer"
+        },
+        "per_message": {
+          "default": 5,
+          "title": "Per Message",
+          "type": "integer"
+        },
+        "kinds": {
+          "default": [
+            "image",
+            "pdf",
+            "voice"
+          ],
+          "items": {
+            "enum": [
+              "image",
+              "pdf",
+              "voice"
+            ],
+            "type": "string"
+          },
+          "title": "Kinds",
+          "type": "array"
+        }
+      },
+      "title": "FileCaps",
+      "type": "object"
+    },
+    "Models": {
+      "properties": {
+        "chat": {
+          "title": "Chat",
+          "type": "string"
+        },
+        "writer": {
+          "title": "Writer",
+          "type": "string"
+        },
+        "writer_reasoning": {
+          "default": "low",
+          "enum": [
+            "none",
+            "low"
+          ],
+          "title": "Writer Reasoning",
+          "type": "string"
+        },
+        "main": {
+          "title": "Main",
+          "type": "string"
+        },
+        "cheap": {
+          "title": "Cheap",
+          "type": "string"
+        },
+        "vision": {
+          "title": "Vision",
+          "type": "string"
+        },
+        "fallbacks": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Fallbacks",
+          "type": "array"
+        },
+        "chat_reasoning": {
+          "default": "low",
+          "enum": [
+            "none",
+            "low"
+          ],
+          "title": "Chat Reasoning",
+          "type": "string"
+        },
+        "chat_temperature": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chat Temperature"
+        }
+      },
+      "required": [
+        "chat",
+        "writer",
+        "main",
+        "cheap",
+        "vision"
+      ],
+      "title": "Models",
+      "type": "object"
+    },
+    "WriteSpec": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "x_post",
+            "x_thread"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "count": {
+          "default": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "max_posts": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Posts"
+        },
+        "max_chars": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Chars"
+        },
+        "no_links": {
+          "default": false,
+          "title": "No Links",
+          "type": "boolean"
+        },
+        "no_dashes": {
+          "default": false,
+          "title": "No Dashes",
+          "type": "boolean"
+        },
+        "may_carry_image": {
+          "default": false,
+          "title": "May Carry Image",
+          "type": "boolean"
+        },
+        "instructions": {
+          "title": "Instructions",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "instructions"
+      ],
+      "title": "WriteSpec",
+      "type": "object"
+    }
+  },
+  "description": "The pack an app serves at {site}/.well-known/app-assistant.json.",
+  "properties": {
+    "contract": {
+      "const": 1,
+      "description": "The contract version this pack follows.",
+      "title": "Contract",
+      "type": "integer"
+    },
+    "id": {
+      "description": "The app's id: the same as in the bot's registry and tokens' iss.",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "description": "The app's name, as users know it.",
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "api_base": {
+      "description": "Where the app serves /context, /drafts, /material and /charge, e.g. https://app.example/api/assistant.",
+      "pattern": "^https?://[^/\\s]+",
+      "title": "Api Base",
+      "type": "string"
+    },
+    "allowed_origins": {
+      "description": "The origins the chat window runs on (scheme://host[:port]).",
+      "items": {
+        "pattern": "^https?://[^/\\s]+/?$",
+        "type": "string"
+      },
+      "title": "Allowed Origins",
+      "type": "array"
+    },
+    "guide": {
+      "description": "What a good story is in this app, for the conversation model.",
+      "minLength": 1,
+      "title": "Guide",
+      "type": "string"
+    },
+    "writes": {
+      "description": "What the assistant may write.",
+      "items": {
+        "$ref": "#/$defs/WriteSpec"
+      },
+      "minItems": 1,
+      "title": "Writes",
+      "type": "array"
+    },
+    "models": {
+      "$ref": "#/$defs/Models"
+    },
+    "files": {
+      "$ref": "#/$defs/FileCaps",
+      "default": {
+        "image_mb": 10,
+        "pdf_mb": 20,
+        "pdf_pages": 30,
+        "voice_seconds": 300,
+        "per_message": 5,
+        "kinds": [
+          "image",
+          "pdf",
+          "voice"
+        ]
+      }
+    },
+    "message_usd_cap": {
+      "description": "The most one message may spend, in USD (the bot caps it).",
+      "exclusiveMinimum": 0,
+      "title": "Message Usd Cap",
+      "type": "number"
+    }
+  },
+  "required": [
+    "contract",
+    "id",
+    "name",
+    "api_base",
+    "allowed_origins",
+    "guide",
+    "writes",
+    "models",
+    "message_usd_cap"
+  ],
+  "title": "app-assistant pack",
+  "type": "object"
+}

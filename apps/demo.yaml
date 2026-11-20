@@ -1,6 +1,6 @@
 id: demo
 name: Shipnote
-mcp_url: "{base}/demo/mcp"
+api_base: "{base}/demo/api/assistant"
 secret_env: DEMO_SESSION_SECRET
 allowed_origins: ["{base}"]
 demo: true
@@ -32,12 +32,6 @@ writes:
     instructions: |
       Write a thread for X in the same voice: a hook in the first post, then one point per post,
       each in plain words and each a fact from the list. The first post may carry the image.
-
-tools:
-  context: assistant_context
-  save_draft: save_draft
-  save_material: save_material
-  charge: assistant_charge
 
 models:
   chat: anthropic/claude-sonnet-5.5

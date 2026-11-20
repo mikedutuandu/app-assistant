@@ -24,6 +24,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from psycopg.types.json import Jsonb
 
+from assistant.api.deps import APP_DOWN
 from assistant.auth import Session
 from assistant.checks import Fact
 from assistant.db import new_id
@@ -39,18 +40,20 @@ from assistant.limits import (
     remaining,
     user_key,
 )
+from assistant.pack_store import spend_key
 from assistant.packs import AppPack
 from assistant.timing import Outcome, TimedLlm, TurnTimer, current, log_turn
-from assistant.tools import AppTools, McpHttpTools, ToolError
+from assistant.tools import AppTools, McpHttpTools, RestHttpTools, ToolError
 
 log = logging.getLogger("assistant.turn")
 
 TITLE_CHARS = 60
+SPEND_WINDOW = timedelta(days=2)  # the spend key names its UTC day; the row outlives that day
 LIMIT = "You've sent a lot of messages this hour. Try again a bit later."
 DEMO_IP_LIMIT = "The demo has had enough for today from here. Come back tomorrow."
 RESTING = "The demo is resting until tomorrow."
+APP_RESTING = "This app's assistant is resting until tomorrow."
 OUT_OF_CREDITS = "You're out of credits in this app."
-APP_DOWN = "The app couldn't be reached. Try again in a minute."
 OUR_FAULT = "Something went wrong on our side. Nothing was saved."
 FILE_GONE = "That file can't be found anymore."
 
@@ -118,6 +121,9 @@ async def drain(timeout: float) -> None:
 async def _gate(state: Any, t: TurnInput, tools: AppTools) -> None:
     """The caps, then the app's credits: raises _Refused (or the app's ToolError) before any model call."""
     pool, pack, session = state.pool, t.pack, t.session
+    daily = state.settings.max_app_daily_usd  # the owner's ceiling on one app's spend today (off when unset)
+    if daily is not None and await remaining(pool, spend_key(pack.id), daily) <= 0:
+        raise _Refused("resting", APP_RESTING)
     if not await hit(pool, user_key(session.app, session.workspace), timedelta(hours=1), USER_MESSAGES_PER_HOUR):
         raise _Refused("limit", LIMIT)
     if pack.demo:
@@ -220,13 +226,22 @@ def _cost_recorder(
     """What the graph calls after each model call, and what the turn awaits before it ends.
 
     Each call is charged by `"<message_id>:<n>"` (the demo adds to its daily spend instead), so a retry of the same
-    call adds nothing. The charge is sent at once but not waited for: it is a round trip to the app (2-3 s live)
+    call adds nothing. With MAX_APP_DAILY_USD set, each call is also added to the app's spend today, whatever the
+    app's charge answers. The charge is sent at once but not waited for: it is a round trip to the app (2-3 s live)
     and the next model call need not wait for it. `settle` waits for every charge sent, and the turn calls it
     before `done` or `failed`, so no ref reaches the browser before its charge. Never raises: a failure is
     logged by kind."""
     pending: set[asyncio.Task[None]] = set()
+    count_spend = state.settings.max_app_daily_usd is not None
 
     async def charge(cost: float, n: int) -> None:
+        if count_spend:
+            try:
+                await hit(state.pool, spend_key(t.pack.id), SPEND_WINDOW, cap=float("inf"), amount=cost)
+            except Exception as e:  # noqa: BLE001 - the app's charge below still goes out
+                log.error(
+                    "spend not counted message=%s call=%d error=%s cost=%.6f", message_id, n, type(e).__name__, cost
+                )
         try:
             if t.pack.demo:
                 await hit(state.pool, DEMO_USD_KEY, timedelta(days=1), cap=float("inf"), amount=cost)
@@ -257,7 +272,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     current.set(timer)  # the graph's Deps pick it up
     message_id = new_id()
     tools = state.tools_for(t.pack, t.session)
-    if isinstance(tools, McpHttpTools):
+    if isinstance(tools, McpHttpTools | RestHttpTools):
         tools.timer = timer
     try:
         await _gate(state, t, tools)

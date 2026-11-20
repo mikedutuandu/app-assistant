@@ -13,7 +13,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from assistant.api.deps import ApiError, bearer, client_ip, pack_for, session_for
+from assistant.api.deps import APP_DOWN, ApiError, bearer, client_ip, key_for, session_for, session_or_unavailable
 from assistant.api.turn import TurnInput, start, tool_failure
 from assistant.auth import AuthError, Session, verify_delete_token
 from assistant.checks import Fact
@@ -39,6 +39,7 @@ UPLOAD_THREAD_TITLE = "Files"
 PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again after this
 
 Auth = Annotated[tuple[AppPack, Session], Depends(session_for)]
+TurnAuth = Annotated[tuple[AppPack, Session] | None, Depends(session_or_unavailable)]  # None: the app is unavailable
 router = APIRouter(prefix="/v1/chat/{app}")
 workspaces = APIRouter()
 
@@ -182,8 +183,14 @@ async def _events(queue: asyncio.Queue):
         yield ServerSentEvent(event=kind, data=json.dumps(payload, ensure_ascii=False))
 
 
+async def _unavailable():
+    yield ServerSentEvent(event="failed", data=json.dumps({"error": "unavailable", "message": APP_DOWN}))
+
+
 @router.post("/messages")
-async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSourceResponse:
+async def messages(body: MessageIn, request: Request, auth: TurnAuth) -> EventSourceResponse:
+    if auth is None:  # a registered app whose pack can't be had now: told the way a turn tells a failure
+        return EventSourceResponse(_unavailable())
     pack, session = auth
     pool = request.app.state.pool
     text = body.text.strip()
@@ -273,14 +280,14 @@ async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[l
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select storage_key from files where id = %s and app = %s and workspace = %s and thread_id = %s"
+            "select storage_key, mime from files where id = %s and app = %s and workspace = %s and thread_id = %s"
             " and kind <> %s",
             (file_id, session.app, session.workspace, chat_id, PENDING),
         )
         row = await cur.fetchone()
     if row is None:
         return []
-    return [{"url": await asyncio.to_thread(state.storage.signed_url, row[0], 300), "alt": ""}]
+    return [{"url": await asyncio.to_thread(state.storage.signed_url, row[0], 300), "alt": "", "mime": row[1]}]
 
 
 @router.post("/threads/{thread_id}/actions")
@@ -473,9 +480,9 @@ async def delete_thread(thread_id: str, request: Request, auth: Auth) -> dict:
 @workspaces.delete("/v1/apps/{app}/workspaces/{workspace}")
 async def delete_workspace(app: str, workspace: str, request: Request) -> dict:
     """Removes everything the bot keeps for one workspace of an app: threads, checkpoints, files and their storage."""
-    pack = pack_for(app, request)
+    key = await key_for(app, request)  # deleting works even while the app's pack is unavailable
     try:
-        allowed = verify_delete_token(bearer(request), pack)
+        allowed = verify_delete_token(bearer(request), key)
     except AuthError as e:
         raise ApiError(401, e.reason) from None
     if allowed != workspace:

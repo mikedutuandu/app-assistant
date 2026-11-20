@@ -35,7 +35,7 @@ async def page() -> HTMLResponse:
 @router.post("/demo/api/assistant/session")
 async def session(request: Request) -> JSONResponse:
     state = request.app.state
-    pack = state.packs.get("demo")
+    pack = await state.packs.get("demo")
     if pack is None:
         raise ApiError(404, "app")
     if not await hit(state.pool, f"demo-session:{ip_key(client_ip(request))}", timedelta(hours=1), SESSIONS_PER_HOUR):

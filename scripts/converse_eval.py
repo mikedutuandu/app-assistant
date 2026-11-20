@@ -673,7 +673,7 @@ async def run_case(
             checkpointer=InMemorySaver(serde=serializer()),
             http=http,
             llm=llm,
-            settings=SimpleNamespace(demo_daily_usd_cap=0.0),
+            settings=SimpleNamespace(demo_daily_usd_cap=0.0, max_app_daily_usd=None),
             tools_for=lambda _pack, _session: tools,
         )
         thread: str | None = None
