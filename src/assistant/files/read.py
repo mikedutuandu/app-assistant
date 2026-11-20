@@ -83,7 +83,7 @@ def _extract_pdf_text(data: bytes) -> tuple[str, int]:
 
 
 def _render_pages(data: bytes, limit: int) -> list[bytes]:
-    import pypdfium2  # imported here for the same reason (it loads PIL too)
+    import pypdfium2  # imported here for the same reason; PIL loads on the first render
 
     pdf = pypdfium2.PdfDocument(data)
     try:
