@@ -208,6 +208,19 @@ def _draft_block(d: Draft) -> str:
     return data("draft", text, id=d.id, kind=d.kind)
 
 
+def _said_key(text: str) -> str:
+    """How a reply's text is compared with an earlier round's: case and spacing aside."""
+    return " ".join(nfc(text).casefold().split())
+
+
+def _after(text: str, key: str) -> str:
+    """What `text` says after its start, which reads as `key` (see `_said_key`)."""
+    for i in range(len(text) + 1):
+        if _said_key(text[:i]) == key:
+            return text[i:]
+    return ""
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
@@ -234,6 +247,8 @@ class _Agent:
     results: list[tuple[str, str]] = field(default_factory=list)  # (tool, result), this turn
     ids: set[str] = field(default_factory=set)  # the tool call ids sent back this turn
     in_bubble: bool = False  # the last thing shown was this turn's text: more text continues the same bubble
+    shown: str = ""  # this round's text as the user saw it (a repeat of an earlier round is never shown)
+    held: str = ""  # a later round's text, kept back until the round ends
 
     def __post_init__(self) -> None:
         self.facts = list(self.state.get("facts", []))
@@ -328,17 +343,42 @@ class _Agent:
         await self.t.emit(kind, payload)
 
     async def _forward(self, delta: str) -> None:
+        """Streams the first round's text. A later round's (after tools) is held until it ends: the model sometimes
+        says again what it said before the tools, and the user must never get the same words twice."""
         if not delta:
             return
-        if not self.said and self.parts and self.in_bubble:  # an earlier round's text is still the last thing shown
+        self.said += delta  # what the model said, as its history keeps it
+        if self.parts:
+            self.held += delta
+            return
+        await self._show(delta)
+
+    async def _show(self, text: str) -> None:
+        if not self.shown and self.parts and self.in_bubble:  # an earlier round's text is still the last thing shown
             await self._emit("text", {"delta": "\n\n"})  # a new paragraph; after a draft, a new bubble needs none
-        self.said += delta
-        await self._emit("text", {"delta": delta})
+        self.shown += text
+        await self._emit("text", {"delta": text})
+
+    async def _release(self) -> None:
+        """Shows a later round's held text, unless it repeats an earlier round's (the same words, case and spacing
+        aside, or one inside the other); text that only adds to an earlier round shows what it adds."""
+        held, self.held = self.held, ""
+        new = _said_key(held)
+        if not new:
+            return
+        for part in self.parts:
+            old = _said_key(part)
+            if new.startswith(old) and new != old:
+                held = _after(held, old)
+                new = _said_key(held)
+            if not new or new == old or new in old or old in new:
+                return
+        await self._show(held.lstrip())
 
     def _end_round(self) -> None:
-        if self.said.strip():
-            self.parts.append(self.said.strip())
-        self.said = ""
+        if self.shown.strip():
+            self.parts.append(self.shown.strip())
+        self.said = self.shown = self.held = ""
 
     async def run(self) -> None:
         messages = [{"role": "system", "content": ""}, *self._history()]
@@ -350,6 +390,7 @@ class _Agent:
             turn: ToolTurn = await self.t.chat_tools(sent, TOOL_SPECS if with_tools else [], CHAT_TOKENS, self._forward)
             if not self.said and turn.text.strip():
                 await self._forward(turn.text)  # text the stream never handed over
+            await self._release()
             text = self.said.strip()
             self._end_round()
             if not with_tools or not turn.calls:
@@ -572,6 +613,6 @@ async def converse(state: ChatState, t: Turn) -> dict:
             raise  # nothing happened yet: the turn fails as any failed call does (bind carries its cost)
         # Tools already ran (drafts shown, facts saved in the app): keep their work in the thread, so a later
         # "shorter" finds the draft and the facts aren't saved again, and let the turn end as failed.
-        agent.said = ""  # what the failed call had started to say is not kept
+        agent.said = agent.shown = agent.held = ""  # what the failed call had started to say is not kept
         return agent.update(failed=True)
     return agent.update()

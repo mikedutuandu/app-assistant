@@ -598,3 +598,34 @@ def test_the_conversation_prompt_asks_one_thing_and_saves_then_writes():
     assert "Never ask again what you already asked in this chat" in rules
     assert "first save what they told you that isn't saved yet (save_facts), then call write_drafts" in rules
     assert "Ask at most one question" not in rules  # the old rule a "tell me ..." slipped past
+
+
+@pytest.mark.parametrize(
+    ("second", "shown"),
+    [
+        ("You shipped a chatbot?", "You shipped a chatbot?"),  # the same words
+        ("you  shipped a CHATBOT?", "You shipped a chatbot?"),  # case and spacing aside
+        ("shipped a chatbot?", "You shipped a chatbot?"),  # inside the earlier text
+        ("Got it. You shipped a chatbot?", "You shipped a chatbot?"),  # the earlier text inside it
+        ("You shipped a chatbot? Who is it for?", "You shipped a chatbot?\n\nWho is it for?"),  # only what it adds
+        ("Who is it for?", "You shipped a chatbot?\n\nWho is it for?"),  # new words show as before
+    ],
+)
+async def test_the_same_words_are_never_sent_twice_in_one_turn(second: str, shown: str):
+    # The model plays back, saves a fact, then (after the tool) says it again: the user sees it once.
+    first = "You shipped a chatbot?"
+    llm = FakeLlm({"CONVERSE": [Reply(first, [call("revise_draft", draft_id="nope", instruction="x")]), second]})
+    h = Harness(llm)
+    state = await h.send(SAID)
+    assert h.text() == shown
+    assert state["messages"][-1].content == shown  # stored as the user saw it
+    # The model's own history this turn is unchanged: its first round as it said it.
+    said = llm.calls[1]["messages"][-2]
+    assert said["role"] == "assistant" and said["content"] == first
+
+
+async def test_a_repeat_after_a_saved_line_shows_no_second_bubble():
+    llm = FakeLlm({"CONVERSE": [Reply("Dark mode is live today?", [save(FACT1)]), "Dark mode is live today?"]})
+    h = Harness(llm)
+    await h.send(SAID)
+    assert shown(h) == [("status", ""), ("text", "Dark mode is live today?"), ("saved", "")]
