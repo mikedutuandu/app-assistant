@@ -8,13 +8,11 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg.rows import dict_row
-from psycopg_pool import AsyncConnectionPool
 
 from assistant.api import chat, deps, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
-from assistant.db import close_pool, migrate, open_pool
+from assistant.db import close_pool, migrate, open_pool, open_saver_pool
 from assistant.demo import cleanup as demo_cleanup
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
@@ -62,19 +60,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise PackError(f"no app packs in {settings.packs_dir}")
         for pack in packs.values():
             pack.secret()  # fail at startup, not on every request, when a pack's secret is unset
-        pool = await open_pool(settings.database_url)
-        # LangGraph's saver needs autocommit connections and dict rows, so it gets its own pool.
-        saver_pool = AsyncConnectionPool(
-            settings.database_url,
-            min_size=1,
-            max_size=5,
-            open=False,
-            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-        )
-        await saver_pool.open()
+        pool = await open_pool(settings.database_url, settings.db_schema, settings.db_pool_max)
+        saver_pool = await open_saver_pool(settings.database_url, settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
-            await migrate(pool)
+            await migrate(pool, settings.db_schema)
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
             await checkpointer.setup()
             app.state.packs = packs

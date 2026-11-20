@@ -1,5 +1,8 @@
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from psycopg import AsyncConnection, sql
+from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from ulid import ULID
 
@@ -7,8 +10,37 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK = 4_815_162_342  # advisory lock key: one instance migrates at a time
 
 
-async def open_pool(url: str) -> AsyncConnectionPool:
-    pool = AsyncConnectionPool(url, min_size=1, max_size=10, open=False)
+def _use_schema(schema: str | None) -> Callable[[AsyncConnection], Awaitable[None]] | None:
+    """A pool `configure` callback: every new connection works in `schema` (set per session, not as a startup
+    option, so it holds through Supabase's session pooler too)."""
+    if schema is None:
+        return None
+
+    async def configure(conn: AsyncConnection) -> None:
+        await conn.execute(sql.SQL("set search_path to {}").format(sql.Identifier(schema)))
+        if not conn.autocommit:
+            await conn.commit()  # the pool takes connections back only when idle
+
+    return configure
+
+
+async def open_pool(url: str, schema: str | None = None, max_size: int = 5) -> AsyncConnectionPool:
+    """The app's own pool (tuple rows, transactions)."""
+    pool = AsyncConnectionPool(url, min_size=1, max_size=max_size, open=False, configure=_use_schema(schema))
+    await pool.open()
+    return pool
+
+
+async def open_saver_pool(url: str, schema: str | None = None, max_size: int = 2) -> AsyncConnectionPool:
+    """LangGraph's checkpoint saver needs autocommit connections and dict rows, so it gets its own pool."""
+    pool = AsyncConnectionPool(
+        url,
+        min_size=1,
+        max_size=max_size,
+        open=False,
+        configure=_use_schema(schema),
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+    )
     await pool.open()
     return pool
 
@@ -21,10 +53,11 @@ def new_id() -> str:
     return str(ULID())
 
 
-async def migrate(pool: AsyncConnectionPool) -> list[str]:
+async def migrate(pool: AsyncConnectionPool, schema: str | None = None) -> list[str]:
     """Apply the missing migrations/*.sql in name order, each in its own transaction.
 
-    Table names are unqualified, so they land in the connection's search_path schema.
+    Table names are unqualified, so they land in the connection's search_path schema; `schema` (the pool's) is
+    created first when given.
     """
     applied: list[str] = []
     async with pool.connection() as conn:
@@ -34,6 +67,8 @@ async def migrate(pool: AsyncConnectionPool) -> list[str]:
             # Session-level lock across the whole run: two instances starting together take turns.
             await conn.execute("select pg_advisory_lock(%s)", (_MIGRATION_LOCK,))
             try:
+                if schema is not None:
+                    await conn.execute(sql.SQL("create schema if not exists {}").format(sql.Identifier(schema)))
                 await conn.execute("create table if not exists schema_migrations (name text primary key)")
                 for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
                     cur = await conn.execute("select 1 from schema_migrations where name = %s", (path.name,))
