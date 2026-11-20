@@ -39,20 +39,17 @@ header h2 { margin: 0; font-size: 16px; }
 @keyframes assistant-dot { 0%, 80%, 100% { opacity: .35; } 40% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .dot { animation: none; opacity: .7; } }
 .err { align-self: stretch; color: var(--bad); font-size: 14px; }
-.card { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
-.piece { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; background: var(--bg); }
-.piece p { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.piece img { display: block; max-width: 100%; max-height: 200px; border-radius: 8px; margin-bottom: 8px; }
-.piece.dropped { background: var(--soft); color: var(--muted); }
-.piece .why { font-size: 13px; }
+.draft { align-self: stretch; background: var(--soft); border-radius: var(--r); padding: 12px; }
+.draft .post { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.draft ol.posts { margin: 0 0 8px; padding-left: 22px; }
+.draft ol.posts .post { margin: 0 0 6px; padding-left: 2px; }
+.draft img { display: block; max-width: 100%; max-height: 200px; border-radius: 8px; margin-bottom: 8px; }
+.saved { align-self: flex-start; display: flex; align-items: flex-start; gap: 6px; padding: 0 4px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.saved svg { flex: none; margin-top: 3px; color: var(--ok); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.btn { border: 1px solid var(--a); background: var(--a); color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 14px; font-weight: 600; text-decoration: none; }
+.btn { min-height: 36px; display: inline-flex; align-items: center; border: 1px solid var(--a); background: var(--a); color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 14px; font-weight: 600; text-decoration: none; }
 .btn.ghost { background: transparent; color: var(--a); }
 .btn.done { background: transparent; color: var(--ok); border-color: var(--ok); }
-.facts { border: 1px dashed var(--line); border-radius: var(--r); padding: 12px; }
-.facts h3 { margin: 0 0 2px; font-size: 14px; }
-.facts .hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
-.fact { width: 100%; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 14px; background: var(--bg); }
 .small { font-size: 13px; color: var(--bad); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px; }
 .chips:empty { display: none; }

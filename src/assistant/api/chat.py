@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Request
 from langchain_core.messages import AIMessage, HumanMessage
 from psycopg.types.json import Jsonb
-from pydantic import AliasChoices, BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from assistant.api.deps import ApiError, bearer, client_ip, pack_for, session_for
@@ -193,7 +193,7 @@ ActionId = Annotated[str, StringConstraints(min_length=1, max_length=100)]
 class AddDraftIn(BaseModel):
     action_id: ActionId
     kind: Literal["add_draft"]
-    draft_id: str = Field(validation_alias=AliasChoices("draft_id", "piece_id"))
+    draft_id: str
 
 
 ActionIn = AddDraftIn

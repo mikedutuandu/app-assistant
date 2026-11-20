@@ -650,13 +650,6 @@ async def test_add_draft_twice_same_action_one_draft(api: Api):
     assert api.tools.materials == []  # nothing told it: no facts to mark
 
 
-async def test_add_draft_still_takes_the_old_piece_id_field(api: Api):
-    tid = await api.thread_row()
-    pid = await api.piece_row(tid)
-    r = await api.act(tid, {"action_id": "old", "kind": "add_draft", "piece_id": pid})
-    assert r.status_code == 200 and r.json()["draft_id"] == "draft-1"
-
-
 async def test_add_draft_saves_a_thread(api: Api):
     tid = await api.thread_row()
     posts = ["First, the hook.", "Second, the number.", "Third, the ask."]
