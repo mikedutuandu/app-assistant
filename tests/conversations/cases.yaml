@@ -16,7 +16,8 @@
 #
 # hard: rules checked in code (scripts/converse_eval.py, check_hard), also on the recorded replays in CI.
 #   drafts, saved: how many drafts / saved fact lines the LAST turn showed: an exact number, ">=N", or "any"
-#   max_questions_per_reply: the most "?" in any one reply of the chat
+#   max_questions_per_reply: the most asks in any one reply of the chat: each question, each "tell me ..." /
+#     "let me know ..." sentence, and each "and whether ..." inside one (scripts/converse_eval.py, questions)
 #   language: vi | en   every reply and every draft of the chat is in it
 #   draft_kind: x_post | x_thread   every draft of the last turn
 #   shorter_than_previous_draft: true   the last turn's draft is shorter than the draft it is about
@@ -77,7 +78,7 @@ cases:
   - name: nothing_to_post
     turns: ["i dont know what to post today"]
     expect:
-      - The reply asks one easy question to find something real Mike did, saw or learned recently.
+      - The reply asks for exactly one thing, an easy question to find something real Mike did, saw or learned recently; it asks nothing else (no extra "tell me ..." or "and whether ...").
       - The reply is not a list of post ideas or a list of questions, and contains no post.
       - The reply does not invent anything about Mike's week or his results.
     hard: {drafts: 0, saved: 0, max_questions_per_reply: 1}
@@ -89,7 +90,7 @@ cases:
     expect:
       - The reply says back what it understood in clean, correctly spelled words, that Mike shipped (deployed or launched) a chatbot that helps users plan their week (plan their week of posts is also fine).
       - The reply does not repeat the typo "weet" or the rough wording "help user plan weet".
-      - The reply contains exactly one question (the play-back itself may be that question).
+      - The reply asks for exactly one thing. If the play-back is a question, the reply asks nothing else (no "tell me ...", no "and whether ...").
       - The reply contains no post and invents no number, user count or result.
     hard: {drafts: 0, saved: any, max_questions_per_reply: 1, never_said: ["weet"]}
 
@@ -239,3 +240,13 @@ cases:
       - The draft says only what Mike gave (this week he launched automatic post scheduling for X) and invents no number or result.
       - The last reply does not repeat the draft's text.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi}
+
+  - name: vietnamese_button_tap
+    turns:
+      - "tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X. viết bài đi"
+      - {text: "Make it shorter", draft: last}
+    expect:
+      - Every reply and both drafts are in Vietnamese, including after the English button text "Make it shorter".
+      - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week), and invents no number or result.
+      - The last reply is one short line and does not paste the draft's text again.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi, shorter_than_previous_draft: true}

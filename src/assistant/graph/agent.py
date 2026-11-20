@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel, Field, StrictInt, StringConstraints, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, StrictInt, StringConstraints, ValidationError
 
 from assistant.checks import Fact, nfc, numbers_in, unsupported_numbers
 from assistant.db import new_id
@@ -27,7 +27,16 @@ from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
 from assistant.llm import LlmError, ToolCall, ToolTurn
 from assistant.tools import AppContext, ToolError
-from assistant.writer import Draft, DraftResult, WriterDeps, fmt, language_tag, revise_draft, write_drafts
+from assistant.writer import (
+    Draft,
+    DraftResult,
+    WriterDeps,
+    clean_language,
+    fmt,
+    language_tag,
+    revise_draft,
+    write_drafts,
+)
 
 MAX_TOOL_ROUNDS = 4  # chat calls with tools in one message; then one more without
 CHAT_TOKENS = 1200
@@ -36,6 +45,7 @@ MAX_FACTS = 10  # facts in one save_facts call
 FACT_CHARS = 300
 MAX_RECENT = 5  # the user's recent posts shown to the chat model (the writer sees them all)
 MAX_DRAFTS_SHOWN = 10  # this thread's latest drafts in the system prompt
+BUBBLE_ENDS = ("status", "draft", "saved")  # events the widget shows outside a text bubble: the next text starts anew
 
 TOOLS = ("write_drafts", "revise_draft", "save_facts")
 _NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -47,8 +57,9 @@ TOOL_SPECS: list[dict] = [
             "name": "write_drafts",
             "description": (
                 "Write drafts for X from the facts saved in this chat, in the user's voice. Every draft is checked "
-                "before the user sees it; the user sees each one under your reply. Call it only when there is a real "
-                "story, or when the user asks you to write and there are facts."
+                "before the user sees it; the user sees each one under your reply. Call it when there is a real "
+                "story, or when the user asks you to write: save what they told you first (save_facts, in the same "
+                "message)."
             ),
             "parameters": {
                 "type": "object",
@@ -65,8 +76,15 @@ TOOL_SPECS: list[dict] = [
                         "maximum": 3,
                         "description": "How many drafts: 1 unless the user asks for more.",
                     },
+                    "language": {
+                        "type": "string",
+                        "description": (
+                            "The language to write in, as a short tag (en, vi, pt-BR): the one the user talks with you "
+                            "in, never the language of a button's text."
+                        ),
+                    },
                 },
-                "required": ["brief", "kind"],
+                "required": ["brief", "kind", "language"],
             },
         },
     },
@@ -83,8 +101,15 @@ TOOL_SPECS: list[dict] = [
                 "properties": {
                     "draft_id": {"type": "string", "description": "The id of the draft to change."},
                     "instruction": {"type": "string", "description": "What to change, in a few words."},
+                    "language": {
+                        "type": "string",
+                        "description": (
+                            "The language to write in, as a short tag (en, vi, pt-BR): the one the user talks with you "
+                            "in, never the language of a button's text."
+                        ),
+                    },
                 },
-                "required": ["draft_id", "instruction"],
+                "required": ["draft_id", "instruction", "language"],
             },
         },
     },
@@ -128,15 +153,21 @@ TOOL_SPECS: list[dict] = [
 _Text = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
 
 
+# The draft's language: a tag the writer takes, else None and the writer uses the app's (never an error).
+_Language = Annotated[str | None, BeforeValidator(lambda v: clean_language(v) if isinstance(v, str) else None)]
+
+
 class _WriteArgs(BaseModel):
     brief: Annotated[_Text, StringConstraints(max_length=2000)]
     kind: Literal["x_post", "x_thread"]
     count: StrictInt = Field(1, ge=1, le=3)
+    language: _Language = None
 
 
 class _ReviseArgs(BaseModel):
     draft_id: _Text
     instruction: Annotated[_Text, StringConstraints(max_length=500)]
+    language: _Language = None
 
 
 class _FactArg(BaseModel):
@@ -200,6 +231,7 @@ class _Agent:
     said: str = ""  # this round's text so far
     results: list[tuple[str, str]] = field(default_factory=list)  # (tool, result), this turn
     ids: set[str] = field(default_factory=set)  # the tool call ids sent back this turn
+    in_bubble: bool = False  # the last thing shown was this turn's text: more text continues the same bubble
 
     def __post_init__(self) -> None:
         self.facts = list(self.state.get("facts", []))
@@ -267,7 +299,12 @@ class _Agent:
             else:
                 content = "(No message: the user sent a file.)"
             if about is not None:
-                content = f"(This message is about draft {about.id}.)\n{content}"
+                # Only a draft's buttons send a message about a draft. Their words are the app's (English), not the
+                # user's: the reply stays in the conversation's language.
+                content = (
+                    f"(The user tapped a button on draft {about.id}. The button's words are the app's, not the "
+                    f"user's: keep replying in the language of the conversation.)\n{content}"
+                )
             out.append({"role": "user", "content": content})
         return out
 
@@ -277,13 +314,21 @@ class _Agent:
 
     # -- the loop --
 
+    async def _emit(self, kind: str, payload: dict) -> None:
+        """Every event of the turn goes through here, so text knows whether it continues a bubble."""
+        if kind == "text":
+            self.in_bubble = True
+        elif kind in BUBBLE_ENDS:
+            self.in_bubble = False
+        await self.t.emit(kind, payload)
+
     async def _forward(self, delta: str) -> None:
         if not delta:
             return
-        if not self.said and self.parts:  # an earlier round said something: a new paragraph
-            await self.t.emit("text", {"delta": "\n\n"})
+        if not self.said and self.parts and self.in_bubble:  # an earlier round's text is still the last thing shown
+            await self._emit("text", {"delta": "\n\n"})  # a new paragraph; after a draft, a new bubble needs none
         self.said += delta
-        await self.t.emit("text", {"delta": delta})
+        await self._emit("text", {"delta": delta})
 
     def _end_round(self) -> None:
         if self.said.strip():
@@ -418,7 +463,7 @@ class _Agent:
             except ToolError:
                 result = f"kept {_plural(len(new), 'fact')} for this chat, but the app couldn't save them for later"
             else:
-                await self.t.emit("saved", {"kind": "facts", "items": [f.text for f in new]})
+                await self._emit("saved", {"kind": "facts", "items": [f.text for f in new]})
                 result = f"saved {len(new)} facts"
         else:
             result = "nothing new to save" if not refused else "saved 0 facts"
@@ -431,7 +476,7 @@ class _Agent:
         recent = [*(ctx.recent_posts if ctx else []), *(p for d in self.drafts if d.id not in exclude for p in d.posts)]
 
         async def status(step: str) -> None:
-            await self.t.emit("status", {"step": step})
+            await self._emit("status", {"step": step})
 
         return WriterDeps(
             pack=self.t.pack,
@@ -446,7 +491,7 @@ class _Agent:
 
     async def _write(self, args: _WriteArgs) -> str:
         self.t.gate()
-        result = await write_drafts(self._writer(set()), args.brief, args.kind, args.count)
+        result = await write_drafts(self._writer(set()), args.brief, args.kind, args.count, args.language)
         return await self._shown(result, root=None)
 
     async def _revise(self, args: _ReviseArgs) -> str:
@@ -458,7 +503,7 @@ class _Agent:
         # Earlier versions of the same draft aren't repeats of it: "shorter" twice must not drop the second version.
         root = self.family.get(draft.id, draft.id)
         line = {d.id for d in self.drafts if self.family.get(d.id, d.id) == root}
-        result = await revise_draft(self._writer(line), draft, args.instruction)
+        result = await revise_draft(self._writer(line), draft, args.instruction, args.language)
         return await self._shown(result, root=root)
 
     async def _shown(self, result: DraftResult, root: str | None) -> str:
@@ -471,7 +516,7 @@ class _Agent:
                 payload["image_file_id"] = d.image_file_id
             # `told`: the facts the draft was written from, for the API to store with it. Never sent to the browser.
             payload["told"] = [f.model_dump() for f in self.facts if f.id in set(d.fact_ids)]
-            await self.t.emit("draft", payload)
+            await self._emit("draft", payload)
         if not result.drafts:
             return f"nothing written: {result.note or 'the writer returned nothing usable'}"
         n = len(result.drafts)
@@ -485,9 +530,9 @@ class _Agent:
 
     async def capped(self) -> None:
         self._end_round()
-        if self.parts:
-            await self.t.emit("text", {"delta": "\n\n"})
-        await self.t.emit("text", {"delta": CAP_TEXT})
+        if self.parts and self.in_bubble:
+            await self._emit("text", {"delta": "\n\n"})
+        await self._emit("text", {"delta": CAP_TEXT})
 
     def update(self, capped: bool = False, failed: bool = False) -> dict:
         out: dict = {"facts": self.facts, "drafts": self.drafts, "draft_family": self.family, "draft_id": None}

@@ -3,9 +3,10 @@ from fakes import FakeLlm, Out, default_context
 
 from assistant.checks import Fact, numbers_in
 from assistant.files.read import FileReading
+from assistant.graph import prompts
 from assistant.llm import LlmError
 from assistant.packs import AppPack, Models, WriteSpec
-from assistant.writer import Draft, DraftResult, WriterDeps, revise_draft, write_drafts
+from assistant.writer import NO_FACTS, Draft, DraftResult, WriterDeps, revise_draft, write_drafts
 
 RECENT = "We fixed the login page bug for everyone this week, thanks for your patience."
 
@@ -92,7 +93,7 @@ async def test_write_drafts_without_facts_returns_a_note():
     llm = FakeLlm()
     w, rec = deps(llm, facts=[])
     result = await write_drafts(w, "the auto-reply launch", "x_post", 1)
-    assert result == DraftResult(drafts=[], note="no facts yet", cost_usd=0.0)
+    assert result == DraftResult(drafts=[], note=NO_FACTS, cost_usd=0.0)
     assert llm.calls == [] and rec.spent == []
 
 
@@ -114,6 +115,27 @@ async def test_write_drafts_returns_one_checked_post():
     assert '<data source="brief">the auto-reply launch</data>' in prompt(writer)
     assert f'<data source="user" fact="F1">{FACTS[0].text}</data>' in prompt(writer)
     assert POST in prompt(claim)
+
+
+@pytest.mark.parametrize(("language", "named"), [("vi", "vi"), (None, "en"), ("not a tag!", "en"), ("x" * 40, "en")])
+async def test_the_writer_writes_in_the_conversations_language_else_the_apps(language, named):
+    llm = FakeLlm({"DRAFT_WRITER": [drafts([POST])], "CLAIM_CHECK": [OK]})
+    w, _ = deps(llm)  # the app's language is "en"
+    await write_drafts(w, "launch", "x_post", 1, language)
+    system = llm.calls[0]["messages"][0]["content"]
+    assert f"Language: {named}\n" in system + "\n" and system.count("Language:") == 1
+
+
+async def test_a_revision_is_written_in_the_conversations_language():
+    draft = Draft(id="01ABC", kind="x_post", posts=[POST], image_file_id=None, fact_ids=[FACTS[0].id])
+    llm = FakeLlm({"DRAFT_WRITER": [drafts(["Auto-reply: 2 minutes."])], "CLAIM_CHECK": [OK]})
+    w, _ = deps(llm)
+    await revise_draft(w, draft, "shorter", "vi")
+    assert "Language: vi" in llm.calls[0]["messages"][0]["content"]
+
+
+def test_the_writer_is_not_told_to_follow_messages_it_never_sees():
+    assert "latest message" not in prompts.DRAFT_WRITER
 
 
 async def test_writer_reasoning_none_sends_no_reasoning_and_no_thinking_tokens():
@@ -258,7 +280,7 @@ async def test_revise_draft_without_facts_returns_a_note():
     llm = FakeLlm()
     w, _ = deps(llm, facts=[])
     result = await revise_draft(w, draft, "shorter")
-    assert result.note == "no facts yet" and llm.calls == []
+    assert result.note == NO_FACTS and llm.calls == []
 
 
 async def test_every_writer_call_is_charged():

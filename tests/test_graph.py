@@ -93,9 +93,9 @@ async def test_draft_id_is_only_for_the_message_that_carries_it():
     [draft] = h.of("draft")
     llm.add("CONVERSE", "Sure.", "Hm?")
     await h.send("make it punchier", draft_id=draft["id"])
-    assert f"about draft {draft['id']}" in llm.calls[-1]["messages"][-1]["content"]
+    assert f"tapped a button on draft {draft['id']}" in llm.calls[-1]["messages"][-1]["content"]
     state = await h.send("unrelated")
-    assert "about draft" not in llm.calls[-1]["messages"][-1]["content"]
+    assert "tapped a button" not in llm.calls[-1]["messages"][-1]["content"]
     assert state["draft_id"] is None
 
 
@@ -103,7 +103,7 @@ async def test_a_draft_id_not_in_this_thread_is_ignored():
     llm = FakeLlm({"CONVERSE": ["Which one?"]})
     h = Harness(llm)
     await h.send("shorter", draft_id="someone-elses")
-    assert "about draft" not in llm.calls[0]["messages"][-1]["content"]
+    assert "tapped a button" not in llm.calls[0]["messages"][-1]["content"]
 
 
 async def test_cost_resets_each_turn():

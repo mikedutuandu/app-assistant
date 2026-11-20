@@ -99,6 +99,31 @@ def test_every_reply_is_held_to_the_question_limit():
     assert check_hard(case(max_questions_per_reply=2), logs) == []
 
 
+@pytest.mark.parametrize(
+    ("reply", "asks"),
+    [
+        ("Nice to meet you, Mike!", 0),
+        ("Hi Mike! What are you working on?", 1),
+        ("Love it. Want it shorter?", 1),
+        # The preview reply the final review caught: a confirmation, "tell me" and "and whether" are three asks.
+        (
+            (
+                "Did you deploy a chatbot that helps users plan their week? Tell me what it does for them, and "
+                "whether you have a number."
+            ),
+            3,
+        ),
+        ("Tell me what it does for them.", 1),
+        ("Let me know if you want another angle.", 1),
+        ("Who is it for, and whether you have a number?", 2),
+        ("Bạn ra mắt tính năng tự động lên lịch đăng bài cho X tuần này đúng không?", 1),
+        ("Cho mình biết ai dùng nó nhé.", 1),
+    ],
+)
+def test_asks_that_are_not_question_marks_count(reply: str, asks: int):
+    assert questions(reply) == asks
+
+
 def test_a_failed_turn_or_a_missing_turn_fails_the_case():
     problems = check_hard(
         case(), [turn(ended="failed", failure="Something went wrong on our side. Nothing was saved.")]

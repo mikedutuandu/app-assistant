@@ -934,7 +934,7 @@ async def test_message_with_a_draft_id_reaches_the_graph(api: Api):
     events = await api.send("Make it shorter", thread=tid, draft_id=shown["id"])
     assert of(events, "done")
     last = api.llm.calls[-1]["messages"][-1]["content"]
-    assert f"This message is about draft {shown['id']}" in last
+    assert f"tapped a button on draft {shown['id']}" in last
 
 
 async def test_thread_read_returns_drafts_without_charge_refs(api: Api):

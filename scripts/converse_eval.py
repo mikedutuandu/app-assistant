@@ -204,8 +204,27 @@ def _fits(n: int, rule: int | str) -> bool:
     return n >= int(match.group(1))
 
 
+# Asks that aren't phrased as questions: "Tell me what it does", "let me know", and an extra "and whether ..." or
+# "and if you ..." inside one ask (each counts as one more). English and Vietnamese.
+_ASK = re.compile(
+    r"(?<!\w)(tell me|let me know|share with me|send me|show me|cho (mình|tôi|em) biết|kể (mình|tôi|em) nghe)(?!\w)",
+    re.IGNORECASE,
+)
+_ONE_MORE = re.compile(r"(?<!\w)(and|or|và|hoặc)\s+(whether|if you|liệu)(?!\w)", re.IGNORECASE)
+_SENTENCES = re.compile(r"[^.!?？。\n]+[.!?？。]*")
+
+
 def questions(text: str) -> int:
-    return text.count("?") + text.count("？")
+    """How many things a reply asks for: each question, each "tell me ..." / "let me know ..." sentence, and each
+    "and whether ..." folded into one of them (spec: one ask per message; "tell me X and whether Y" is two)."""
+    asks = 0
+    for sentence in _SENTENCES.findall(unicodedata.normalize("NFC", text)):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        if sentence.endswith(("?", "？")) or _ASK.search(sentence):
+            asks += 1 + len(_ONE_MORE.findall(sentence))
+    return asks
 
 
 def in_language(text: str, language: str) -> bool:

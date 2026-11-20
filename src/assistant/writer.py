@@ -43,7 +43,9 @@ TOO_FEW = "a thread needs at least two posts"
 UNCHECKED = "it couldn't be checked"
 
 # Notes for the conversation model.
-NO_FACTS = "no facts yet"
+NO_FACTS = (
+    "no facts saved yet: save what the user told you (save_facts), then write; ask only if they told you nothing real"
+)
 WRITER_FAILED = "the writer failed, nothing was written; it may work if tried again"
 NOTHING = "the writer returned nothing usable"
 
@@ -109,6 +111,12 @@ def language_tag(tag: str) -> str:
     return tag if _LANGUAGE_TAG.fullmatch(tag) else "en"
 
 
+def clean_language(tag: str | None) -> str | None:
+    """A language tag the conversation model gave (en, vi, pt-BR), or None when it gave none or not a tag."""
+    tag = (tag or "").strip()
+    return tag if len(tag) <= 35 and _LANGUAGE_TAG.fullmatch(tag) else None
+
+
 def fact_blocks(facts: list[Fact]) -> str:
     if not facts:
         return "Known facts: none yet."
@@ -153,8 +161,9 @@ def claim_request(pack: AppPack, facts: list[Fact], posts: list[str]) -> tuple[s
 # ---- the tools ----
 
 
-async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int) -> DraftResult:
-    """Writes `count` (1 to 3) checked drafts of `kind` about `brief` from the user's facts."""
+async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, language: str | None = None) -> DraftResult:
+    """Writes `count` (1 to 3) checked drafts of `kind` about `brief` from the user's facts, in `language` (the
+    conversation's, as the conversation model named it), else the app's."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
     spec = _spec(w.pack, kind)
@@ -165,11 +174,12 @@ async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int) -> Draf
         f'Write exactly {count} draft(s) of kind "{spec.kind}" about what this brief describes, '
         f"from the known facts only:\n{data('brief', nfc(brief))}"
     )
-    return await _Run(w, spec, w.recent).draft(ask, count)
+    return await _Run(w, spec, w.recent, clean_language(language)).draft(ask, count)
 
 
-async def revise_draft(w: WriterDeps, draft: Draft, instruction: str) -> DraftResult:
-    """One new checked draft: `draft` changed as `instruction` asks ("shorter", "another angle", ...)."""
+async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: str | None = None) -> DraftResult:
+    """One new checked draft: `draft` changed as `instruction` asks ("shorter", "another angle", ...), in `language`
+    as for `write_drafts`."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
     spec = _spec(w.pack, draft.kind)
@@ -184,7 +194,7 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str) -> DraftRe
     # The draft being revised isn't a repeat of itself.
     own = {_key(p) for p in draft.posts}
     recent = [r for r in w.recent if _key(r) not in own]
-    return await _Run(w, spec, recent).draft(ask, 1)
+    return await _Run(w, spec, recent, clean_language(language)).draft(ask, 1)
 
 
 # ---- how a call runs ----
@@ -249,6 +259,7 @@ class _Run:
     w: WriterDeps
     spec: WriteSpec
     recent: list[str]
+    language: str | None = None  # the conversation's language; None: the app's
     cost: float = 0.0
     labels: dict[str, str] = field(default_factory=dict)
 
@@ -283,9 +294,8 @@ class _Run:
 
     def _system(self) -> str:
         ctx = self.w.context
-        return "\n\n".join(
-            [prompts.DRAFT_WRITER, f"App: {self.w.pack.name}", f"Language: {language_tag(ctx.language if ctx else '')}"]
-        )
+        language = self.language or language_tag(ctx.language if ctx else "")
+        return "\n\n".join([prompts.DRAFT_WRITER, f"App: {self.w.pack.name}", f"Language: {language}"])
 
     def _material(self) -> str:
         parts = []
