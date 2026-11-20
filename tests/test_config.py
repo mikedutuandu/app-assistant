@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from assistant.config import Settings
-from assistant.db import saver_url
+from assistant.db import direct_url
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,18 +22,59 @@ def _settings(**extra) -> Settings:
 
 def test_saver_uses_the_unpooled_url_when_set():
     s = _settings(database_url_unpooled="postgresql://direct/db")
-    assert saver_url(s) == "postgresql://direct/db"
+    assert direct_url(s) == "postgresql://direct/db"
 
 
 def test_saver_falls_back_to_database_url():
-    assert saver_url(_settings()) == "postgresql://pooled/db"
+    assert direct_url(_settings()) == "postgresql://pooled/db"
 
 
 def test_empty_unpooled_url_is_unset():
     s = _settings(database_url_unpooled="")
     assert s.database_url_unpooled is None
-    assert saver_url(s) == "postgresql://pooled/db"
+    assert direct_url(s) == "postgresql://pooled/db"
 
 
 def test_vercel_runs_in_iad1():
     assert json.loads((ROOT / "vercel.json").read_text())["regions"] == ["iad1"]
+
+
+async def test_every_pool_and_the_migration_use_the_direct_url(monkeypatch, tmp_path):
+    from assistant import main
+
+    seen: dict[str, str] = {}
+
+    class Stop(Exception):
+        pass
+
+    async def fake_pool(url, *a, **k):
+        seen.setdefault("pools", []).append(url)  # type: ignore[arg-type]
+        return object()
+
+    async def fake_migrate(pool, *a, **k):
+        raise Stop
+
+    async def fake_close(pool):
+        pass
+
+    class FakeSaver:
+        def __init__(self, *a, **k):
+            self.setup = None
+
+    pack_dir = ROOT / "apps"
+    s = _settings(database_url_unpooled="postgresql://direct/db", packs_dir=pack_dir, run_lifespan=True)
+    monkeypatch.setattr(main, "open_pool", fake_pool)
+    monkeypatch.setattr(main, "open_saver_pool", fake_pool)
+    monkeypatch.setattr(main, "migrate", fake_migrate)
+    monkeypatch.setattr(main, "close_pool", fake_close)
+    monkeypatch.setattr(main, "AsyncPostgresSaver", FakeSaver)
+    monkeypatch.setattr(main, "get_settings", lambda: s)
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "x")
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "x")
+    app = main.create_app(s)
+    try:
+        async with app.router.lifespan_context(app):
+            pass
+    except Stop:
+        pass
+    assert seen["pools"] == ["postgresql://direct/db", "postgresql://direct/db"]

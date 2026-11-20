@@ -82,7 +82,7 @@ Cold start: `import assistant.asgi` takes about 1.08 s before and 1.07 s after t
 
 **1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
-- On Neon (Vercel Marketplace), `DATABASE_URL` is the pooled URL (the app never prepares statements, so that is safe) and `DATABASE_URL_UNPOOLED` the direct one, which the checkpoint saver uses. The function runs in `iad1` (US east), set in `vercel.json`, next to the database.
+- On Neon (Vercel Marketplace), set `DATABASE_URL_UNPOOLED` (the direct URL): every pool and the startup migration use it, because a transaction pooler would lose `search_path` and advisory locks between statements; `DATABASE_URL` is then not used. The function runs in `iad1` (US east), set in `vercel.json`, next to the database.
 - Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
 - Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and a Vercel Function reaches the internet over IPv4.
 
@@ -121,7 +121,7 @@ Then put the function next to the database: Settings → Functions → **Functio
 |---|---|
 | `OPENROUTER_API_KEY` | the OpenRouter key |
 | `DATABASE_URL` | the Supabase **Session pooler** string (port 5432) |
-| `DATABASE_URL_UNPOOLED` | on Neon, the direct URL (Vercel injects it); LangGraph's checkpoints use it when set. Leave unset on Supabase |
+| `DATABASE_URL_UNPOOLED` | on Neon, the direct URL (Vercel injects it): set it and the bot uses the direct connection for everything (app queries, checkpoints, migrations). Leave unset on Supabase |
 | `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the Supabase S3 values above |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key (`sb_secret_…`), for the signed upload links |

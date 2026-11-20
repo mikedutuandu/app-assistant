@@ -51,8 +51,9 @@ async def open_pool(url: str, schema: str | None = None, max_size: int = 5) -> A
     return pool
 
 
-def saver_url(settings: Settings) -> str:
-    """LangGraph's saver connects directly (DATABASE_URL_UNPOOLED) when that is set, else through DATABASE_URL."""
+def direct_url(settings: Settings) -> str:
+    """The URL every pool uses: the direct one (DATABASE_URL_UNPOOLED) when set, else DATABASE_URL. A transaction pooler
+    (Neon's pooled URL) breaks session state: search_path, advisory locks, prepared statements."""
     return settings.database_url_unpooled or settings.database_url
 
 
