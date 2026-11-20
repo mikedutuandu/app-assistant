@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     public_base_url: str
     demo_daily_usd_cap: float = 3.0
     run_lifespan: bool = True
+    shutdown_drain_seconds: float = 8.0  # Cloud Run allows about 10 s after SIGTERM
 
     @field_validator("s3_endpoint", mode="before")
     @classmethod

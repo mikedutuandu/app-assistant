@@ -44,7 +44,6 @@ OUT_OF_CREDITS = "You're out of credits in this app."
 APP_DOWN = "The app couldn't be reached. Try again in a minute."
 OUR_FAULT = "Something went wrong on our side. Nothing was saved."
 FILE_GONE = "That file can't be found anymore."
-SHUTDOWN_WAIT = 20.0
 
 Emit = Callable[[str, dict], Awaitable[None]]
 _RUNNING: set[asyncio.Task] = set()  # strong references, so a running turn is never garbage-collected
@@ -92,7 +91,7 @@ def track(task: asyncio.Task) -> None:
     task.add_done_callback(_RUNNING.discard)
 
 
-async def drain(timeout: float = SHUTDOWN_WAIT) -> None:
+async def drain(timeout: float) -> None:
     """On shutdown: lets running turns finish (and charge) for up to `timeout` seconds."""
     if _RUNNING:
         await asyncio.wait(set(_RUNNING), timeout=timeout)

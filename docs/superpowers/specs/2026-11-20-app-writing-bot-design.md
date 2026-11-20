@@ -1,6 +1,7 @@
 # The writing bot: one chat assistant any app can add
 
 Date: 20 Nov 2026. Status: approved by Mike, 20 Nov 2026.
+20 Nov 2026: Mike moved hosting from Railway to Google Cloud Run.
 Working name: **the writing bot** (repo `app-assistant`; the product name is still open).
 
 ## Why
@@ -48,7 +49,7 @@ Working name: **the writing bot** (repo `app-assistant`; the product name is sti
 | | How | Trade-off |
 |---|---|---|
 | A. Shared TypeScript package in ai-mono (`@ai-mono/chat`) | The chat engine is written once; each app plugs in its data, its writer and where results go, on its own page | Same stack, no new server; but not reusable outside ai-mono and no Python showcase |
-| **B. Separate bot service, Python + FastAPI + LangGraph (picked)** | Its own repo on Railway; each app adds a widget and exposes tools; the bot calls them as the user | New stack to run, a token handoff per app, streaming through one more hop; but any app (Mike's or a client's) plugs in, and it is the Upwork showcase |
+| **B. Separate bot service, Python + FastAPI + LangGraph (picked)** | Its own repo on Google Cloud Run; each app adds a widget and exposes tools; the bot calls them as the user | New stack to run, a token handoff per app, streaming through one more hop; but any app (Mike's or a client's) plugs in, and it is the Upwork showcase |
 | C. Inside HookPlaybook first, lifted out later | Grows out of the existing Ask chat | Fastest; but a rewrite later and no showcase |
 
 **Mike picked B (20 Nov 2026):** "it's a separate bot, then I can easily apply it to new apps to demonstrate on Upwork."
@@ -109,11 +110,11 @@ Bot:  Two posts in your voice:
 
 ### The parts
 
-1. **The bot service** (new repo, Python 3.12, FastAPI, LangGraph, on Railway with Postgres).
+1. **The bot service** (new repo, Python 3.12, FastAPI, LangGraph, on Google Cloud Run with Postgres).
    - `POST /v1/chat/{app}/messages`: sends a message and streams the answer back (server-sent events: text pieces, cards, done, failed).
    - `GET /v1/chat/{app}/threads` and `/threads/{id}`: the user's past chats in that app.
    - `POST /v1/chat/{app}/files`: uploads one file before it is sent with a message. It checks type and size, stores the file and returns its id.
-   - **Files are stored in an S3-compatible bucket** (Cloudflare R2 or Railway's bucket, the builder's choice), private, under `app/workspace/`. They are reached only by the bot, or through short-lived signed links handed to the app.
+   - **Files are stored in an S3-compatible bucket** (Cloudflare R2 or a Google Cloud Storage bucket, the builder's choice), private, under `app/workspace/`. They are reached only by the bot, or through short-lived signed links handed to the app.
    - `GET /widget.js`: the widget.
    - LangGraph keeps each conversation with a Postgres checkpointer, one thread per `(app, workspace, chat id)`.
    - Models go through OpenRouter (the same account and model ids Mike uses elsewhere), with a fallback model.
@@ -215,7 +216,7 @@ load_context ─▶ interview ──(enough facts?)──no──▶ ask_back �
    - repo, FastAPI, the graph, Postgres checkpointer, widget
    - file uploads (images, PDFs, voice), the bucket, and `read_files`
    - the demo pack and its tiny MCP
-   - deploy on Railway; the demo link works.
+   - deploy on Google Cloud Run; the demo link works.
 2. **HookPlaybook:**
    - the session endpoint, token support in the user MCP, and the three tools
    - a draft with an image through the API and MCP (`media` on `POST /drafts`)
@@ -232,5 +233,5 @@ The HookPlaybook and StreakPlan changes follow ai-mono's rules: PRs directly aga
 
 - Library choices inside the bot (LangGraph version, SSE helper, the widget's build tool), and the exact table layout.
 - The exact wording of prompts and the interview guide per pack.
-- Railway's setup details, and whether the cap counter is Redis or Postgres.
+- Google Cloud Run's setup details, and whether the cap counter is Redis or Postgres.
 - How HookPlaybook stores told facts (a new kind of material or a new table) within its own patterns.

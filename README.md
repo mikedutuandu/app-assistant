@@ -41,17 +41,80 @@ The built file `src/assistant/static/widget.js` is committed, so the server and 
 cd widget && npm run build
 ```
 
-## Deploy on Railway
+## Deploy on Google Cloud Run
 
-The repo has a `Dockerfile` and a `railway.json` (Dockerfile build, health check on `/health`, restart on failure). In Railway's dashboard:
+The repo has a `Dockerfile`; Cloud Run builds it from source. Replace the placeholders (`PROJECT_ID`, `REGION`, and so on) with your own. Run the commands in a terminal where you are signed in with `gcloud auth login`; you paste secrets yourself, nobody else needs to see them.
 
-1. New project, deploy from this GitHub repo. Add the Postgres plugin; it gives you `DATABASE_URL`.
-2. Create a bucket (Railway's own, or Cloudflare R2). Note its endpoint, access key, secret key, and use the bucket name `app-assistant`.
-3. In the service's Variables, set `OPENROUTER_API_KEY`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `PUBLIC_BASE_URL` (the final public URL, for example `https://bot.example.com`), and `DEMO_SESSION_SECRET` (run `openssl rand -hex 32` and paste the result). Reference the Postgres plugin's `DATABASE_URL`. Railway sets `PORT` itself.
-4. Optional: add a custom domain under Settings, Networking, then update `PUBLIC_BASE_URL` to match and redeploy.
-5. Check `https://<domain>/health` returns `{"ok":true}`, then open `https://<domain>/demo` on a phone.
+**1. Switch on the Google services it uses.**
 
-Migrations run on start. If a pack's secret variable is missing, the service refuses to start and says which one.
+```bash
+gcloud config set project PROJECT_ID
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com \
+  sqladmin.googleapis.com secretmanager.googleapis.com
+```
+
+**2. Postgres.** Pick one.
+
+- Cloud SQL (Google's own Postgres 16):
+
+  ```bash
+  gcloud sql instances create INSTANCE --database-version=POSTGRES_16 --region=REGION --tier=db-f1-micro
+  gcloud sql databases create DB --instance=INSTANCE
+  gcloud sql users create USER --instance=INSTANCE --password=PASSWORD
+  ```
+
+  `DATABASE_URL` is then `postgresql://USER:PASSWORD@/DB?host=/cloudsql/PROJECT_ID:REGION:INSTANCE`, and the deploy command below needs `--add-cloudsql-instances PROJECT_ID:REGION:INSTANCE`.
+- Cheaper: any external Postgres (Supabase, Neon). Use its connection URL as `DATABASE_URL` and skip `--add-cloudsql-instances`.
+
+**3. A private bucket for files.** The service talks to Cloud Storage through its S3-compatible API.
+
+```bash
+gcloud storage buckets create gs://BUCKET --location=REGION --uniform-bucket-level-access --public-access-prevention
+gcloud iam service-accounts create app-assistant-files
+gcloud storage buckets add-iam-policy-binding gs://BUCKET \
+  --member=serviceAccount:app-assistant-files@PROJECT_ID.iam.gserviceaccount.com --role=roles/storage.objectAdmin
+gcloud storage hmac create app-assistant-files@PROJECT_ID.iam.gserviceaccount.com
+```
+
+The last command prints an access id and a secret: they are `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The other values are `S3_ENDPOINT=https://storage.googleapis.com`, `S3_REGION=auto` and `S3_BUCKET=BUCKET`.
+
+**4. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
+
+```bash
+openssl rand -hex 32 | gcloud secrets create DEMO_SESSION_SECRET --data-file=-
+printf '%s' 'THE_VALUE' | gcloud secrets create OPENROUTER_API_KEY --data-file=-   # same for the others
+```
+
+Let the service read them (the default compute service account is used unless you pass `--service-account`):
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor
+```
+
+**5. Deploy.**
+
+```bash
+gcloud run deploy app-assistant --source . --region REGION --allow-unauthenticated \
+  --no-cpu-throttling --min-instances 0 --max-instances 3 --timeout 3600 --concurrency 40 --memory 1Gi \
+  --add-cloudsql-instances PROJECT_ID:REGION:INSTANCE \
+  --set-secrets OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,DEMO_SESSION_SECRET=DEMO_SESSION_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,S3_ACCESS_KEY=S3_ACCESS_KEY:latest,S3_SECRET_KEY=S3_SECRET_KEY:latest \
+  --set-env-vars S3_ENDPOINT=https://storage.googleapis.com,S3_REGION=auto,S3_BUCKET=BUCKET,PUBLIC_BASE_URL=https://TEMP
+```
+
+- `--no-cpu-throttling`: a chat turn finishes and is charged even if the user closes the chat, and the demo's clean-up runs in the background; both need CPU between requests.
+- `--timeout 3600`: answers are streamed and may stay open for a while.
+- Leave out `--add-cloudsql-instances` if you use an external Postgres.
+
+`PUBLIC_BASE_URL` must be the service's own URL, which you only know after the first deploy. Deploy once, copy the URL it prints (or map a custom domain such as `bot.example.com`), then set it and redeploy:
+
+```bash
+gcloud run services update app-assistant --region REGION --update-env-vars PUBLIC_BASE_URL=https://THE-SERVICE-URL
+```
+
+**6. Check.** `curl https://<url>/health` answers `{"ok":true}`; then open `https://<url>/demo` on a phone. Migrations run on start; if a pack's secret variable is missing, the service refuses to start and says which one.
+
+Note on the demo's per-IP limit: Cloud Run appends the visitor's IP as the last `X-Forwarded-For` entry, and the limit relies on that. Putting a Google external load balancer in front adds its own IP last and would need a code change.
 
 ## Add an app
 

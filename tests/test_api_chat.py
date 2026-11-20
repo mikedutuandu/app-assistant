@@ -755,13 +755,24 @@ async def test_drain_waits_for_running_turns():
         await asyncio.sleep(seconds)
         done.append(name)
 
-    turn.track(asyncio.create_task(slow(0.05, "quick")))
-    await turn.drain(timeout=5)
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        openrouter_api_key="k",
+        database_url="postgresql://x",
+        s3_bucket="b",
+        s3_access_key="a",
+        s3_secret_key="s",
+        public_base_url="http://t",
+        shutdown_drain_seconds=0.05,
+    )
+    assert Settings.model_fields["shutdown_drain_seconds"].default == 8.0
+    turn.track(asyncio.create_task(slow(0.01, "quick")))
+    await turn.drain(settings.shutdown_drain_seconds)
     assert done == ["quick"]
     stuck = asyncio.create_task(slow(10, "stuck"))
     turn.track(stuck)
     started = time.monotonic()
-    await turn.drain(timeout=0.05)
+    await turn.drain(settings.shutdown_drain_seconds)
     assert time.monotonic() - started < 1 and done == ["quick"]
     stuck.cancel()
 

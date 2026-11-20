@@ -69,7 +69,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 yield
             finally:
                 await demo_cleanup.stop(cleanup_task)
-            await turn.drain()  # running turns finish and charge before their pools close
+            await turn.drain(
+                settings.shutdown_drain_seconds
+            )  # running turns finish and charge before their pools close
         finally:
             await close_pool(saver_pool)
             await close_pool(pool)
