@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str
     database_url: str
     # Neon (Vercel Marketplace) injects DATABASE_URL (pooled, PgBouncer) and DATABASE_URL_UNPOOLED (direct). LangGraph's
-    # checkpoint saver and migrations' locks want a session of their own, so the saver uses this one when set.
+    # checkpoints and migrations' locks want a session of their own, so every pool and the startup migration use this
+    # one when set (DATABASE_URL is then unused).
     database_url_unpooled: str | None = None
     # Every table (LangGraph's checkpoints too) lives in this schema. On Supabase it must not be an exposed schema.
     db_schema: str = "assistant"

@@ -19,12 +19,12 @@ def _settings(**extra) -> Settings:
     )  # type: ignore[call-arg]
 
 
-def test_saver_uses_the_unpooled_url_when_set():
+def test_direct_url_is_the_unpooled_url_when_set():
     s = _settings(database_url_unpooled="postgresql://direct/db")
     assert direct_url(s) == "postgresql://direct/db"
 
 
-def test_saver_falls_back_to_database_url():
+def test_direct_url_falls_back_to_database_url():
     assert direct_url(_settings()) == "postgresql://pooled/db"
 
 
