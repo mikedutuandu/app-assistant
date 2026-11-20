@@ -7,8 +7,6 @@ once with its problems; one that still fails is dropped, and the result's `note`
 conversation model (the user never sees check reasons). Every model call is charged through `WriterDeps.spend`,
 failed ones included. Everything the user, their files, their app or the conversation model supplied reaches the
 writer inside `<data>` blocks.
-
-The old pipeline (`graph/nodes.py`) uses the check helpers here until the conversation agent replaces it.
 """
 
 import re
@@ -35,7 +33,7 @@ THREAD_TOKENS = 5000  # up to 3 threads of 8 posts of 280 characters
 THINKING_TOKENS = 1024  # added to the writer's max_tokens when it thinks
 CLAIM_TOKENS = 400
 
-# Reasons a draft fails, in the user's terms (the old pipeline shows them; the tools pass them to the model).
+# Reasons a draft fails, in plain words: the tools pass them to the conversation model, never to the user.
 NUMBER = "a number you didn't give ({})"
 RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
 REPEAT = "it repeats a recent post"
@@ -99,7 +97,7 @@ class ClaimOut(_Strict):
     unsupported: list[str]
 
 
-# ---- shared helpers (the old pipeline uses these too) ----
+# ---- helpers ----
 
 
 def fmt(n: float) -> str:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import jwt
-from fakes import FakeLlm, FakeTools
+from fakes import FakeLlm, FakeTools, Reply, call
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
@@ -21,7 +21,7 @@ ORIGIN = "https://app.example"
 PNG = (Path(__file__).parent / "fixtures" / "shot.png").read_bytes()
 FACT = "Replies go out in 2 minutes instead of 2 hours"
 LAUNCH = "Auto-reply now answers in 2 minutes instead of 2 hours."
-CHANGELOG = "Auto-reply\n- Replies go out in 2 minutes, not 2 hours."
+REPLY = "Here's a first go."
 APP_DOWN = "The app couldn't be reached. Try again in a minute."
 OUR_FAULT = "Something went wrong on our side. Nothing was saved."
 OK = {"unsupported": []}
@@ -37,7 +37,7 @@ def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
         guide="Ask what shipped and for one number.",
         writes=[
             WriteSpec(
-                kind="launch_post",
+                kind="x_post",
                 count=1,
                 max_chars=280,
                 no_links=True,
@@ -45,7 +45,7 @@ def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
                 may_carry_image=True,
                 instructions="A short launch post.",
             ),
-            WriteSpec(kind="changelog", count=1, max_chars=600, instructions="A short changelog entry."),
+            WriteSpec(kind="x_thread", count=1, max_chars=280, max_posts=4, instructions="A short thread."),
         ],
         tools={"context": "c", "save_draft": "s", "save_material": "m", "charge": "ch"},
         models=Models(
@@ -58,20 +58,17 @@ def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
 
 
 def happy_script() -> dict:
-    piece = lambda kind, text: {"spec_kind": kind, "text": text, "fact_ids": ["F1"], "image_file_id": None}
+    """The conversation model saves the fact and writes one post, which passes; then it says one line: 4 calls."""
+    write = [call("save_facts", facts=[{"text": FACT}]), call("write_drafts", brief="faster replies", kind="x_post")]
     return {
-        "INTERVIEW": [{"enough": True, "just_write": False, "question": None}],
-        "EXTRACT_FACTS": [{"facts": [{"text": FACT, "source": "typed", "file_id": None}]}],
-        "WRITER": [{"pieces": [piece("launch_post", LAUNCH), piece("changelog", CHANGELOG)]}],
-        "CLAIM_CHECK": [OK, OK],
+        "CONVERSE": [Reply(calls=write), REPLY],
+        "DRAFT_WRITER": [{"drafts": [{"posts": [LAUNCH], "fact_ids": ["F1"], "image_file_id": None}]}],
+        "CLAIM_CHECK": [OK],
     }
 
 
 def ask_script() -> dict:
-    return {
-        "INTERVIEW": [{"enough": False, "just_write": False, "question": "a number"}],
-        "ASK_BACK": ["What changed for users?"],
-    }
+    return {"CONVERSE": ["What changed for users?"]}
 
 
 def raw_token(app: str, workspace: str, access: str, ttl: int = 600) -> str:

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 from chat_api import PNG, Api, parse_sse
-from fakes import default_context
+from fakes import Reply, call, default_context
 
 from assistant import auth
 from assistant.auth import AuthError, verify_delete_token, verify_session
@@ -199,15 +199,24 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
         assert r.status_code == 200, r.text
         up = r.json()
         hp.llm.add("IMAGE_READER", {"text": "a chart", "unsure": []})
-        hp.llm.add("INTERVIEW", {"enough": True, "just_write": False, "question": None})
-        hp.llm.add("EXTRACT_FACTS", {"facts": [{"text": fact, "source": "typed", "file_id": None}]})
-        x_post = {"spec_kind": "x_post", "text": post, "fact_ids": ["F1"], "image_file_id": None}
-        hp.llm.add("WRITER", {"pieces": [x_post]})
+        write = [
+            call("save_facts", facts=[{"text": fact}]),
+            call("write_drafts", brief="the March milestone", kind="x_post"),
+        ]
+        hp.llm.add("CONVERSE", Reply(calls=write), "Here's one.")
+        hp.llm.add("DRAFT_WRITER", {"drafts": [{"posts": [post], "fact_ids": ["F1"], "image_file_id": None}]})
         hp.llm.add("CLAIM_CHECK", {"unsupported": []})
         body = {"thread_id": up["thread_id"], "text": fact, "file_ids": [up["file_id"]]}
         r = await hp.client.post("/v1/chat/hookplaybook/messages", json=body, headers=_widget(workspace))
         events = parse_sse(r.text)
         assert [k for k, _ in events][-1] == "done", events
+        assert [p["posts"] for k, p in events if k == "draft"] == [[post]]
+        async with hp.pool.connection() as conn:  # a stored piece, as an added draft leaves one
+            await conn.execute(
+                "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, fact_ids, facts)"
+                " values (%s, 'hookplaybook', %s, %s, 'm1', 'x_post', %s, '[]', '[]')",
+                (f"piece-{workspace}", workspace, up["thread_id"], post),
+            )
         keep = {"action_id": f"keep-{workspace}", "kind": "keep_facts", "facts": [{"text": fact}]}
         url = f"/v1/chat/hookplaybook/threads/{up['thread_id']}/actions"
         assert (await hp.client.post(url, json=keep, headers=_widget(workspace))).status_code == 200

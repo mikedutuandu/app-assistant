@@ -39,6 +39,7 @@ class KeptFact(BaseModel):
 
 
 class AppContext(BaseModel):
+    name: str | None = None  # the user's name, when the app knows it
     voice: str
     topics: list[str]
     recent_posts: list[str]
@@ -46,7 +47,7 @@ class AppContext(BaseModel):
     credits_left: float | None
     out_of_credits_message: str | None
     language: str = "en"
-    kept_facts: list[KeptFact] = []  # offered when the interview opens; the user's own words
+    kept_facts: list[KeptFact] = []  # the user's own words, offered by the conversation model when relevant
 
 
 class SavedDraft(BaseModel):

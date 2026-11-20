@@ -4,18 +4,19 @@ import asyncio
 import json
 import logging
 import time
+from collections import Counter
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from chat_api import (
     APP_DOWN,
-    CHANGELOG,
     FACT,
     LAUNCH,
     ORIGIN,
     OUR_FAULT,
     PNG,
+    REPLY,
     Api,
     ask_script,
     happy_script,
@@ -114,42 +115,34 @@ def test_client_ip_is_rightmost_forwarded_for():
 # ---- messages ----
 
 
-async def test_message_streams_thread_card_done_and_charges_once(api: Api):
+async def test_message_streams_thread_draft_done_and_charges_once(api: Api):
     api.llm.script = happy_script()
     events = await api.send(FACT)
     kinds = [k for k, _ in events]
     assert kinds[0] == "thread"
     assert kinds[-1] == "done"
-    assert kinds.count("card") == 1 and kinds.count("done") == 1
+    assert kinds.count("draft") == 1 and kinds.count("done") == 1 and "card" not in kinds
     thread = of(events, "thread")[0]
     assert thread["title"] == FACT[:60]
     [done] = of(events, "done")
-    assert done["cost_usd"] == pytest.approx(0.005)  # five scripted model calls at 0.001
+    assert done["cost_usd"] == pytest.approx(0.004)  # four scripted model calls at 0.001
     assert api.tools.charges == [
-        {"cost_usd": pytest.approx(0.001), "ref": f"{done['message_id']}:{n}"} for n in range(1, 6)
+        {"cost_usd": pytest.approx(0.001), "ref": f"{done['message_id']}:{n}"} for n in range(1, 5)
     ]
-    # the credits check, the graph's context, then one charge after each of the five model calls
-    assert api.tools.calls == ["context", "context", *["charge"] * 5]
-
-    [card] = of(events, "card")
-    async with api.pool.connection() as conn:
-        cur = await conn.execute(
-            "select id, thread_id, message_id, text, fact_ids, facts, dropped from pieces order by created_at"
-        )
-        rows = await cur.fetchall()
-    assert [r[0] for r in rows] == [p["id"] for p in card["pieces"]]
-    assert {r[1] for r in rows} == {thread["thread_id"]}
-    assert {r[2] for r in rows} == {done["message_id"]}
-    assert [r[3] for r in rows] == [LAUNCH, CHANGELOG]
-    assert [f["text"] for f in rows[0][5]] == [FACT] and rows[0][4] == [rows[0][5][0]["id"]]
+    # the credits check, the graph's context, then one charge after each of the four model calls (sent without
+    # waiting, so in any order around the fact saved between them)
+    assert api.tools.calls[:2] == ["context", "context"]
+    assert Counter(api.tools.calls[2:]) == {"charge": 4, "save_material": 1}
+    [draft] = of(events, "draft")
+    assert draft["posts"] == [LAUNCH] and draft["kind"] == "x_post"
+    assert of(events, "saved") == [{"kind": "facts", "items": [FACT]}]
+    assert "".join(p["delta"] for p in of(events, "text")) == REPLY
 
     r = await api.client.get(f"/v1/chat/real/threads/{thread['thread_id']}", headers=api.headers())
     assert r.status_code == 200
     body = r.json()
     assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
-    assert body["messages"][0]["text"] == FACT
-    assert body["messages"][1]["card"]["pieces"][0]["text"] == LAUNCH
-    assert [p["id"] for p in body["pieces"]] == [p["id"] for p in card["pieces"]]
+    assert [m["text"] for m in body["messages"]] == [FACT, REPLY]
 
     r = await api.client.get("/v1/chat/real/threads", headers=api.headers())
     assert [(t["id"], t["title"]) for t in r.json()] == [(thread["thread_id"], FACT[:60])]
@@ -179,15 +172,15 @@ async def test_charge_refs_reach_the_browser_only_after_their_charges(api: Api):
 
     await turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), emit)
     kinds = [k for k, _ in timeline]
-    assert kinds.count("charge") == 5
+    assert kinds.count("charge") == 4
     assert kinds.index("done") == len(kinds) - 1  # every charge came before `done`
     message_id = json.loads(dict(timeline)["done"])["message_id"]
     refs = [p for k, p in timeline if k == "charge"]
-    assert sorted(refs) == [f"{message_id}:{n}" for n in range(1, 6)]  # sent without waiting: any order
+    assert sorted(refs) == [f"{message_id}:{n}" for n in range(1, 5)]  # sent without waiting: any order
     # Nothing the browser was sent or could read before `done` carries the message id, so no ref.
     before = [p for k, p in timeline if k not in ("charge", "done")]
     assert all(message_id not in p for p in before)
-    assert len(seen_at_charge) == 5 and all(message_id not in r for r in seen_at_charge)
+    assert len(seen_at_charge) == 4 and all(message_id not in r for r in seen_at_charge)
 
 
 async def test_a_slow_charge_does_not_hold_up_the_next_model_call(api: Api):
@@ -204,10 +197,19 @@ async def test_a_slow_charge_does_not_hold_up_the_next_model_call(api: Api):
             await super().charge(cost_usd, ref)
 
     class Counting(FakeLlm):
-        async def chat_json(self, *args, **kwargs):
+        def _started(self) -> None:
             timeline.append("model")
             if timeline.count("model") == 2:
                 release.set()  # the second call started while the first charge was still waiting
+
+        async def chat_tools(self, *args, **kwargs):
+            await asyncio.sleep(0)  # a real call waits on the network: the charges sent so far get to start
+            self._started()
+            return await super().chat_tools(*args, **kwargs)
+
+        async def chat_json(self, *args, **kwargs):
+            await asyncio.sleep(0)
+            self._started()
             return await super().chat_json(*args, **kwargs)
 
     api.tools = SlowCharge()
@@ -227,35 +229,36 @@ async def test_a_slow_charge_does_not_hold_up_the_next_model_call(api: Api):
     )
     assert timeline.index("charge-start 1") < timeline.index("model", timeline.index("charge-start 1"))
     assert events[-1] == "done"
-    assert timeline.count("charge-end") == 5 and timeline.index("event done") > max(
+    assert timeline.count("charge-end") == 4 and timeline.index("event done") > max(
         i for i, x in enumerate(timeline) if x == "charge-end"
     )
 
 
-class BlocksAtWriter(FakeLlm):
-    """Answers every call until the writer's, which waits to be let go: a turn caught in the middle of a call."""
+class BlocksAtClaimCheck(FakeLlm):
+    """Answers every call until the claim check (the third), which waits to be let go: a turn caught in the middle
+    of a call."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.at_writer = asyncio.Event()
+        self.at_check = asyncio.Event()
         self.go = asyncio.Event()
 
-    async def chat_json(self, messages, model, fallbacks, schema, max_tokens):
-        if marker(messages) == "WRITER":
-            self.at_writer.set()
+    async def chat_json(self, messages, model, fallbacks, schema, max_tokens, reasoning=None):
+        if marker(messages) == "CLAIM_CHECK":
+            self.at_check.set()
             await self.go.wait()
-        return await super().chat_json(messages, model, fallbacks, schema, max_tokens)
+        return await super().chat_json(messages, model, fallbacks, schema, max_tokens, reasoning)
 
 
 async def test_a_turn_cut_off_after_two_calls_has_charged_both(api: Api):
-    llm = BlocksAtWriter(happy_script())
+    llm = BlocksAtClaimCheck(happy_script())
     api.app.state.llm = llm
     pack = api.app.state.packs["real"]
     session = verify_session(mint_session(pack, "ws1"), pack)
     task = asyncio.create_task(
         turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), _ignore)
     )
-    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    await asyncio.wait_for(llm.at_check.wait(), timeout=10)
     task.cancel()  # the function is cut off in the middle of the third call
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -286,7 +289,7 @@ async def test_a_charge_that_raises_anything_never_stops_the_turn(api: Api):
     api.llm.script = happy_script()
     events = await api.send(FACT)
     assert [k for k, _ in events][-1] == "done"
-    assert len(of(events, "card")) == 1
+    assert len(of(events, "draft")) == 1
 
 
 async def test_second_message_in_thread_has_no_thread_event(api: Api):
@@ -351,12 +354,14 @@ async def test_client_going_away_does_not_stop_the_turn_or_its_charge(api: Api):
     assert first.event == "thread"
     await events.aclose()  # what the SSE response does when the client disconnects
     await asyncio.wait_for(asyncio.gather(*turn._RUNNING), timeout=10)
-    assert len(api.tools.charges) == 5
-    assert await api.count("pieces") == 2
+    assert len(api.tools.charges) == 4
+    config = {"configurable": {"thread_id": thread_id("real", "ws1", json.loads(first.data)["thread_id"])}}
+    saved = await api.checkpointer.aget_tuple(config)
+    assert [d.posts for d in saved.checkpoint["channel_values"]["drafts"]] == [[LAUNCH]]  # the turn ran to its end
 
 
 async def test_model_failure_fails_with_our_words_and_charges_its_cost(api: Api):
-    api.llm.script = {"INTERVIEW": [LlmError("unavailable", "down", cost_usd=0.002)]}
+    api.llm.script = {"CONVERSE": [LlmError("unavailable", "down", cost_usd=0.002)]}
     events = await api.send("shipped auto-reply")
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.002)]
@@ -365,10 +370,10 @@ async def test_model_failure_fails_with_our_words_and_charges_its_cost(api: Api)
 
 async def test_charge_failure_still_ends_done(api: Api):
     api.tools = FakeTools(errors={"charge": ToolError("unavailable")})
-    api.llm.script = ask_script()
-    events = await api.send("shipped auto-reply")
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
     assert [k for k, _ in events][-1] == "done"
-    assert api.tools.calls.count("charge") == 2  # both model calls tried to charge; the failures were only logged
+    assert api.tools.calls.count("charge") == 4  # all four model calls tried to charge; the failures were only logged
 
 
 async def test_user_cap_fails_before_anything(api: Api):
@@ -446,14 +451,14 @@ async def test_demo_records_spend_instead_of_charging(api: Api, test_settings: S
 
 async def test_demo_spend_recorded_per_call(api: Api, test_settings: Settings):
     """Each call adds to the day's spend as it ends: a turn cut off after two calls has already counted both."""
-    llm = BlocksAtWriter(happy_script())
+    llm = BlocksAtClaimCheck(happy_script())
     api.app.state.llm = llm
     pack = api.app.state.packs["demo"]
     session = verify_session(mint_session(pack, "ws1"), pack)
     task = asyncio.create_task(
         turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "203.0.113.9"), _ignore)
     )
-    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    await asyncio.wait_for(llm.at_check.wait(), timeout=10)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -593,12 +598,9 @@ async def test_a_pending_upload_cannot_be_sent(api: Api):
 
 
 async def test_add_draft_twice_same_action_one_draft(api: Api):
-    api.llm.script = happy_script()
-    events = await api.send(FACT)
-    tid = of(events, "thread")[0]["thread_id"]
-    [card] = of(events, "card")
-    piece = card["pieces"][0]
-    body = {"action_id": "act-1", "kind": "add_draft", "piece_id": piece["id"]}
+    tid = await api.thread_row()
+    pid = await api.piece_row(tid)
+    body = {"action_id": "act-1", "kind": "add_draft", "piece_id": pid}
     first = await api.act(tid, body)
     second = await api.act(tid, body)
     assert first.status_code == second.status_code == 200
@@ -672,6 +674,7 @@ async def test_delete_workspace_removes_threads_files_and_storage(api: Api):
     api.llm.script = happy_script()
     api.llm.add("IMAGE_READER", {"text": "a screenshot", "unsure": []})
     await api.send(FACT, thread=tid, file_ids=[up["file_id"]])
+    await api.piece_row(tid)
     assert (await api.act(tid, {"action_id": "k1", "kind": "keep_facts", "facts": [{"text": FACT}]})).status_code == 200
     other = (await api.upload(PNG, workspace="ws2")).json()
     config = {"configurable": {"thread_id": thread_id("real", "ws1", tid)}}
@@ -788,16 +791,28 @@ async def test_keep_facts_caps_fact_length_and_count(api: Api):
 
 
 async def test_pieces_not_saved_shows_card_fails_turn_and_charges_once(api: Api, monkeypatch):
+    """turn.py still stores `card` events until drafts are stored: a graph that shows a card whose pieces can't be
+    stored fails the turn."""
+
     async def broken(*_args):
         raise RuntimeError("database went away")
 
+    def carding_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
+        class Graph:
+            async def ainvoke(self, state, config):
+                await on_cost(0.001, 1)
+                await on_event("card", {"pieces": [{"id": "p1", "spec_kind": "x_post", "text": LAUNCH}], "facts": []})
+                return {"cost_usd": 0.001}
+
+        return Graph()
+
     monkeypatch.setattr(turn, "_save_pieces", broken)
-    api.llm.script = happy_script()
+    monkeypatch.setattr(turn, "build_graph", carding_graph)
     events = await api.send(FACT)
     assert len(of(events, "card")) == 1  # what was written is still shown
     assert of(events, "done") == []
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
-    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)] * 5
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)]
 
 
 async def test_message_over_4000_chars_400(api: Api):
@@ -925,10 +940,10 @@ async def test_status_listening_for_a_voice_note(api: Api):
     assert events.index(("status", {"step": "listening"})) < kinds_of(events).index("transcript")
 
 
-async def test_status_steps_come_in_order_before_the_card(api: Api):
+async def test_status_steps_come_in_order_before_the_draft(api: Api):
     api.llm.script = happy_script()
     events = await api.send(FACT)
     steps = [p["step"] for k, p in events if k == "status"]
     assert steps == ["thinking", "writing", "checking"]
-    assert max(i for i, (k, _) in enumerate(events) if k == "status") < kinds_of(events).index("card")
+    assert max(i for i, (k, _) in enumerate(events) if k == "status") < kinds_of(events).index("draft")
     assert events[-1][0] == "done"

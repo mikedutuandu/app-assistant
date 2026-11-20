@@ -30,7 +30,7 @@ def _pack(pdf_pages: int = 30, voice_seconds: int = 300) -> AppPack:
             "secret_env": "X",
             "allowed_origins": [],
             "guide": "g",
-            "writes": [{"kind": "post", "count": 1, "instructions": "i"}],
+            "writes": [{"kind": "x_post", "count": 1, "instructions": "i"}],
             "tools": {
                 "context": "assistant_context",
                 "save_draft": "save_draft",

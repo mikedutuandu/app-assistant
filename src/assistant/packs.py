@@ -24,7 +24,7 @@ class FileCaps(BaseModel):
 
 
 class WriteSpec(BaseModel):
-    kind: str  # "x_post" or "x_thread"
+    kind: Literal["x_post", "x_thread"]
     count: int = 1  # the default number of drafts
     max_posts: int | None = None  # threads: the most posts in one thread
     max_chars: int | None = None

@@ -19,7 +19,7 @@ def _pack(pack_id: str = "demo", secret_env: str = "TEST_AUTH_SECRET") -> AppPac
             "secret_env": secret_env,
             "allowed_origins": ["http://x"],
             "guide": "Ask.",
-            "writes": [{"kind": "changelog", "count": 1, "instructions": "Write."}],
+            "writes": [{"kind": "x_post", "count": 1, "instructions": "Write."}],
             "tools": {
                 "context": "assistant_context",
                 "save_draft": "save_draft",

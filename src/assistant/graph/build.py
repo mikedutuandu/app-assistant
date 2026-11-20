@@ -1,9 +1,9 @@
 """Wires the nodes into the graph of the spec:
 
-read_files → load_context → interview → (ask_back → END)
-                                      | (extract_facts → write → check → (write again once) → present → END)
+read_files → load_context → converse → END
 
-A turn reaching the message's cost cap ends early, presenting whatever pieces already passed.
+`converse` is the conversation agent (`agent.py`). A turn reaching the message's cost cap while reading files ends
+there; one reaching it inside `converse` ends with what it already did.
 """
 
 from collections.abc import Awaitable, Callable
@@ -13,7 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from assistant.files.read import FileReading, Meter
-from assistant.graph import nodes
+from assistant.graph import agent, nodes
 from assistant.graph.state import STATE_TYPES, ChatState
 from assistant.graph.turn import Deps, bind
 from assistant.llm import Llm
@@ -34,31 +34,6 @@ def _after_read(state: ChatState) -> str:
     return END if state.get("capped") else "load_context"
 
 
-def _after_interview(state: ChatState) -> str:
-    if state.get("capped"):
-        return END
-    return "extract_facts" if state.get("ready") else "ask_back"
-
-
-def _after_extract(state: ChatState) -> str:
-    if state.get("capped"):
-        return END
-    # Never write from nothing: with no facts this asks again, even past the 2 rounds (deliberate).
-    return "write" if state.get("facts") else "ask_back"
-
-
-def _after_write(state: ChatState) -> str:
-    if not state.get("pieces"):
-        return END  # capped before writing, or the writer gave nothing usable (it said so)
-    return "present" if state.get("capped") else "check"
-
-
-def _after_check(state: ChatState) -> str:
-    if not state.get("capped") and state.get("problems") and not state.get("rewrites"):
-        return "write"
-    return "present"
-
-
 async def _no_cost(cost_usd: float, n: int) -> None:
     return None
 
@@ -74,29 +49,15 @@ def build_graph(
     on_cost: Callable[[float, int], Awaitable[None]] | None = None,
 ) -> CompiledStateGraph:
     """One graph per request (compiling is cheap). Invoke it with `{"messages": [HumanMessage(text)], "file_ids":
-    [...]}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`.
+    [...], "draft_id": <the draft the message is about, or None>}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`.
 
     `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise."""
     deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link, on_cost or _no_cost)
     graph = StateGraph(ChatState)
-    for node in (
-        nodes.read_files,
-        nodes.load_context,
-        nodes.interview,
-        nodes.ask_back,
-        nodes.extract_facts,
-        nodes.write,
-        nodes.check,
-        nodes.present,
-    ):
+    for node in (nodes.read_files, nodes.load_context, agent.converse):
         graph.add_node(node.__name__, bind(node, deps))
     graph.add_edge(START, "read_files")
     graph.add_conditional_edges("read_files", _after_read, ["load_context", END])
-    graph.add_edge("load_context", "interview")
-    graph.add_conditional_edges("interview", _after_interview, ["extract_facts", "ask_back", END])
-    graph.add_edge("ask_back", END)
-    graph.add_conditional_edges("extract_facts", _after_extract, ["write", "ask_back", END])
-    graph.add_conditional_edges("write", _after_write, ["check", "present", END])
-    graph.add_conditional_edges("check", _after_check, ["write", "present"])
-    graph.add_edge("present", END)
+    graph.add_edge("load_context", "converse")
+    graph.add_edge("converse", END)
     return graph.compile(checkpointer=checkpointer)

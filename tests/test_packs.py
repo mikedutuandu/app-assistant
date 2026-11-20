@@ -14,9 +14,9 @@ secret_env: TEST_PACK_SECRET
 allowed_origins: ["{{base}}/"]
 guide: A launch app. A good story says what shipped.
 writes:
-  - kind: changelog
+  - kind: x_post
     count: 1
-    instructions: Write a changelog.
+    instructions: Write a post.
 tools:
   context: assistant_context
   save_draft: save_draft
@@ -136,3 +136,10 @@ def test_guide_replaces_interview_guide(tmp_path):
     (tmp_path / "old.yaml").write_text(_pack_yaml("old").replace("\nguide:", "\ninterview_guide:"))
     with pytest.raises(PackError, match="rename it to `guide`"):
         load_packs(tmp_path, base_url="http://testserver")
+
+
+def test_a_write_kind_must_be_a_post_or_a_thread(tmp_path):
+    text = _pack_yaml("a").replace("  - kind: x_post", "  - kind: changelog")
+    (tmp_path / "a.yaml").write_text(text)
+    with pytest.raises(PackError, match="a.yaml"):
+        load_packs(tmp_path, "http://testserver")

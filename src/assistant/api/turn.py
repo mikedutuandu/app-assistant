@@ -8,7 +8,9 @@ error kinds are logged, never text.
 
 The events a turn streams, in the order they can come: `thread` (a new chat's id and title), `status` (`{"step"}`: what
 the bot is doing now, one of `reading`, `listening`, `thinking`, `writing`, `checking`; no user text, never charged,
-and it may repeat), `transcript` (a voice note's words), `text` (`{"delta"}`), `note`, `card`, then `done` or `failed`.
+and it may repeat), `transcript` (a voice note's words), `text` (`{"delta"}`), `note`, `saved` (`{"kind": "facts",
+"items"}`), `draft` (`{"id", "kind", "posts", "image_file_id"?}`), then `done` or `failed`. (`card` is no longer sent
+by the graph; storing drafts replaces its storage next.)
 """
 
 import asyncio
@@ -274,7 +276,8 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
     try:
-        final = await graph.ainvoke({"messages": [HumanMessage(t.text)], "file_ids": t.file_ids}, config)
+        state = {"messages": [HumanMessage(t.text)], "file_ids": t.file_ids, "draft_id": None}
+        final = await graph.ainvoke(state, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
     except asyncio.CancelledError:
         await asyncio.shield(settle_charges())  # the client left: what was spent is still charged

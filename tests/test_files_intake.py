@@ -33,7 +33,7 @@ def _pack(demo: bool = False, kinds: list[str] | None = None, image_mb: int = 10
             "secret_env": "X",
             "allowed_origins": [],
             "guide": "g",
-            "writes": [{"kind": "post", "count": 1, "instructions": "i"}],
+            "writes": [{"kind": "x_post", "count": 1, "instructions": "i"}],
             "tools": {
                 "context": "assistant_context",
                 "save_draft": "save_draft",
