@@ -40,6 +40,14 @@ class _Retryable(Exception):
         self.cost = cost
 
 
+class _Partial(Exception):
+    """A stream failed after text was already emitted: no fallback is possible."""
+
+    def __init__(self, message: str, cost: float = 0.0):
+        super().__init__(message)
+        self.cost = cost
+
+
 def _cost(usage: Any) -> float:
     if isinstance(usage, dict):
         value = usage.get("cost")
@@ -117,36 +125,51 @@ class Llm:
 
         parts: list[str] = []
         cost = 0.0
-        async with self._client.stream(
-            "POST",
-            f"{BASE_URL}/chat/completions",
-            json={**body, "stream": True},
-            headers=self._headers(),
-            timeout=CHAT_TIMEOUT,
-        ) as resp:
-            if resp.status_code >= 400:
-                await resp.aread()
-                _classify(resp, _json(resp))
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
-                    continue  # blank lines and ":" comments
-                payload = line[5:].strip()
-                if payload == "[DONE]":
-                    break
-                try:
-                    event = json.loads(payload)
-                except ValueError:
-                    continue
-                if not isinstance(event, dict):
-                    continue
-                if event.get("usage"):
-                    cost += _cost(event["usage"])
-                choices = event.get("choices") or []
-                delta = (choices[0].get("delta") or {}) if choices else {}
-                piece = delta.get("content")
-                if piece:
-                    parts.append(piece)
-                    await on_text(piece)
+
+        def fail(message: str) -> Exception:
+            return _Partial(message, cost) if parts else _Retryable(message, cost)
+
+        try:
+            async with self._client.stream(
+                "POST",
+                f"{BASE_URL}/chat/completions",
+                json={**body, "stream": True},
+                headers=self._headers(),
+                timeout=CHAT_TIMEOUT,
+            ) as resp:
+                if resp.status_code >= 400:
+                    await resp.aread()
+                    _classify(resp, _json(resp))
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue  # blank lines and ":" comments
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(payload)
+                    except ValueError:
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("usage"):
+                        cost += _cost(event["usage"])
+                    choices = event.get("choices") or []
+                    first = choices[0] if choices else {}
+                    if event.get("error") or first.get("finish_reason") == "error":
+                        raise fail("stream error")
+                    piece = (first.get("delta") or {}).get("content")
+                    if piece:
+                        parts.append(piece)
+                        await on_text(piece)
+        except httpx.TransportError as e:
+            if parts:
+                raise _Partial(type(e).__name__, cost) from None
+            raise
+        except httpx.TimeoutException as e:
+            if parts:
+                raise _Partial(type(e).__name__, cost) from None
+            raise
         return "".join(parts), cost
 
     async def _complete(
@@ -169,6 +192,8 @@ class Llm:
             except _Retryable as e:
                 spent += e.cost
                 last = str(e)
+            except _Partial as e:
+                raise LlmError("unavailable", f"stream failed after output ({e})", spent + e.cost) from None
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 last = type(e).__name__
             except LlmError as e:

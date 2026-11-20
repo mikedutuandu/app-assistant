@@ -187,3 +187,49 @@ async def test_transcribe_error_raises():
     with pytest.raises(LlmError) as e:
         await Llm("k").transcribe(b"x", "mp3")
     assert e.value.kind == "unavailable"
+
+
+@respx.mock
+async def test_stream_error_after_text_raises_without_fallback():
+    route = respx.post(CHAT).mock(
+        side_effect=[
+            sse(
+                chunk({"choices": [{"delta": {"content": "Par"}}]}),
+                chunk(
+                    {
+                        "error": {"message": "provider died"},
+                        "choices": [{"delta": {}, "finish_reason": "error"}],
+                        "usage": {"cost": 0.04},
+                    }
+                ),
+            ),
+            sse(chunk({"choices": [{"delta": {"content": "SECOND"}}]}), "data: [DONE]\n\n"),
+        ]
+    )
+    seen: list[str] = []
+
+    async def on_text(t: str) -> None:
+        seen.append(t)
+
+    with pytest.raises(LlmError) as e:
+        await Llm("k").chat(MSGS, "a", ["b"], 10, on_text=on_text)
+    assert e.value.kind == "unavailable" and e.value.cost_usd == pytest.approx(0.04)
+    assert route.call_count == 1
+    assert seen == ["Par"]
+
+
+@respx.mock
+async def test_stream_error_event_before_text_falls_back():
+    respx.post(CHAT).mock(
+        side_effect=[
+            sse(chunk({"choices": [{"delta": {}, "finish_reason": "error"}], "error": {"message": "x"}})),
+            sse(chunk({"choices": [{"delta": {"content": "fine"}}], "usage": {"cost": 0.1}}), "data: [DONE]\n\n"),
+        ]
+    )
+    seen: list[str] = []
+
+    async def on_text(t: str) -> None:
+        seen.append(t)
+
+    res = await Llm("k").chat(MSGS, "a", ["b"], 10, on_text=on_text)
+    assert res.text == "fine" and res.model == "b" and seen == ["fine"]
