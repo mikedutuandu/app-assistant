@@ -211,8 +211,9 @@ def _fits(n: int, rule: int | str) -> bool:
 
 
 # Asks that aren't phrased as questions: "Tell me what it does", "let me know", and an extra "and whether ..." or
-# "and if you ..." inside one ask (each counts as one more; "X, or Y?" offers a choice and stays one ask). English and
-# Vietnamese.
+# "and if you ..." inside one ask (each counts as one more), and an "or" that opens a new question ("X, or what made
+# you ...?", "or do you have ..."). "X, or are you just Y?" / "or should I ..." offers a choice and stays one ask.
+# English and Vietnamese.
 _ASK = re.compile(
     r"(?<!\w)(tell me|let me know|share with me|send me|show me|cho (mình|tôi|em) biết|kể (mình|tôi|em) nghe)(?!\w)",
     re.IGNORECASE,
@@ -222,13 +223,18 @@ _ONE_MORE = re.compile(
     r"where|liệu|bạn|anh|chị|mình)(?!\w)",
     re.IGNORECASE,
 )
+_OR_MORE = re.compile(
+    r"(?<!\w)or\s+(what|who|when|why|where|how|which|do you|did you|have you)(?!\w)",
+    re.IGNORECASE,
+)
 _EXAMPLES = re.compile(r"(?<!\w)(like|such as|for example|e\.g\.|ví dụ|như là)(?!\w)", re.IGNORECASE)
 _SENTENCES = re.compile(r"[^.!?？。\n]+[.!?？。]*")
 
 
 def questions(text: str) -> int:
     """How many things a reply asks for: each question, each "tell me ..." / "let me know ..." sentence, and each
-    "and whether ..." folded into one of them (spec: one ask per message; "tell me X and whether Y" is two)."""
+    "and whether ..." or "or what ..." folded into one of them (spec: one ask per message; "tell me X and whether Y"
+    is two)."""
     asks = 0
     for sentence in _SENTENCES.findall(unicodedata.normalize("NFC", text)):
         sentence = sentence.strip()
@@ -237,7 +243,8 @@ def questions(text: str) -> int:
         if sentence.endswith(("?", "？")) or _ASK.search(sentence):
             examples = _EXAMPLES.search(sentence)  # "..., like X or what Y" lists examples of one ask
             cut = examples.start() if examples else len(sentence)
-            asks += 1 + sum(1 for m in _ONE_MORE.finditer(sentence) if 0 < m.start() < cut)  # "And what ...?" is one
+            asks += 1 + sum(1 for m in _ONE_MORE.finditer(sentence) if 0 < m.start())  # "And what ...?" is one
+            asks += sum(1 for m in _OR_MORE.finditer(sentence) if 0 < m.start() < cut)
     return asks
 
 

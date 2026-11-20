@@ -132,6 +132,15 @@ def test_asks_that_are_not_question_marks_count(reply: str, asks: int):
     assert questions(reply) == asks
 
 
+def test_or_with_a_new_question_counts_as_two_asks():
+    # Review N2: "X, or <a new question>?" is two asks; "X, or are you just Y?" offers a choice and stays one.
+    assert questions("Who asked for it most, or what made you ship it now?") == 2
+    assert questions("Who is it for, or do you have a number?") == 2
+    assert questions("Is 10k real, or are you just pitching it?") == 1
+    # The examples cut is for "or" only: "and do you" after examples is still one more ask.
+    assert questions("Any detail, like the time saved, and do you have a number?") == 2
+
+
 def test_a_failed_turn_or_a_missing_turn_fails_the_case():
     problems = check_hard(
         case(), [turn(ended="failed", failure="Something went wrong on our side. Nothing was saved.")]

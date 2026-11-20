@@ -1,6 +1,6 @@
 {
   "case": "shorter_after_draft",
-  "recorded_at": "2026-11-20T14:03:46+00:00",
+  "recorded_at": "2026-11-20T14:55:34+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -31,60 +31,60 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Here's a fresh take on it, Mike. Want me to try a different angle?",
+      "reply": "Here's a first draft for you, Mike. Want it shorter or with a different angle?",
       "drafts": [
         {
           "id": "4534C361000008",
           "kind": "x_post",
           "posts": [
-            "Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nWe shipped auto reply last week. 40 founders on the beta use it every day."
+            "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day."
           ]
         }
       ],
       "saved": [
-        "We shipped auto reply last week.",
+        "They shipped auto reply last week.",
         "Replies now go out in 2 minutes instead of 2 hours.",
         "40 founders on the beta use it every day."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.023762000000000002
+      "cost_usd": 0.0239026
     },
     {
       "user": "shorter",
       "file": null,
       "shows": null,
       "draft_id": "4534C361000008",
-      "reply": "Trimmed it down for you, Mike. Want it even tighter?",
+      "reply": "Here's a tighter version, Mike. Does it feel right?",
       "drafts": [
         {
           "id": "4534C361000010",
           "kind": "x_post",
           "posts": [
-            "Replies now go out in 2 minutes instead of 2 hours.\n\nShipped auto reply last week. 40 founders on the beta use it every day."
+            "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nauto reply is live, and 40 founders on the beta use it every day."
           ]
         }
       ],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0226165
+      "cost_usd": 0.022637499999999998
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The last draft keeps the same news (2 minutes instead of 2 hours, 40 founders daily) in fewer words than the earlier draft's 'Replies used to go out in 2 hours. Now they go out in 2 minutes.' version.",
+      "why": "The last draft keeps the 2 hours to 2 minutes line and the 40 founders fact but drops the 'I shipped last week' sentence, so it is shorter and covers the same news.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The numbers 2 minutes, 2 hours, and 40 founders all appear in Mike's message and the earlier draft, and nothing new is added.",
+      "why": "Every claim, '2 hours', '2 minutes', 'auto reply is live' and '40 founders on the beta use it every day', appears in the earlier draft or in Mike's message, so nothing new is added.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The reply 'Trimmed it down for you, Mike. Want it even tighter?' is two short sentences, not one line, though it doesn't repeat the draft text; it's arguably a single short line but has two sentences.",
+      "why": "The last reply, 'Here's a tighter version, Mike. Does it feel right?', is one sentence plus one light question and does not repeat the draft text.",
       "holds": true
     }
   ],
@@ -115,12 +115,12 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_016FCQB7DJaq9enqqfU1R7Nw",
+            "id": "toolu_013Nt5HEv4wmd2fe8cVoHmPq",
             "name": "save_facts",
             "arguments": {
               "facts": [
                 {
-                  "text": "We shipped auto reply last week."
+                  "text": "They shipped auto reply last week."
                 },
                 {
                   "text": "Replies now go out in 2 minutes instead of 2 hours."
@@ -133,7 +133,7 @@
             "bad_arguments": null
           },
           {
-            "id": "toolu_01XBhQ8dayhfKKMogiu7sc7Z",
+            "id": "toolu_016dX1fuX1N9MVTcTA82CEYv",
             "name": "write_drafts",
             "arguments": {
               "brief": "Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.",
@@ -158,11 +158,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "caaa7e1b87f34256",
+        "messages_sha256": "b4dc4262c3a0e752",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.</data>"
           }
         ]
       },
@@ -171,7 +171,7 @@
           "drafts": [
             {
               "posts": [
-                "Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nWe shipped auto reply last week. 40 founders on the beta use it every day."
+                "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day."
               ],
               "fact_ids": [
                 "F1",
@@ -182,7 +182,7 @@
             }
           ]
         },
-        "cost_usd": 0.005158
+        "cost_usd": 0.005128
       }
     },
     {
@@ -195,11 +195,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "93e1cb0f8ce17e3d",
+        "messages_sha256": "f728861bc899648d",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nWe shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day.</data>"
           }
         ]
       },
@@ -207,7 +207,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 7e-05
+        "cost_usd": 7.86e-05
       }
     },
     {
@@ -223,8 +223,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "1f411ad2c9b542bd",
-        "messages_sha256": "90565f52a7ff73ad",
+        "system_sha256": "20e38941aa322a4f",
+        "messages_sha256": "c5e3a6408a631ce8",
         "messages": [
           {
             "role": "user",
@@ -244,14 +244,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"4534C361000008\" kind=\"x_post\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nWe shipped auto reply last week. 40 founders on the beta use it every day.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"4534C361000008\" kind=\"x_post\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day.</data>"
           }
         ]
       },
       "response": {
-        "text": "Here's a fresh take on it, Mike. Want me to try a different angle?",
+        "text": "Here's a first draft for you, Mike. Want it shorter or with a different angle?",
         "calls": [],
-        "cost_usd": 0.008666,
+        "cost_usd": 0.008828,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -268,8 +268,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "1f411ad2c9b542bd",
-        "messages_sha256": "f914460bdb07deaa",
+        "system_sha256": "4222ebf5018239a2",
+        "messages_sha256": "cfa718d15f35e6e8",
         "messages": [
           {
             "role": "user",
@@ -277,7 +277,7 @@
           },
           {
             "role": "assistant",
-            "content": "Here's a fresh take on it, Mike. Want me to try a different angle?"
+            "content": "Here's a first draft for you, Mike. Want it shorter or with a different angle?"
           },
           {
             "role": "user",
@@ -289,7 +289,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01FuCakFAJEKRkBedE6Hvz1Z",
+            "id": "toolu_01QNWYePfFgiHdrPmNEdWt7r",
             "name": "revise_draft",
             "arguments": {
               "draft_id": "4534C361000008",
@@ -313,11 +313,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "45edd537dd22cb28",
+        "messages_sha256": "6561585ead430a0d",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nRevise this draft of kind \"x_post\" as the user asks, and reply with exactly 1 draft.\nThe draft:\n<data source=\"draft\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nWe shipped auto reply last week. 40 founders on the beta use it every day.</data>\nWhat the user asks:\n<data source=\"instruction\">make it shorter</data>\nIf they ask for another angle, change the hook: open with a different fact or framing than the draft's first line (the result, the problem it solves, who it helps, or wha…"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nRevise this draft of kind \"x_post\" as the user asks, and reply with exactly 1 draft.\nThe draft:\n<data source=\"draft\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nI shipped auto reply last week. 40 founders on the beta use it every day.</data>\nWhat the user asks:\n<data source=\"instruction\">make it shorter</data>\nIf they ask for another angle, change the hook: open with a different fact or framing than the draft's first line (the result, the problem it solves, who it helps, or wh…"
           }
         ]
       },
@@ -326,7 +326,7 @@
           "drafts": [
             {
               "posts": [
-                "Replies now go out in 2 minutes instead of 2 hours.\n\nShipped auto reply last week. 40 founders on the beta use it every day."
+                "replies used to go out in 2 hours. now they go out in 2 minutes.\n\nauto reply is live, and 40 founders on the beta use it every day."
               ],
               "fact_ids": [
                 "F1",
@@ -337,7 +337,7 @@
             }
           ]
         },
-        "cost_usd": 0.005338
+        "cost_usd": 0.005344
       }
     },
     {
@@ -350,11 +350,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "ea15f74ab597a847",
+        "messages_sha256": "0c6bd167ce9a3cab",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Replies now go out in 2 minutes instead of 2 hours.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">They shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nauto reply is live, and 40 founders on the beta use it every day.</data>"
           }
         ]
       },
@@ -362,7 +362,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 6.45e-05
+        "cost_usd": 8.15e-05
       }
     },
     {
@@ -378,8 +378,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "021694c9615d8e83",
-        "messages_sha256": "1dbdc7bc48ec8c14",
+        "system_sha256": "94f19e9b088f3187",
+        "messages_sha256": "d6ffdfbbedf559e6",
         "messages": [
           {
             "role": "user",
@@ -387,7 +387,7 @@
           },
           {
             "role": "assistant",
-            "content": "Here's a fresh take on it, Mike. Want me to try a different angle?"
+            "content": "Here's a first draft for you, Mike. Want it shorter or with a different angle?"
           },
           {
             "role": "user",
@@ -402,14 +402,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"4534C361000010\" kind=\"x_post\">Replies now go out in 2 minutes instead of 2 hours.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft.\n<data source=\"draft\" id=\"4534C361000010\" kind=\"x_post\">replies used to go out in 2 hours. now they go out in 2 minutes.\n\nauto reply is live, and 40 founders on the beta use it every day.</data>"
           }
         ]
       },
       "response": {
-        "text": "Trimmed it down for you, Mike. Want it even tighter?",
+        "text": "Here's a tighter version, Mike. Does it feel right?",
         "calls": [],
-        "cost_usd": 0.008508,
+        "cost_usd": 0.008506,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

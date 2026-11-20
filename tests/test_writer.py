@@ -229,7 +229,36 @@ async def test_count_is_clipped_and_only_failing_drafts_are_rewritten():
     assert "exactly 3" in prompt(llm.calls[0])
     assert llm.names() == ["DRAFT_WRITER", "CLAIM_CHECK", "CLAIM_CHECK", "DRAFT_WRITER", "CLAIM_CHECK"]
     rewrite = prompt(llm.calls[3]).split("Rewrite these", 1)[1]
-    assert rewrite.startswith(" 1 draft(s)") and c in rewrite and a not in rewrite
+    to_rewrite = rewrite.split("Each rewrite must open differently", 1)[0]  # the kept drafts' openings follow
+    assert rewrite.startswith(" 1 draft(s)") and c in to_rewrite and a not in to_rewrite
+
+
+DIFFERENT_OPENINGS = "Each draft must open with a different first line and lead with a different fact or framing."
+
+
+@pytest.mark.parametrize(("count", "asked"), [(1, False), (2, True), (3, True)])
+async def test_several_drafts_are_asked_for_different_openings(count: int, asked: bool):
+    # Review of give_me_3: two of three drafts opened with the same line. Only a request for several says so, so a
+    # single draft's request stays as it was.
+    posts = [POST, "Solo founders: replies come back in 2 minutes.", "Auto-reply answers in 2 minutes now."]
+    llm = FakeLlm({"DRAFT_WRITER": [drafts(*[[p] for p in posts[:count]])], "CLAIM_CHECK": [OK] * count})
+    w, _ = deps(llm)
+    await write_drafts(w, "launch", "x_post", count)
+    assert (DIFFERENT_OPENINGS in prompt(llm.calls[0])) is asked
+
+
+async def test_a_rewrite_among_several_sees_the_kept_drafts_openings():
+    # give_me_3: the rewrite of a failing draft was not shown the kept ones and opened like one of them.
+    a = "Auto-reply answers in 2 minutes now."
+    c = "Replies used to wait 9 hours."
+    c2 = "Solo founders get their replies answered in 2 minutes."
+    llm = FakeLlm({"DRAFT_WRITER": [drafts([a], [c]), drafts([c2])], "CLAIM_CHECK": [OK, OK]})
+    w, _ = deps(llm)
+    result = await write_drafts(w, "launch", "x_post", 2)
+    assert [d.posts[0] for d in result.drafts] == [a, c2]
+    rewrite = prompt(llm.calls[2]).split("Rewrite these", 1)[1]
+    assert "open differently from the drafts kept as they are" in rewrite
+    assert f'<data source="opening">{a}</data>' in rewrite and DIFFERENT_OPENINGS in prompt(llm.calls[2])
 
 
 async def test_unknown_kind_returns_a_note():
