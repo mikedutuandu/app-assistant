@@ -34,7 +34,7 @@ function setup(over: Partial<PanelApi> = {}, events: BotEvent[] = []) {
 beforeEach(() => {
   document.body.innerHTML = "";
   sessionStorage.clear();
-  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("a-1").mockReturnValueOnce("a-2").mockReturnValue("a-n") });
+  vi.stubGlobal("crypto", {}); // plain-http pages have no crypto.randomUUID: the panel must not need it
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -80,7 +80,7 @@ describe("panel", () => {
     expect(saved).toEqual(["d1"]);
     const edit = $$(".piece")[0].querySelector("a") as HTMLAnchorElement;
     expect(edit.href).toBe("https://app.test/edit/d1");
-    expect(act).toHaveBeenCalledWith("t1", { action_id: "a-1", kind: "add_draft", piece_id: "p1" });
+    expect(act).toHaveBeenCalledWith("t1", { action_id: "add:p1", kind: "add_draft", piece_id: "p1" });
   });
 
   it("no Edit link when edit_url is null; retry after failure reuses the action id", async () => {
@@ -115,6 +115,7 @@ describe("panel", () => {
     await flush();
     const [, body] = api.act.mock.calls[0];
     expect(body.kind).toBe("keep_facts");
+    expect(body.action_id).toBe("keep:p1");
     expect(body.facts[0]).toMatchObject({ id: "f1", text: "Shipped dark mode on Monday" });
     expect(keep.textContent).toBe("Kept");
   });
@@ -162,5 +163,21 @@ describe("panel", () => {
     await flush();
     expect(thread).toHaveBeenCalledWith("t7");
     expect($$(".msg").map((m) => m.textContent)).toEqual(["hi", "Hello"]);
+  });
+
+  it("a card reopened from history taps with the same action ids as when it was first shown", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({ messages: [{ role: "assistant", text: "", card }], pieces: [] }));
+    const { $, $$, flush, api } = setup({ thread } as any);
+    await flush();
+    ($$(".piece")[0].querySelector("button") as HTMLButtonElement).click();
+    await flush();
+    ($$(".facts .btn")[0] as HTMLButtonElement).click();
+    await flush();
+    expect(api.act.mock.calls.map((c: any[]) => [c[0], c[1].action_id])).toEqual([
+      ["t1", "add:p1"],
+      ["t1", "keep:p1"],
+    ]);
+    void $;
   });
 });

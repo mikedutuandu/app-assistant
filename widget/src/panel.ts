@@ -193,7 +193,8 @@ export function createPanel(opts: PanelOptions) {
   function renderCard(pieces: Piece[], facts: Fact[]) {
     const card = h("div", { class: "card" });
     for (const p of pieces) card.append(renderPiece(p));
-    if (facts.length) card.append(renderFacts(facts));
+    // Keyed by the card's first piece, so the tap is the same action after a reload (no duplicate saves).
+    if (facts.length) card.append(renderFacts(facts, `keep:${pieces[0]?.id ?? facts[0].id}`));
     list.append(card);
     scroll();
   }
@@ -207,7 +208,7 @@ export function createPanel(opts: PanelOptions) {
       el.append(h("div", { class: "why", text: `Not added: ${p.dropped}` }));
       return el;
     }
-    const actionId = crypto.randomUUID(); // one id per piece, so a retry of the same tap is the same action
+    const actionId = `add:${p.id}`; // the same for every render of this piece: a repeat tap, or after a reload
     const row = h("div", { class: "row" });
     const add = h("button", { class: "btn", type: "button", text: "Add to Schedule" });
     const err = h("div", { class: "small", role: "alert" });
@@ -234,7 +235,7 @@ export function createPanel(opts: PanelOptions) {
     return el;
   }
 
-  function renderFacts(facts: Fact[]): HTMLElement {
+  function renderFacts(facts: Fact[], actionId: string): HTMLElement {
     const box = h("div", { class: "facts" });
     box.append(
       h("h3", { text: "What I used" }),
@@ -245,7 +246,6 @@ export function createPanel(opts: PanelOptions) {
       box.append(t);
       return { fact: f, input: t };
     });
-    const actionId = crypto.randomUUID();
     const keep = h("button", { class: "btn", type: "button", text: "Keep for next week" });
     const err = h("div", { class: "small", role: "alert" });
     keep.addEventListener("click", async () => {
