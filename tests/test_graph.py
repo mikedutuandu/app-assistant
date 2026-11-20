@@ -305,6 +305,41 @@ async def test_image_attached_only_when_it_shares_a_fact():
     assert card["pieces"][0]["fact_ids"] == [card["facts"][0]["id"]]
 
 
+def _many_facts_llm(total: int, used: list[int]) -> FakeLlm:
+    names = [f"Fact number {chr(97 + i // 26)}{chr(97 + i % 26)} about the launch" for i in range(total)]
+    return FakeLlm(
+        {
+            "INTERVIEW": [interview(enough=True)],
+            "EXTRACT_FACTS": [facts(*[(n, None) for n in names])],
+            "WRITER": [
+                written(
+                    piece("launch_post", "Auto-reply is live for everyone.", [f"F{i + 1}" for i in used]),
+                    piece("changelog", "Auto-reply\n- Replies now go out much faster.", [f"F{used[0] + 1}"]),
+                )
+            ],
+            "CLAIM_CHECK": [OK, OK],
+        }
+    )
+
+
+async def test_card_carries_only_the_facts_its_pieces_use():
+    h = Harness(_many_facts_llm(40, [30, 2, 17]))
+    await h.send("lots happened")
+    [card] = h.of("card")
+    assert len(card["facts"]) == 3
+    used = [i for p in card["pieces"] for i in p["fact_ids"]]
+    assert [f["id"] for f in card["facts"]] == list(dict.fromkeys(used))  # first-use order
+    assert [f["text"][12:14] for f in card["facts"]] == ["be", "ac", "ar"]
+
+
+async def test_card_facts_are_capped_at_thirty():
+    h = Harness(_many_facts_llm(40, list(range(35))))
+    await h.send("lots happened")
+    [card] = h.of("card")
+    assert len(card["facts"]) == 30
+    assert card["facts"][0]["text"].startswith("Fact number aa")
+
+
 async def test_image_from_outside_the_thread_is_never_attached():
     llm = happy_llm()
     llm.script["EXTRACT_FACTS"] = [facts(("Replies go out in 2 minutes instead of 2 hours", "other"))]

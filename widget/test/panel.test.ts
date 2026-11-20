@@ -121,6 +121,23 @@ describe("panel", () => {
     expect(keep.textContent).toBe("Kept");
   });
 
+  it("Keep for next week sends at most 30 facts", async () => {
+    const many = {
+      ...card,
+      facts: Array.from({ length: 45 }, (_, i) => ({ id: `f${i}`, text: `Fact ${i}`, numbers: [], source: "chat", file_id: null })),
+    };
+    const { $$, say, flush, api } = setup({}, [
+      { event: "thread", data: { thread_id: "t1", title: "" } },
+      { event: "card", data: many },
+    ]);
+    await say("hi");
+    ($$(".facts .btn")[0] as HTMLButtonElement).click();
+    await flush();
+    const [, body] = api.act.mock.calls[0];
+    expect(body.facts).toHaveLength(30);
+    expect(body.facts[0].id).toBe("f0");
+  });
+
   it("disables send while a turn streams", async () => {
     let finish!: () => void;
     const send = vi.fn(() => new Promise<void>((r) => (finish = r)));
