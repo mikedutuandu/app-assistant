@@ -70,7 +70,7 @@ def _http_message(response: httpx.Response) -> str | None:
     if isinstance(body, dict):
         for field in ("message", "error"):
             if isinstance(body.get(field), str) and body[field].strip():
-                return body[field].strip()
+                return _strip_code(body[field])
     return None
 
 
@@ -138,6 +138,8 @@ class McpHttpTools:
         status = response.status_code
         if status in (401, 403):
             raise ToolError("unauthorized", _http_message(response))
+        if status == 429:
+            raise ToolError("unavailable", _http_message(response))
         if status == 402:
             raise ToolError("out_of_credits", _http_message(response))
         if status >= 400:
@@ -153,7 +155,7 @@ class McpHttpTools:
             message = error.get("message") if isinstance(error, dict) else None
             message = message if isinstance(message, str) else None
             kind: ToolErrorKind = "out_of_credits" if message and "out_of_credits" in message else "refused"
-            raise ToolError(kind, message)
+            raise ToolError(kind, _strip_code(message) if message else None)
         result = body.get("result")
         if not isinstance(result, dict):
             raise ToolError("refused")

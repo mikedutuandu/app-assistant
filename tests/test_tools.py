@@ -132,7 +132,7 @@ async def test_402_or_error_code_out_of_credits_maps_kind():
             await tools.charge(1, "r3")
     assert (e1.value.kind, e1.value.user_message) == ("out_of_credits", "Top up to continue")
     assert (e2.value.kind, e2.value.user_message) == ("out_of_credits", "You have no credits left")
-    assert (e3.value.kind, e3.value.user_message) == ("out_of_credits", "out_of_credits")
+    assert (e3.value.kind, e3.value.user_message) == ("out_of_credits", None)
 
 
 @respx.mock
@@ -161,15 +161,53 @@ async def test_5xx_is_unavailable_after_one_retry():
 
 
 @respx.mock
-async def test_retry_recovers_and_timeouts_are_unavailable():
-    respx.post(URL).mock(side_effect=[httpx.ConnectError("x"), ok({"id": "d2", "edit_url": None})])
+async def test_retry_recovers_after_one_transport_error():
+    route = respx.post(URL).mock(side_effect=[httpx.ConnectError("x"), ok({"id": "d2", "edit_url": None})])
     async with httpx.AsyncClient() as client:
         assert (await make_tools(client).save_draft("t", [], "k")).id == "d2"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_timeouts_are_unavailable_after_one_retry():
     route = respx.post(URL).mock(side_effect=httpx.ReadTimeout("slow"))
     async with httpx.AsyncClient() as client:
         with pytest.raises(ToolError) as e:
             await make_tools(client).context()
-    assert e.value.kind == "unavailable" and route.call_count == 4  # same route object: 2 earlier calls + 2
+    assert e.value.kind == "unavailable" and route.call_count == 2
+
+
+@respx.mock
+async def test_429_is_unavailable_without_retry_and_keeps_message():
+    route = respx.post(URL).mock(return_value=httpx.Response(429, json={"message": "Slow down, try in a minute."}))
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(ToolError) as e:
+            await make_tools(client).context()
+    assert (e.value.kind, e.value.user_message) == ("unavailable", "Slow down, try in a minute.")
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_real_sentences_survive_and_codes_are_stripped_on_every_path():
+    sentence = "You're out of credits. Top up in Billing."
+    jsonrpc = {"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": sentence}}
+    respx.post(URL).mock(
+        side_effect=[
+            httpx.Response(402, json={"error": sentence}),
+            httpx.Response(402, json={"error": "out_of_credits"}),
+            httpx.Response(402, json={"message": "out_of_credits: " + sentence}),
+            httpx.Response(200, json=jsonrpc),
+            tool_error(sentence),
+            httpx.Response(403, json={"message": "token_expired"}),
+        ]
+    )
+    expected = [sentence, None, sentence, sentence, sentence, None]
+    async with httpx.AsyncClient() as client:
+        tools = make_tools(client)
+        for want in expected:
+            with pytest.raises(ToolError) as e:
+                await tools.context()
+            assert e.value.user_message == want
 
 
 @respx.mock
