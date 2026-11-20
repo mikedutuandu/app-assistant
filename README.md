@@ -114,6 +114,27 @@ gcloud run services update app-assistant --region REGION --update-env-vars PUBLI
 
 **6. Check.** `curl https://<url>/health` answers `{"ok":true}`; then open `https://<url>/demo` on a phone. Migrations run on start; if a pack's secret variable is missing, the service refuses to start and says which one.
 
+**Check the bucket once.** Before the first real user, run this from your machine with the real `S3_*` values (and the rest of the settings) in `.env`. It does each call the service makes, against the real bucket, then cleans up:
+
+```bash
+uv run python - <<'EOF'
+import httpx
+from assistant.config import get_settings
+from assistant.files.storage import Storage
+
+s = Storage(get_settings())
+s.put("check/hello.txt", b"hello", "text/plain")                          # 1. put
+assert s.get("check/hello.txt") == b"hello"                                # 2. get
+url = s.signed_url("check/hello.txt", 60)
+assert httpx.get(url).content == b"hello"                                  # 3. signed GET (how images reach the app)
+assert httpx.get(url.split("?")[0]).status_code in (400, 401, 403, 404)    # 4. unsigned GET refused: the bucket is private
+assert s.delete_prefix("check/") == 1                                      # 5. delete
+print("bucket ok")
+EOF
+```
+
+It prints `bucket ok`. Any error names the call that failed; fix the bucket or keys before going on.
+
 Note on the demo's per-IP limit: Cloud Run appends the visitor's IP as the last `X-Forwarded-For` entry, and the limit relies on that. Putting a Google external load balancer in front adds its own IP last and would need a code change.
 
 ## Add an app
