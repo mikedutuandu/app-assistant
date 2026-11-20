@@ -98,7 +98,8 @@ async def _read_voice(rec: FileRecord, data: bytes, pack: AppPack, llm: Llm) -> 
     text, seconds, cost = await llm.transcribe(data, _AUDIO_FORMATS.get(rec.mime, "m4a"))
     if seconds > pack.files.voice_seconds:
         minutes = f"{pack.files.voice_seconds / 60:g}"
-        raise UploadError("too_long", f"Voice notes can be up to {minutes} minutes.", cost)
+        unit = "minute" if minutes == "1" else "minutes"
+        raise UploadError("too_long", f"Voice notes can be up to {minutes} {unit}.", cost)
     return FileReading(file_id=rec.id, kind="voice", text=text, cost_usd=cost, seconds=seconds)
 
 
@@ -189,7 +190,7 @@ async def _check_url(url: str, resolve: Resolver) -> None:
     except ValueError:
         try:
             addresses = await resolve(host)
-        except OSError:
+        except (OSError, ValueError):
             raise UploadError("link", LINK_ERROR) from None
     if not addresses or any(_blocked(a) for a in addresses):
         raise UploadError("link", LINK_ERROR)
@@ -205,7 +206,9 @@ def _html_to_text(html: str) -> str:
 async def _fetch(url: str, client: httpx.AsyncClient, resolve: Resolver) -> tuple[str, str]:
     for _ in range(LINK_MAX_REDIRECTS + 1):
         await _check_url(url, resolve)
-        async with client.stream("GET", url, follow_redirects=False, timeout=LINK_TIMEOUT) as resp:
+        async with client.stream(
+            "GET", url, headers={"Accept-Encoding": "identity"}, follow_redirects=False, timeout=LINK_TIMEOUT
+        ) as resp:
             if resp.is_redirect:
                 location = resp.headers.get("location")
                 if not location:
@@ -231,7 +234,9 @@ async def read_link(url: str, client: httpx.AsyncClient, resolve: Resolver = _re
     try:
         async with asyncio.timeout(LINK_TIMEOUT):
             ctype, body = await _fetch(url, client, resolve)
-    except (httpx.HTTPError, TimeoutError, LookupError):
+    except UploadError:
+        raise
+    except Exception:  # noqa: BLE001 - user-supplied URL boundary: anything else is just an unopenable link
         raise UploadError("link", LINK_ERROR) from None
     text = _html_to_text(body) if ctype == "text/html" else body
     text = re.sub(r"\s+", " ", text).strip()[:MAX_TEXT]

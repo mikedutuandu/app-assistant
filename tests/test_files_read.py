@@ -101,7 +101,7 @@ async def test_voice_over_cap_raises_too_long_with_cost(pool, storage, put):
     with pytest.raises(UploadError) as exc:
         await read_file(rec, _pack(voice_seconds=60), Llm("k"), storage, pool)
     assert exc.value.code == "too_long"
-    assert exc.value.message == "Voice notes can be up to 1 minutes."
+    assert exc.value.message == "Voice notes can be up to 1 minute."
     assert exc.value.cost_usd == 0.003
     async with pool.connection() as conn:
         row = await (await conn.execute("select reading from files where id = %s", (rec.id,))).fetchone()
@@ -203,6 +203,7 @@ async def test_link_text_extracted():
     )
     async with httpx.AsyncClient() as client:
         got = await read_link("https://example.com/p", client, resolver({"example.com": [PUBLIC]}))
+    assert respx.calls[0].request.headers["accept-encoding"] == "identity"
     assert got == FileReading(
         file_id="https://example.com/p",
         kind="link",
@@ -290,3 +291,32 @@ async def test_link_refuses_big_and_wrong_type():
         for path in ("huge", "img"):
             with pytest.raises(UploadError):
                 await read_link(f"https://example.com/{path}", client, res)
+
+
+async def test_long_label_host_refused():
+    async def real_like(host: str) -> list[str]:
+        raise UnicodeError("label too long")
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(UploadError) as exc:
+            await read_link("http://" + "a" * 70 + ".com/", client, real_like)
+    assert (exc.value.code, exc.value.message) == ("link", "That link can't be opened.")
+
+
+async def test_long_label_host_with_default_resolver_refused():
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(UploadError):
+            await read_link("http://" + "a" * 70 + ".com/", client)
+
+
+@respx.mock
+async def test_control_character_urls_refused():
+    respx.get("https://example.com/redir").mock(
+        return_value=httpx.Response(302, headers={"location": "http://example.com/\x01"})
+    )
+    res = resolver({"example.com": [PUBLIC]})
+    async with httpx.AsyncClient() as client:
+        for url in ("http://example.com/\x01", "https://example.com/redir"):
+            with pytest.raises(UploadError) as exc:
+                await read_link(url, client, res)
+            assert exc.value.code == "link"
