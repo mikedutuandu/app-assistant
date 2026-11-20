@@ -120,6 +120,9 @@ async def _existing_draft(pool, workspace: str, idem_key: str) -> str | None:
 
 async def _save_draft(state, session: Session, args: dict, key: str) -> dict:
     text = args.get("text")
+    more = args.get("thread")
+    if isinstance(text, str) and isinstance(more, list):  # a thread's later posts: the demo keeps one text
+        text = "\n\n".join([text, *(p for p in more if isinstance(p, str) and p.strip())])
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT_CHARS:
         raise ToolFailure("The draft needs some text.")
     existing = await _existing_draft(state.pool, session.workspace, key)

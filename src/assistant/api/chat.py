@@ -9,13 +9,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Request
 from langchain_core.messages import AIMessage, HumanMessage
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AliasChoices, BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from assistant.api.deps import ApiError, bearer, client_ip, pack_for, session_for
 from assistant.api.turn import TurnInput, start, tool_failure
 from assistant.auth import AuthError, Session, verify_delete_token
-from assistant.checks import Fact, numbers_in
+from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import PENDING, UploadError, UploadNotFound, check_claim, finish_upload, start_upload
 from assistant.graph.build import build_graph
@@ -30,8 +30,6 @@ THREADS_LISTED = 30
 MAX_TEXT_CHARS = 4000
 UPLOADS_PER_HOUR = 30
 ACTIONS_PER_HOUR = 60
-MAX_FACT_CHARS = 500
-MAX_FACTS_KEPT = 30
 UPLOAD_THREAD_TITLE = "Files"
 PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again after this
 
@@ -138,6 +136,7 @@ class MessageIn(BaseModel):
     thread_id: str | None = None
     text: str = ""
     file_ids: list[str] = []
+    draft_id: str | None = None  # the draft the message is about: its Shorter or Another angle
 
 
 async def _events(queue: asyncio.Queue):
@@ -152,7 +151,7 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
     pool = request.app.state.pool
     text = body.text.strip()
     file_ids = list(dict.fromkeys(body.file_ids))
-    if not text and not file_ids:
+    if not text and not file_ids and body.draft_id is None:
         raise ApiError(400, "empty", "Type a message or attach a file.")
     if len(text) > MAX_TEXT_CHARS:
         raise ApiError(400, "too_long", "That message is too long. Keep it under 4,000 characters.")
@@ -161,6 +160,16 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
         raise ApiError(400, "too_many_files", f"You can send up to {n} file{'s' if n != 1 else ''} at a time.")
     if body.thread_id is not None:
         await owned_thread(pool, session, body.thread_id)
+    if body.draft_id is not None:
+        if body.thread_id is None:
+            raise ApiError(404, "draft")  # a draft always belongs to a thread
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "select 1 from pieces where id = %s and app = %s and workspace = %s and thread_id = %s",
+                (body.draft_id, session.app, session.workspace, body.thread_id),
+            )
+            if await cur.fetchone() is None:
+                raise ApiError(404, "draft")
     if file_ids:
         if body.thread_id is None:
             raise ApiError(404, "file")  # a file always belongs to a thread
@@ -172,7 +181,7 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
             )
             if (await cur.fetchone())[0] != len(file_ids):
                 raise ApiError(404, "file")
-    turn = TurnInput(pack, session, body.thread_id, text, file_ids, client_ip(request))
+    turn = TurnInput(pack, session, body.thread_id, text, file_ids, client_ip(request), body.draft_id)
     return EventSourceResponse(_events(start(request.app.state, turn)))
 
 
@@ -184,22 +193,10 @@ ActionId = Annotated[str, StringConstraints(min_length=1, max_length=100)]
 class AddDraftIn(BaseModel):
     action_id: ActionId
     kind: Literal["add_draft"]
-    piece_id: str
+    draft_id: str = Field(validation_alias=AliasChoices("draft_id", "piece_id"))
 
 
-class FactIn(Fact):
-    """A fact the user edited in the widget: the same shape, with a cap on its text."""
-
-    text: Annotated[str, StringConstraints(max_length=MAX_FACT_CHARS)] = ""
-
-
-class KeepFactsIn(BaseModel):
-    action_id: ActionId
-    kind: Literal["keep_facts"]
-    facts: list[FactIn] = Field(min_length=1, max_length=MAX_FACTS_KEPT)
-
-
-ActionIn = Annotated[AddDraftIn | KeepFactsIn, Field(discriminator="kind")]
+ActionIn = AddDraftIn
 
 _CLAIM = f"""
 insert into actions (id, app, workspace, thread_id, kind, result)
@@ -211,19 +208,28 @@ returning 1
 """
 
 
-async def _piece(pool, session: Session, chat_id: str, piece_id: str) -> tuple[str, str | None, list[Fact]]:
+async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[list[str], str | None]:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "select text, image_file_id, facts, dropped from pieces"
-            " where id = %s and app = %s and workspace = %s and thread_id = %s",
-            (piece_id, session.app, session.workspace, chat_id),
+            "select posts, text, image_file_id from pieces where id = %s and app = %s and workspace = %s"
+            " and thread_id = %s",
+            (draft_id, session.app, session.workspace, chat_id),
         )
         row = await cur.fetchone()
     if row is None:
-        raise ApiError(404, "piece")
-    if row[3] is not None:
-        raise ApiError(409, "dropped", "This post didn't pass the checks, so it can't be added.")
-    return row[0], row[1], [Fact.model_validate(f) for f in row[2]]
+        raise ApiError(404, "draft")
+    return (row[0] if row[0] else [row[1]]), row[2]
+
+
+async def _told_facts(state, session: Session, chat_id: str, draft_id: str) -> list[Fact]:
+    """The facts this draft was written from: the thread's saved facts named by the draft's `fact_ids`."""
+    config = {"configurable": {"thread_id": graph_thread_id(session.app, session.workspace, chat_id)}}
+    saved = await state.checkpointer.aget_tuple(config)
+    values = saved.checkpoint["channel_values"] if saved is not None else {}
+    draft = next((d for d in values.get("drafts", []) if d.id == draft_id), None)
+    if draft is None:
+        return []
+    return [f for f in values.get("facts", []) if f.id in set(draft.fact_ids)]
 
 
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
@@ -241,13 +247,13 @@ async def _image_url(state, session: Session, chat_id: str, file_id: str) -> lis
 
 @router.post("/threads/{thread_id}/actions")
 async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> dict:
-    """A tap on "Add to Schedule" or "Keep for next week": runs once per action_id; a repeat gets the same result."""
+    """A tap on "Add to Schedule": runs once per action_id; a repeat gets the same result."""
     pack, session = auth
     state = request.app.state
     if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):
         raise ApiError(429, "limit", "You've done that a lot this hour. Try again a bit later.")
     await owned_thread(state.pool, session, thread_id)
-    piece = await _piece(state.pool, session, thread_id, body.piece_id) if isinstance(body, AddDraftIn) else None
+    posts, image_file_id = await _draft(state.pool, session, thread_id, body.draft_id)
 
     key = f"{session.app}:{session.workspace}:{body.action_id}"
     async with state.pool.connection() as conn:
@@ -265,23 +271,12 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
 
     tools = state.tools_for(pack, session)
     try:
-        if piece is not None:
-            text, image_file_id, facts = piece
-            media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
-            draft = await tools.save_draft(text, media, key=body.action_id)
-            if facts:
-                await tools.save_material(facts, draft.id, key=body.action_id + ":facts")
-            result: dict = {"draft_id": draft.id, "edit_url": draft.edit_url}
-        else:
-            facts = [
-                f.model_copy(update={"text": f.text.strip(), "numbers": numbers_in(f.text)})
-                for f in body.facts  # type: ignore[union-attr]
-                if f.text.strip()
-            ]
-            if not facts:
-                raise ApiError(400, "empty", "There are no facts to keep.")
-            await tools.save_material(facts, None, key=body.action_id)
-            result = {"kept": len(facts)}
+        media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
+        draft = await tools.save_draft(posts[0], posts[1:], media, key=body.action_id)
+        facts = await _told_facts(state, session, thread_id, body.draft_id)
+        if facts:
+            await tools.save_material(facts, draft.id, key=body.action_id + ":facts")
+        result: dict = {"draft_id": draft.id, "edit_url": draft.edit_url}
     except Exception as e:
         async with state.pool.connection() as conn:  # free the action so the user can tap again
             await conn.execute(
@@ -296,6 +291,11 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
         await conn.execute(
             "update actions set result = %s where id = %s and app = %s and workspace = %s",
             (Jsonb(result), key, session.app, session.workspace),
+        )
+        await conn.execute(
+            "update pieces set added_draft_id = %s, edit_url = %s"
+            " where id = %s and app = %s and workspace = %s and thread_id = %s",
+            (draft.id, draft.edit_url, body.draft_id, session.app, session.workspace, thread_id),
         )
     log.info("action app=%s thread=%s action=%s", pack.id, thread_id, body.kind)
     return result
@@ -330,10 +330,7 @@ def _message(m) -> dict | None:
         if isinstance(m.content, str)
         else " ".join(p.get("text", "") for p in m.content if isinstance(p, dict))
     )
-    out: dict = {"role": role, "text": text}
-    if "card" in m.additional_kwargs:
-        out["card"] = m.additional_kwargs["card"]
-    return out
+    return {"role": role, "text": text}
 
 
 @router.get("/threads/{thread_id}")
@@ -346,19 +343,68 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
     )
     config = {"configurable": {"thread_id": graph_thread_id(session.app, session.workspace, thread_id)}}
     snapshot = await graph.aget_state(config)
-    messages = [m for m in map(_message, snapshot.values.get("messages", [])) if m is not None]
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select id, spec_kind, text, image_file_id, fact_ids, facts, dropped, created_at from pieces"
+            "select id, message_id, spec_kind, posts, text, image_file_id, added_draft_id, edit_url from pieces"
             " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
             (session.app, session.workspace, thread_id),
         )
-        rows = await cur.fetchall()
-    # Never the message id: it is the app's charge ref, and the browser must not learn it before the turn is charged
-    # (the pieces are stored before the charge). The `done` event, sent after the charge, is where it first appears.
-    keys = ["id", "spec_kind", "text", "image_file_id", "fact_ids", "facts", "dropped", "created_at"]
-    pieces = [dict(zip(keys, r, strict=True)) | {"created_at": r[7].isoformat()} for r in rows]
-    return {"messages": messages, "pieces": pieces}
+        draft_rows = await cur.fetchall()
+        cur = await conn.execute(
+            "select message_id, items from saved_lines where app = %s and workspace = %s and thread_id = %s"
+            " order by created_at, id",
+            (session.app, session.workspace, thread_id),
+        )
+        saved_rows = await cur.fetchall()
+    # The turn's message id is the app's charge ref: it only groups rows here and never leaves the bot (the browser
+    # first sees it in `done`, after the charge).
+    drafts: dict[str, list[dict]] = {}
+    for r in draft_rows:
+        drafts.setdefault(r[1], []).append(_draft_out(r))
+    saved: dict[str, list[str]] = {}
+    for turn_id, items in saved_rows:
+        saved.setdefault(turn_id, []).extend(items)
+
+    out: list[dict] = []
+    current: str | None = None
+    shown: dict | None = None  # the current turn's assistant message, once there is one
+
+    def attach(msg: dict) -> None:
+        if drafts.get(current):
+            msg["drafts"] = drafts.pop(current)
+        if saved.get(current):
+            msg["saved"] = saved.pop(current)
+
+    def close() -> None:
+        """A turn that showed drafts or saved facts but said nothing still gets an assistant message to hold them."""
+        if current is not None and shown is None and (drafts.get(current) or saved.get(current)):
+            msg = {"role": "assistant", "text": ""}
+            attach(msg)
+            out.append(msg)
+
+    for m in snapshot.values.get("messages", []):
+        msg = _message(m)
+        if msg is None:
+            continue
+        if msg["role"] == "user":
+            close()
+            current, shown = m.additional_kwargs.get("turn"), None
+            out.append(msg)
+        else:
+            if shown is None:
+                attach(msg)
+                shown = msg
+            out.append(msg)
+    close()
+    return {"messages": out}
+
+
+def _draft_out(r) -> dict:
+    posts = r[3] if r[3] else [r[4]]
+    draft: dict = {"id": r[0], "kind": r[2], "posts": posts, "added": r[6] is not None, "edit_url": r[7]}
+    if r[5] is not None:
+        draft["image_file_id"] = r[5]
+    return draft
 
 
 # ---- deletion (server to server) ----

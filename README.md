@@ -8,7 +8,9 @@ A private chat bot that any web app adds with one script tag. It asks the user a
 2. The app signs a short-lived token (up to 1 hour) for the signed-in user's workspace and hands it to the widget.
 3. The widget talks to this service with that token. The service sends the same token to the app's MCP, which exposes four tools: read context, save a draft, save material, report the cost.
 4. Every number and claim in a draft must come from the facts list. The facts are shown to the user before they are kept, and a draft that fails the check is written once more, then dropped.
-5. Saving happens only when the user taps. The bot has no tool that publishes.
+5. Saving a draft happens only when the user taps. The bot has no tool that publishes.
+
+A message streams back these events (`POST /v1/chat/{app}/messages`, which also takes the `draft_id` of the draft a tap such as "Make it shorter" is about; one that is not a draft of the thread is a 404): `thread` (a new chat's id and title), `status` (what the bot is doing: reading, listening, thinking, writing, checking), `text` (the reply, in deltas), `transcript` (a voice note's words), `draft` (`{id, kind, posts, image_file_id?}`: a post or a thread, shown with its Add button), `saved` (`{kind: "facts", items}`: facts the bot kept from the message), `failed` (`{error, message}`), then `done`. `GET /v1/chat/{app}/threads/{id}` returns the messages, each assistant one with its `drafts` (`id, kind, posts, added, edit_url`) and `saved` lines, so a reload shows what the stream did.
 
 FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
 
@@ -190,8 +192,8 @@ Two parts: a pack file here, and a few things in the app.
 ### 2. Four tools on the app's MCP
 
 - `assistant_context`: what the bot may know about the workspace: `voice`, `topics`, `recent_posts`, `patterns`, `credits_left`, `out_of_credits_message`, `language`, and optionally `kept_facts` (`[{"id", "text"}]`, facts the user kept earlier and has not used, offered when the chat opens).
-- `save_draft`: saves a draft the user tapped, with its `media` (images) if any.
-- `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft.
+- `save_draft`: saves a draft the user tapped: `{text, thread?, media?}`. `text` is the first post; `thread` is the posts after it (a list of strings, left out for a single post); `media` is `[{url, alt?}]` and the picture stays on the first post.
+- `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft (the tap that adds a draft marks its facts told this way).
 - `assistant_charge`: records the cost of one model call, once per `ref` (`"<message id>:<n>"`). A message makes several calls, so it is charged several times, each ref once; a retry with the same ref adds nothing.
 
 The app's MCP accepts the session token as `Authorization: Bearer` and treats it as a "draft" key for that workspace only.

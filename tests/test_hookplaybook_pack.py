@@ -211,13 +211,8 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
         events = parse_sse(r.text)
         assert [k for k, _ in events][-1] == "done", events
         assert [p["posts"] for k, p in events if k == "draft"] == [[post]]
-        async with hp.pool.connection() as conn:  # a stored piece, as an added draft leaves one
-            await conn.execute(
-                "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, fact_ids, facts)"
-                " values (%s, 'hookplaybook', %s, %s, 'm1', 'x_post', %s, '[]', '[]')",
-                (f"piece-{workspace}", workspace, up["thread_id"], post),
-            )
-        keep = {"action_id": f"keep-{workspace}", "kind": "keep_facts", "facts": [{"text": fact}]}
+        [shown] = [p for k, p in events if k == "draft"]  # stored by its event; Add to Schedule makes an action
+        keep = {"action_id": f"add-{workspace}", "kind": "add_draft", "draft_id": shown["id"]}
         url = f"/v1/chat/hookplaybook/threads/{up['thread_id']}/actions"
         assert (await hp.client.post(url, json=keep, headers=_widget(workspace))).status_code == 200
         return up["thread_id"]

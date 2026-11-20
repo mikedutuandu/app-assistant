@@ -259,8 +259,13 @@ class _Agent:
                 if text:
                     out.append({"role": "assistant", "content": text})
                 continue
-            content = data("user", text) if text else "(No message: the user sent a file.)"
             about = self._about() if i == last else None
+            if text:
+                content = data("user", text)
+            elif about is not None:
+                content = "(No message: the user tapped an action on the draft.)"
+            else:
+                content = "(No message: the user sent a file.)"
             if about is not None:
                 content = f"(This message is about draft {about.id}.)\n{content}"
             out.append({"role": "user", "content": content})

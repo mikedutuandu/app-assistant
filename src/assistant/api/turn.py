@@ -9,8 +9,8 @@ error kinds are logged, never text.
 The events a turn streams, in the order they can come: `thread` (a new chat's id and title), `status` (`{"step"}`: what
 the bot is doing now, one of `reading`, `listening`, `thinking`, `writing`, `checking`; no user text, never charged,
 and it may repeat), `transcript` (a voice note's words), `text` (`{"delta"}`), `note`, `saved` (`{"kind": "facts",
-"items"}`), `draft` (`{"id", "kind", "posts", "image_file_id"?}`), then `done` or `failed`. (`card` is no longer sent
-by the graph; storing drafts replaces its storage next.)
+"items"}`), `draft` (`{"id", "kind", "posts", "image_file_id"?}`), then `done` or `failed`. A `draft` is stored (in
+`pieces`, with its posts) and a `saved` line is stored (in `saved_lines`) before it is sent on, so a reload shows both.
 """
 
 import asyncio
@@ -25,7 +25,6 @@ from langchain_core.messages import HumanMessage
 from psycopg.types.json import Jsonb
 
 from assistant.auth import Session
-from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import FileRecord, UploadError
 from assistant.files.read import FileReading, Meter, read_file, read_link
@@ -71,6 +70,7 @@ class TurnInput:
     text: str
     file_ids: list[str]
     ip: str
+    draft_id: str | None = None  # the draft this message is about (a tap on its Shorter or Another angle)
 
 
 class _Refused(Exception):
@@ -144,29 +144,33 @@ async def _open_thread(pool, t: TurnInput) -> tuple[str, bool]:
         return chat_id, True
 
 
-async def _save_pieces(pool, t: TurnInput, chat_id: str, message_id: str, card: dict) -> None:
-    facts = {f["id"]: f for f in card.get("facts", [])}
+async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: dict) -> None:
+    posts = draft["posts"]
     async with pool.connection() as conn:
-        for p in card.get("pieces", []):
-            told = [facts[i] for i in p.get("fact_ids", []) if i in facts]
-            await conn.execute(
-                "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-                " fact_ids, facts, dropped) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                " on conflict (id) do nothing",
-                (
-                    p["id"],
-                    t.session.app,
-                    t.session.workspace,
-                    chat_id,
-                    message_id,
-                    p["spec_kind"],
-                    p["text"],
-                    p.get("image_file_id"),
-                    Jsonb(p.get("fact_ids", [])),
-                    Jsonb([Fact.model_validate(f).model_dump() for f in told]),
-                    p.get("dropped"),
-                ),
-            )
+        await conn.execute(
+            "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
+            " fact_ids, facts, posts) values (%s, %s, %s, %s, %s, %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s)"
+            " on conflict (id) do nothing",
+            (
+                draft["id"],
+                t.session.app,
+                t.session.workspace,
+                chat_id,
+                message_id,
+                draft["kind"],
+                posts[0] if posts else "",
+                draft.get("image_file_id"),
+                Jsonb(posts),
+            ),
+        )
+
+
+async def _save_lines(pool, t: TurnInput, chat_id: str, message_id: str, saved: dict) -> None:
+    async with pool.connection() as conn:
+        await conn.execute(
+            "insert into saved_lines (id, app, workspace, thread_id, message_id, items) values (%s, %s, %s, %s, %s, %s)",
+            (new_id(), t.session.app, t.session.workspace, chat_id, message_id, Jsonb(saved.get("items", []))),
+        )
 
 
 def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str], Meter], Awaitable[list[FileReading]]]:
@@ -257,15 +261,18 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     if created:
         await emit("thread", {"thread_id": chat_id, "title": t.text[:TITLE_CHARS]})
 
-    unsaved: list[str] = []  # a card whose pieces could not be stored: its Add buttons would never work
+    unsaved: list[str] = []  # a draft that could not be stored: its Add button would never work
 
     async def on_event(kind: str, payload: dict) -> None:
-        if kind == "card":
+        if kind in ("draft", "saved"):
             try:
-                await _save_pieces(state.pool, t, chat_id, message_id, payload)
+                if kind == "draft":
+                    await _save_draft(state.pool, t, chat_id, message_id, payload)
+                else:
+                    await _save_lines(state.pool, t, chat_id, message_id, payload)
             except Exception as e:  # noqa: BLE001 - the graph must never fail because of an event
                 unsaved.append(type(e).__name__)
-                log.error("pieces not saved message=%s error=%s", message_id, type(e).__name__)
+                log.error("%s not stored message=%s error=%s", kind, message_id, type(e).__name__)
         await emit(kind, payload)
 
     on_cost, settle_charges = _cost_recorder(state, t, tools, message_id)
@@ -282,7 +289,9 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
     try:
-        inputs = {"messages": [HumanMessage(t.text)], "file_ids": t.file_ids, "draft_id": None}
+        # the turn's id rides on the user's message, so a reload can show each turn's drafts under its reply
+        human = HumanMessage(t.text, additional_kwargs={"turn": message_id})
+        inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id}
         final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
         if final.get("failed"):  # a model call failed after the turn's tools had run: their work is kept
@@ -297,7 +306,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
 
     took = time.monotonic() - started
     if failure is None and unsaved:
-        log.error("turn failed app=%s message=%s error=pieces_not_saved cost=%.6f", t.pack.id, message_id, cost)
+        log.error("turn failed app=%s message=%s error=not_stored cost=%.6f", t.pack.id, message_id, cost)
         await emit("failed", {"error": "server", "message": OUR_FAULT})
     elif failure is None:
         log.info(

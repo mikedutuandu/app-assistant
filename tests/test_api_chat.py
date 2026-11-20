@@ -462,7 +462,7 @@ async def test_thread_of_other_workspace_404(api: Api):
     r = await api.client.post("/v1/chat/real/messages", json=body, headers=api.headers("ws2"))
     assert (r.status_code, r.json()) == (404, {"error": "thread"})
     assert (await api.upload(PNG, thread=tid, workspace="ws2")).status_code == 404
-    r = await api.act(tid, {"action_id": "a1", "kind": "keep_facts", "facts": [{"text": "x"}]}, workspace="ws2")
+    r = await api.act(tid, {"action_id": "a1", "kind": "add_draft", "draft_id": "x"}, workspace="ws2")
     assert (r.status_code, r.json()) == (404, {"error": "thread"})
     r = await api.client.get("/v1/chat/real/threads", headers=api.headers("ws2"))
     assert r.json() == []
@@ -632,26 +632,57 @@ async def test_a_pending_upload_cannot_be_sent(api: Api):
 # ---- actions ----
 
 
+def add_body(action_id: str, draft_id: str) -> dict:
+    return {"action_id": action_id, "kind": "add_draft", "draft_id": draft_id}
+
+
 async def test_add_draft_twice_same_action_one_draft(api: Api):
     tid = await api.thread_row()
     pid = await api.piece_row(tid)
-    body = {"action_id": "act-1", "kind": "add_draft", "piece_id": pid}
+    body = add_body("act-1", pid)
     first = await api.act(tid, body)
     second = await api.act(tid, body)
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json() == {"draft_id": "draft-1", "edit_url": "https://app.example/drafts/draft-1"}
     assert api.tools.calls.count("save_draft") == 1
     assert api.tools.drafts[0]["text"] == LAUNCH and api.tools.drafts[0]["media"] == []
-    assert api.tools.drafts[0]["key"] == "act-1"
-    [material] = api.tools.materials
-    assert material["draft_id"] == "draft-1" and material["key"] == "act-1:facts"
+    assert api.tools.drafts[0]["thread"] == [] and api.tools.drafts[0]["key"] == "act-1"
+    assert api.tools.materials == []  # nothing told it: no facts to mark
+
+
+async def test_add_draft_still_takes_the_old_piece_id_field(api: Api):
+    tid = await api.thread_row()
+    pid = await api.piece_row(tid)
+    r = await api.act(tid, {"action_id": "old", "kind": "add_draft", "piece_id": pid})
+    assert r.status_code == 200 and r.json()["draft_id"] == "draft-1"
+
+
+async def test_add_draft_saves_a_thread(api: Api):
+    tid = await api.thread_row()
+    posts = ["First, the hook.", "Second, the number.", "Third, the ask."]
+    pid = await api.piece_row(tid, posts=posts)
+    assert (await api.act(tid, add_body("act-t", pid))).status_code == 200
+    [saved] = api.tools.drafts
+    assert saved["text"] == posts[0] and saved["thread"] == posts[1:]
+
+
+async def test_add_draft_marks_facts_told(api: Api):
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    tid = of(events, "thread")[0]["thread_id"]
+    [shown] = of(events, "draft")
+    before = len(api.tools.materials)  # save_facts saved the fact once, with no draft
+    r = await api.act(tid, add_body("act-f", shown["id"]))
+    assert r.status_code == 200
+    [material] = api.tools.materials[before:]
+    assert material["draft_id"] == r.json()["draft_id"] == "draft-1" and material["key"] == "act-f:facts"
     assert [f.text for f in material["facts"]] == [FACT]
 
 
 async def test_add_draft_sends_a_signed_image_url(api: Api):
     up = (await api.upload(PNG)).json()
     pid = await api.piece_row(up["thread_id"], image_file_id=up["file_id"])
-    r = await api.act(up["thread_id"], {"action_id": "a-img", "kind": "add_draft", "piece_id": pid})
+    r = await api.act(up["thread_id"], add_body("a-img", pid))
     assert r.status_code == 200
     [media] = api.tools.drafts[0]["media"]
     assert media["alt"] == ""
@@ -659,22 +690,19 @@ async def test_add_draft_sends_a_signed_image_url(api: Api):
     assert "Expires=" in media["url"] or "X-Amz-Expires=300" in media["url"]
 
 
-async def test_dropped_piece_409(api: Api):
+async def test_unknown_draft_404(api: Api):
     tid = await api.thread_row()
-    pid = await api.piece_row(tid, dropped="it had a link")
-    r = await api.act(tid, {"action_id": "a2", "kind": "add_draft", "piece_id": pid})
-    assert r.status_code == 409
-    assert r.json() == {"error": "dropped", "message": "This post didn't pass the checks, so it can't be added."}
+    r = await api.act(tid, add_body("a3", "nope"))
+    assert (r.status_code, r.json()) == (404, {"error": "draft"})
     assert api.tools.calls == []
-    r = await api.act(tid, {"action_id": "a3", "kind": "add_draft", "piece_id": "nope"})
-    assert (r.status_code, r.json()) == (404, {"error": "piece"})
 
 
 async def test_retry_after_tool_failure_runs_again(api: Api):
-    tid = await api.thread_row()
-    pid = await api.piece_row(tid)
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    tid, shown = of(events, "thread")[0]["thread_id"], of(events, "draft")[0]
     api.tools.errors["save_material"] = ToolError("unavailable")
-    body = {"action_id": "a4", "kind": "add_draft", "piece_id": pid}
+    body = add_body("a4", shown["id"])
     r = await api.act(tid, body)
     assert (r.status_code, r.json()) == (502, {"error": "unavailable", "message": APP_DOWN})
     del api.tools.errors["save_material"]
@@ -684,20 +712,15 @@ async def test_retry_after_tool_failure_runs_again(api: Api):
     assert len(api.tools.drafts) == 1
 
     api.tools.errors["save_material"] = ToolError("out_of_credits", "No credits left.")
-    r = await api.act(tid, {"action_id": "a5", "kind": "keep_facts", "facts": [{"text": FACT}]})
+    r = await api.act(tid, add_body("a5", shown["id"]))
     assert (r.status_code, r.json()) == (402, {"error": "out_of_credits", "message": "No credits left."})
 
 
-async def test_keep_facts_once(api: Api):
+async def test_keep_facts_is_gone(api: Api):
     tid = await api.thread_row()
-    body = {"action_id": "keep-1", "kind": "keep_facts", "facts": [{"text": FACT}, {"text": "It is for small teams"}]}
-    assert (await api.act(tid, body)).json() == {"kept": 2}
-    assert (await api.act(tid, body)).json() == {"kept": 2}
-    [material] = api.tools.materials
-    assert material["draft_id"] is None and material["key"] == "keep-1"
-    assert [f.text for f in material["facts"]] == [FACT, "It is for small teams"]
-    r = await api.act(tid, {"action_id": "", "kind": "keep_facts", "facts": []})
+    r = await api.act(tid, {"action_id": "keep-1", "kind": "keep_facts", "facts": [{"text": FACT}]})
     assert r.status_code == 422
+    assert api.tools.calls == []
 
 
 # ---- delete ----
@@ -709,8 +732,8 @@ async def test_delete_workspace_removes_threads_files_and_storage(api: Api):
     api.llm.script = happy_script()
     api.llm.add("IMAGE_READER", {"text": "a screenshot", "unsure": []})
     await api.send(FACT, thread=tid, file_ids=[up["file_id"]])
-    await api.piece_row(tid)
-    assert (await api.act(tid, {"action_id": "k1", "kind": "keep_facts", "facts": [{"text": FACT}]})).status_code == 200
+    pid = await api.piece_row(tid)
+    assert (await api.act(tid, add_body("k1", pid))).status_code == 200
     other = (await api.upload(PNG, workspace="ws2")).json()
     config = {"configurable": {"thread_id": thread_id("real", "ws1", tid)}}
     assert await api.checkpointer.aget_tuple(config) is not None
@@ -748,46 +771,51 @@ async def test_delete_token_wrong_access_or_workspace(api: Api):
 
 async def test_pending_action_409_until_stale(api: Api):
     tid = await api.thread_row()
+    pid = await api.piece_row(tid)
     async with api.pool.connection() as conn:
         await conn.execute(
             "insert into actions (id, app, workspace, thread_id, kind, result) values"
-            " ('real:ws1:p1', 'real', 'ws1', %s, 'keep_facts', 'null'::jsonb)",
+            " ('real:ws1:p1', 'real', 'ws1', %s, 'add_draft', 'null'::jsonb)",
             (tid,),
         )
-    body = {"action_id": "p1", "kind": "keep_facts", "facts": [{"text": FACT}]}
+    body = add_body("p1", pid)
     r = await api.act(tid, body)
     assert (r.status_code, r.json()["error"]) == (409, "pending")
     assert api.tools.calls == []
     async with api.pool.connection() as conn:  # the run that claimed it died long ago
         await conn.execute("update actions set created_at = now() - interval '3 minutes' where id = 'real:ws1:p1'")
     r = await api.act(tid, body)
-    assert r.json() == {"kept": 1}
+    assert r.json() == {"draft_id": "draft-1", "edit_url": "https://app.example/drafts/draft-1"}
 
 
 async def test_action_ids_are_per_workspace(api: Api):
-    body = {"action_id": "same", "kind": "keep_facts", "facts": [{"text": FACT}]}
-    assert (await api.act(await api.thread_row(), body)).json() == {"kept": 1}
-    other = {**body, "facts": [{"text": "a"}, {"text": "b"}]}
-    assert (await api.act(await api.thread_row("ws2"), other, workspace="ws2")).json() == {"kept": 2}
-    assert len(api.tools.materials) == 2
+    t1, t2 = await api.thread_row(), await api.thread_row("ws2")
+    one, two = await api.piece_row(t1), await api.piece_row(t2, workspace="ws2")
+    mine = await api.act(t1, add_body("same", one))
+    theirs = await api.act(t2, add_body("same", two), workspace="ws2")
+    assert mine.status_code == theirs.status_code == 200
+    assert api.tools.calls.count("save_draft") == 2  # each workspace's own action ran
 
 
 async def test_colon_ids_cannot_read_or_take_over_another_workspaces_action(api: Api):
     # "real" + "ws1:x" + "a" and "real" + "ws1" + "x:a" compose the same key "real:ws1:x:a".
-    body = {"action_id": "a", "kind": "keep_facts", "facts": [{"text": FACT}]}
-    assert (await api.act(await api.thread_row("ws1:x"), body, workspace="ws1:x")).json() == {"kept": 1}
-    other = {"action_id": "x:a", "kind": "keep_facts", "facts": [{"text": "a"}, {"text": "b"}]}
-    r = await api.act(await api.thread_row("ws1"), other, workspace="ws1")
+    t1 = await api.thread_row("ws1:x")
+    p1 = await api.piece_row(t1, workspace="ws1:x")
+    assert (await api.act(t1, add_body("a", p1), workspace="ws1:x")).status_code == 200
+    t2 = await api.thread_row("ws1")
+    p2 = await api.piece_row(t2, posts=["another post"])
+    other = add_body("x:a", p2)
+    r = await api.act(t2, other, workspace="ws1")
     assert r.status_code == 409
-    assert "kept" not in r.json()
+    assert "draft_id" not in r.json()
     async with api.pool.connection() as conn:  # a stale pending row of the other workspace is not re-claimed
         await conn.execute(
             "update actions set result = 'null'::jsonb, created_at = now() - interval '3 minutes'"
             " where id = 'real:ws1:x:a'"
         )
-    r = await api.act(await api.thread_row("ws1"), other, workspace="ws1")
+    r = await api.act(t2, other, workspace="ws1")
     assert r.status_code == 409
-    assert len(api.tools.materials) == 1
+    assert len(api.tools.drafts) == 1
     async with api.pool.connection() as conn:
         cur = await conn.execute("select workspace from actions where id = 'real:ws1:x:a'")
         assert (await cur.fetchone())[0] == "ws1:x"
@@ -795,59 +823,114 @@ async def test_colon_ids_cannot_read_or_take_over_another_workspaces_action(api:
 
 async def test_actions_limited_to_60_an_hour_per_workspace(api: Api):
     tid = await api.thread_row()
+    pid = await api.piece_row(tid)
     async with api.pool.connection() as conn:
         await conn.execute(
             "insert into counters (key, value, window_ends) values ('action:real:ws1', 59, now() + interval '1 hour')"
         )
-    body = {"action_id": "k1", "kind": "keep_facts", "facts": [{"text": FACT}]}
-    assert (await api.act(tid, body)).status_code == 200
-    r = await api.act(tid, {**body, "action_id": "k2"})
+    assert (await api.act(tid, add_body("k1", pid))).status_code == 200
+    r = await api.act(tid, add_body("k2", pid))
     assert r.status_code == 429
     assert r.json() == {"error": "limit", "message": "You've done that a lot this hour. Try again a bit later."}
-    assert len(api.tools.materials) == 1
+    assert len(api.tools.drafts) == 1
     other = await api.thread_row("ws2")
-    assert (await api.act(other, {**body, "action_id": "k3"}, workspace="ws2")).status_code == 200
-
-
-async def test_keep_facts_caps_fact_length_and_count(api: Api):
-    tid = await api.thread_row()
-    ok = await api.act(tid, {"action_id": "c1", "kind": "keep_facts", "facts": [{"text": "x" * 500}]})
-    assert ok.status_code == 200
-    long = await api.act(tid, {"action_id": "c2", "kind": "keep_facts", "facts": [{"text": "x" * 501}]})
-    assert long.status_code == 422
-    thirty = [{"text": f"fact {i}"} for i in range(30)]
-    assert (await api.act(tid, {"action_id": "c3", "kind": "keep_facts", "facts": thirty})).status_code == 200
-    many = await api.act(tid, {"action_id": "c4", "kind": "keep_facts", "facts": [*thirty, {"text": "one more"}]})
-    assert many.status_code == 422
-    assert len(api.tools.materials) == 2
+    other_piece = await api.piece_row(other, workspace="ws2")
+    assert (await api.act(other, add_body("k3", other_piece), workspace="ws2")).status_code == 200
 
 
 # ---- review round 1 ----
 
 
-async def test_pieces_not_saved_shows_card_fails_turn_and_charges_once(api: Api, monkeypatch):
-    """turn.py still stores `card` events until drafts are stored: a graph that shows a card whose pieces can't be
-    stored fails the turn."""
+async def test_draft_event_is_stored(api: Api):
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    [shown] = of(events, "draft")
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id, spec_kind, text, posts, image_file_id from pieces where workspace = 'ws1'")
+        assert await cur.fetchall() == [(shown["id"], "x_post", LAUNCH, [LAUNCH], None)]
+        cur = await conn.execute("select items from saved_lines where workspace = 'ws1'")
+        assert await cur.fetchall() == [([FACT],)]
+
+
+async def test_draft_not_stored_shows_it_fails_turn_and_charges_once(api: Api, monkeypatch):
+    """A graph that shows a draft that can't be stored fails the turn (its Add button would never work)."""
 
     async def broken(*_args):
         raise RuntimeError("database went away")
 
-    def carding_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
+    def drafting_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
         class Graph:
             async def ainvoke(self, state, config):
                 await on_cost(0.001, 1)
-                await on_event("card", {"pieces": [{"id": "p1", "spec_kind": "x_post", "text": LAUNCH}], "facts": []})
+                await on_event("draft", {"id": "d1", "kind": "x_post", "posts": [LAUNCH]})
                 return {"cost_usd": 0.001}
 
         return Graph()
 
-    monkeypatch.setattr(turn, "_save_pieces", broken)
-    monkeypatch.setattr(turn, "build_graph", carding_graph)
+    monkeypatch.setattr(turn, "_save_draft", broken)
+    monkeypatch.setattr(turn, "build_graph", drafting_graph)
     events = await api.send(FACT)
-    assert len(of(events, "card")) == 1  # what was written is still shown
+    assert len(of(events, "draft")) == 1  # what was written is still shown
     assert of(events, "done") == []
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)]
+
+
+async def test_message_with_draft_id_of_another_thread_is_404(api: Api):
+    mine, other = await api.thread_row(), await api.thread_row()
+    pid = await api.piece_row(other)
+    for thread, draft in ((mine, pid), (None, pid), (mine, "nope")):
+        body = {"thread_id": thread, "text": "Make it shorter", "file_ids": [], "draft_id": draft}
+        r = await api.client.post("/v1/chat/real/messages", json=body, headers=api.headers())
+        assert (r.status_code, r.json()) == (404, {"error": "draft"})
+    r = await api.client.post(
+        "/v1/chat/real/messages",
+        json={"thread_id": other, "text": "x", "draft_id": pid},
+        headers=api.headers("ws2"),
+    )
+    assert r.status_code == 404
+    assert api.llm.calls == []
+
+
+async def test_message_with_a_draft_id_reaches_the_graph(api: Api):
+    api.llm.script = happy_script()
+    first = await api.send(FACT)
+    tid, [shown] = of(first, "thread")[0]["thread_id"], of(first, "draft")
+    api.llm.add("CONVERSE", "Shorter it is.")
+    events = await api.send("Make it shorter", thread=tid, draft_id=shown["id"])
+    assert of(events, "done")
+    last = api.llm.calls[-1]["messages"][-1]["content"]
+    assert f"This message is about draft {shown['id']}" in last
+
+
+async def test_thread_read_returns_drafts_without_charge_refs(api: Api):
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    tid, [shown] = of(events, "thread")[0]["thread_id"], of(events, "draft")
+    [done] = of(events, "done")
+    r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
+    body = r.json()
+    assert set(body) == {"messages"}
+    user, bot = body["messages"]
+    assert user == {"role": "user", "text": FACT}
+    assert bot["text"] == REPLY and bot["saved"] == [FACT]
+    assert bot["drafts"] == [{"id": shown["id"], "kind": "x_post", "posts": [LAUNCH], "added": False, "edit_url": None}]
+    assert done["message_id"] not in r.text  # the app's charge ref never reaches the browser
+
+    added = await api.act(tid, add_body("act-r", shown["id"]))
+    body = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    assert body["messages"][1]["drafts"][0]["added"] is True
+    assert body["messages"][1]["drafts"][0]["edit_url"] == added.json()["edit_url"]
+
+
+async def test_a_turn_with_a_draft_and_no_words_still_shows_it_on_reload(api: Api):
+    api.llm.script = happy_script()
+    api.llm.script["CONVERSE"][1] = ""
+    events = await api.send(FACT)
+    tid = of(events, "thread")[0]["thread_id"]
+    body = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    assert body["messages"][1]["text"] == "" and len(body["messages"][1]["drafts"]) == 1
 
 
 async def test_message_over_4000_chars_400(api: Api):
@@ -885,12 +968,12 @@ async def test_unhandled_error_is_json_500_with_cors_and_no_text_logged(api: Api
 
         # an action whose tool raises something unexpected frees its claim and answers in JSON too
         tid = await api.thread_row()
-        api.tools.errors["save_material"] = ValueError(secret_text)
-        body = {"action_id": "x1", "kind": "keep_facts", "facts": [{"text": FACT}]}
+        body = add_body("x1", await api.piece_row(tid))
+        api.tools.errors["save_draft"] = ValueError(secret_text)
         r = await api.act(tid, body)
         assert (r.status_code, r.json()["error"]) == (500, "server")
-        del api.tools.errors["save_material"]
-        assert (await api.act(tid, body)).json() == {"kept": 1}
+        del api.tools.errors["save_draft"]
+        assert (await api.act(tid, body)).json()["draft_id"] == "draft-1"
     assert secret_text not in caplog.text
     assert "Traceback" not in caplog.text
     assert "ValueError" in caplog.text
@@ -937,7 +1020,7 @@ async def test_add_draft_never_sends_an_image_from_another_thread(api: Api):
     elsewhere = (await api.upload(PNG)).json()
     tid = await api.thread_row()
     pid = await api.piece_row(tid, image_file_id=elsewhere["file_id"])
-    r = await api.act(tid, {"action_id": "a-x", "kind": "add_draft", "piece_id": pid})
+    r = await api.act(tid, add_body("a-x", pid))
     assert r.status_code == 200
     assert api.tools.drafts[0]["media"] == []
 

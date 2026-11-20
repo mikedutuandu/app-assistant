@@ -138,12 +138,12 @@ class FakeTools:
         self._record("context")
         return self._context
 
-    async def save_draft(self, text: str, media: list[dict], key: str) -> SavedDraft:
+    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
         self._record("save_draft")
         for d in self.drafts:
             if d["key"] == key:
                 return SavedDraft(id=d["id"], edit_url=d["edit_url"])
-        draft = {"id": f"draft-{len(self.drafts) + 1}", "text": text, "media": media, "key": key}
+        draft = {"id": f"draft-{len(self.drafts) + 1}", "text": text, "thread": thread, "media": media, "key": key}
         draft["edit_url"] = f"https://app.example/drafts/{draft['id']}"
         self.drafts.append(draft)
         return SavedDraft(id=draft["id"], edit_url=draft["edit_url"])

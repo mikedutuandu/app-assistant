@@ -112,9 +112,10 @@ class Api:
         file_ids: list[str] | None = None,
         workspace: str = "ws1",
         app: str = "real",
+        draft_id: str | None = None,
         **headers: str,
     ) -> list[tuple[str, dict]]:
-        body = {"thread_id": thread, "text": text, "file_ids": file_ids or []}
+        body = {"thread_id": thread, "text": text, "file_ids": file_ids or [], "draft_id": draft_id}
         r = await self.client.post(
             f"/v1/chat/{app}/messages", json=body, headers=self.headers(workspace, app, **headers)
         )
@@ -175,13 +176,24 @@ class Api:
             )
         return tid
 
-    async def piece_row(self, thread: str, dropped: str | None = None, image_file_id: str | None = None) -> str:
+    async def piece_row(
+        self, thread: str, posts: list[str] | None = None, image_file_id: str | None = None, workspace: str = "ws1"
+    ) -> str:
+        """A stored draft, as a `draft` event leaves it."""
         pid = new_id()
-        facts = [{"id": "f1", "text": FACT, "numbers": [2.0, 2.0], "source": "typed", "file_id": None}]
+        posts = posts or [LAUNCH]
         async with self.pool.connection() as conn:
             await conn.execute(
                 "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-                " fact_ids, facts, dropped) values (%s, 'real', 'ws1', %s, 'm1', 'launch_post', %s, %s, %s, %s, %s)",
-                (pid, thread, LAUNCH, image_file_id, Jsonb(["f1"]), Jsonb(facts), dropped),
+                " fact_ids, facts, posts) values (%s, 'real', %s, %s, 'm1', %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s)",
+                (
+                    pid,
+                    workspace,
+                    thread,
+                    "x_post" if len(posts) == 1 else "x_thread",
+                    posts[0],
+                    image_file_id,
+                    Jsonb(posts),
+                ),
             )
         return pid
