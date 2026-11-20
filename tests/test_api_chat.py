@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import timedelta
@@ -769,6 +770,8 @@ async def test_unhandled_error_is_json_500_with_cors_and_no_text_logged(api: Api
     async def boom(*_args):
         raise ValueError(secret_text)
 
+    own = logging.getLogger("assistant")  # it does not propagate to the root logger, where caplog listens
+    monkeypatch.setattr(own, "handlers", [*own.handlers, caplog.handler])
     with caplog.at_level("DEBUG"):
         with monkeypatch.context() as m:
             m.setattr(chat, "owned_thread", boom)

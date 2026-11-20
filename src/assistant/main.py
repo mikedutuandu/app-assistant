@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,10 +25,32 @@ from assistant.packs import AppPack, PackError, load_packs
 from assistant.tools import McpHttpTools
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
+LOG_FORMAT = "%(levelname)s %(name)s %(message)s"
+
+
+class _StdoutHandler(logging.StreamHandler):
+    """Marks the one handler this module owns, so a second create_app replaces it instead of adding another."""
+
+
+def log_to_stdout() -> None:
+    """The service's own lines (ids, timings, costs, error kinds) at INFO on stdout, where Cloud Run reads them.
+
+    Only the "assistant" logger, which does not propagate: the root logger is left alone, so libraries such as
+    httpx (which logs every URL it calls) stay at their quiet defaults.
+    """
+    logger = logging.getLogger("assistant")
+    for old in [h for h in logger.handlers if isinstance(h, _StdoutHandler)]:
+        logger.removeHandler(old)
+    handler = _StdoutHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    log_to_stdout()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
