@@ -34,7 +34,7 @@ message_usd_cap: 0.1
 
 
 def test_loads_demo_pack():
-    pack = load_packs(Path("apps"))["demo"]
+    pack = load_packs(Path("apps"), base_url="http://testserver")["demo"]
     assert pack.files.per_message == 2
     assert pack.files.kinds == ["image", "voice"]
     assert pack.files.voice_seconds == 60
@@ -53,27 +53,57 @@ def test_duplicate_id_names_both_files(tmp_path: Path):
     (tmp_path / "a.yaml").write_text(_pack_yaml("same"))
     (tmp_path / "b.yaml").write_text(_pack_yaml("same"))
     with pytest.raises(PackError) as err:
-        load_packs(tmp_path)
+        load_packs(tmp_path, "http://testserver")
     assert "a.yaml" in str(err.value) and "b.yaml" in str(err.value)
 
 
 def test_invalid_yaml_names_file(tmp_path: Path):
     (tmp_path / "bad.yaml").write_text("id: [unclosed")
     with pytest.raises(PackError, match="bad.yaml"):
-        load_packs(tmp_path)
+        load_packs(tmp_path, "http://testserver")
 
 
 def test_invalid_pack_names_file(tmp_path: Path):
     (tmp_path / "thin.yaml").write_text("id: thin\n")
     with pytest.raises(PackError, match="thin.yaml"):
-        load_packs(tmp_path)
+        load_packs(tmp_path, "http://testserver")
 
 
 def test_secret_unset_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (tmp_path / "a.yaml").write_text(_pack_yaml("a"))
-    pack = load_packs(tmp_path)["a"]
+    pack = load_packs(tmp_path, "http://testserver")["a"]
     monkeypatch.delenv("TEST_PACK_SECRET", raising=False)
     with pytest.raises(PackError, match="TEST_PACK_SECRET"):
         pack.secret()
     monkeypatch.setenv("TEST_PACK_SECRET", "s3cret")
     assert pack.secret() == "s3cret"
+
+
+def test_base_placeholder_without_base_url_raises(tmp_path: Path):
+    (tmp_path / "a.yaml").write_text(_pack_yaml("a"))
+    with pytest.raises(PackError, match="a.yaml"):
+        load_packs(tmp_path)
+    with pytest.raises(PackError, match="public_base_url"):
+        load_packs(tmp_path, "  ")
+
+
+def test_no_base_placeholder_needs_no_base_url(tmp_path: Path):
+    text = _pack_yaml("a").replace("{base}", "https://app.example")
+    (tmp_path / "a.yaml").write_text(text)
+    pack = load_packs(tmp_path)["a"]
+    assert pack.mcp_url == "https://app.example/a/mcp"
+    assert pack.allowed_origins == ["https://app.example"]
+
+
+def test_tools_must_name_all_four(tmp_path: Path):
+    text = _pack_yaml("a").replace("  charge: assistant_charge\n", "")
+    (tmp_path / "a.yaml").write_text(text)
+    with pytest.raises(PackError, match="missing: charge"):
+        load_packs(tmp_path, "http://testserver")
+
+
+def test_tool_names_must_not_be_empty(tmp_path: Path):
+    text = _pack_yaml("a").replace("save_draft: save_draft", 'save_draft: ""')
+    (tmp_path / "a.yaml").write_text(text)
+    with pytest.raises(PackError, match="missing: save_draft"):
+        load_packs(tmp_path, "http://testserver")

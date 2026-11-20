@@ -41,6 +41,15 @@ async def test_chat_returns_text_and_cost():
 
 
 @respx.mock
+async def test_referer_is_the_deployments_public_url():
+    route = respx.post(CHAT).mock(return_value=ok("x"))
+    await Llm("k", referer="https://bot.example.com").chat(MSGS, "a/m", [], 10)
+    await Llm("k").chat(MSGS, "a/m", [], 10)
+    assert route.calls[0].request.headers["http-referer"] == "https://bot.example.com"
+    assert "http-referer" not in route.calls[1].request.headers
+
+
+@respx.mock
 async def test_missing_usage_costs_zero():
     respx.post(CHAT).mock(return_value=ok("x", None))
     assert (await Llm("k").chat(MSGS, "a/m", [], 10)).cost_usd == 0.0

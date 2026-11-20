@@ -93,16 +93,16 @@ def _classify(resp: httpx.Response, body: Any) -> None:
 
 
 class Llm:
-    def __init__(self, api_key: str, client: httpx.AsyncClient | None = None):
+    def __init__(self, api_key: str, client: httpx.AsyncClient | None = None, referer: str = ""):
         self._key = api_key
         self._client = client or httpx.AsyncClient()
+        self._referer = referer
 
     def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._key}",
-            "HTTP-Referer": "https://github.com/mikedutuandu/app-assistant",
-            "X-Title": "app-assistant",
-        }
+        headers = {"Authorization": f"Bearer {self._key}", "X-Title": "app-assistant"}
+        if self._referer:
+            headers["HTTP-Referer"] = self._referer  # OpenRouter's app attribution: this deployment's public URL
+        return headers
 
     async def _once(
         self,

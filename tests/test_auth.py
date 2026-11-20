@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 import pytest
 
-from assistant.auth import AuthError, Session, mint_session, verify_session
+from assistant.auth import AuthError, Session, mint_session, verify_delete_token, verify_session
 from assistant.packs import AppPack
 
 SECRET = "s" * 64
@@ -122,3 +122,27 @@ def test_other_hmac_algorithm_is_invalid():
 
 def test_non_string_sub_is_invalid():
     assert _reason(_raw(_claims(sub=123)), _pack()) == "invalid"
+
+
+def _delete_reason(token: str, pack: AppPack) -> str:
+    with pytest.raises(AuthError) as err:
+        verify_delete_token(token, pack)
+    return err.value.reason
+
+
+def test_delete_token_returns_workspace():
+    assert verify_delete_token(_raw(_claims(access="delete", sub="ws-9")), _pack()) == "ws-9"
+
+
+def test_delete_token_refuses_a_draft_token_and_the_reverse():
+    assert _delete_reason(mint_session(_pack(), "ws-1"), _pack()) == "wrong_access"
+    assert _reason(_raw(_claims(access="delete")), _pack()) == "wrong_access"
+
+
+def test_delete_token_checks_like_a_session():
+    pack = _pack()
+    now = int(time.time())
+    assert _delete_reason(_raw(_claims(access="delete", iat=now - 60, exp=now - 1)), pack) == "expired"
+    assert _delete_reason(_raw(_claims(access="delete", iss="other-app")), pack) == "wrong_app"
+    assert _delete_reason(_raw(_claims(access="delete"), "o" * 64), pack) == "invalid"
+    assert _delete_reason(_raw(_claims(access="delete", iat=now, exp=now + 3601)), pack) == "invalid"

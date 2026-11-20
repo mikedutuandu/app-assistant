@@ -49,7 +49,8 @@ def mint_session(pack: AppPack, workspace: str, ttl: timedelta = MAX_TTL) -> str
     return jwt.encode(claims, pack.secret(), algorithm="HS256")
 
 
-def verify_session(token: str, pack: AppPack) -> Session:
+def _verify(token: str, pack: AppPack, access: str) -> dict:
+    """The checked claims of a token for `pack` whose `access` must be `access`; AuthError otherwise."""
     try:
         # Leeway covers clock skew on iat; expiry itself is checked strictly below.
         claims = jwt.decode(
@@ -71,15 +72,24 @@ def verify_session(token: str, pack: AppPack) -> Session:
         raise AuthError("expired")
     if iss != pack.id:
         raise AuthError("wrong_app")
-    if claims.get("access") != "draft":
+    if claims.get("access") != access:
         raise AuthError("wrong_access")
     if exp - iat > MAX_TTL.total_seconds():
         raise AuthError("invalid")
+    return claims
 
+
+def verify_session(token: str, pack: AppPack) -> Session:
+    claims = _verify(token, pack, "draft")
     return Session(
-        app=iss,
-        workspace=sub,
+        app=claims["iss"],
+        workspace=claims["sub"],
         access="draft",
         token=token,
-        expires_at=datetime.fromtimestamp(exp, UTC),
+        expires_at=datetime.fromtimestamp(claims["exp"], UTC),
     )
+
+
+def verify_delete_token(token: str, pack: AppPack) -> str:
+    """The workspace a delete token (access "delete", minted by the app with the pack's secret) may delete."""
+    return _verify(token, pack, "delete")["sub"]

@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
+
+TOOL_KEYS = ("context", "save_draft", "save_material", "charge")
 
 
 class PackError(Exception):
@@ -52,6 +54,14 @@ class AppPack(BaseModel):
     message_usd_cap: float
     demo: bool = False
 
+    @field_validator("tools")
+    @classmethod
+    def _all_four_tools(cls, tools: dict[str, str]) -> dict[str, str]:
+        missing = [k for k in TOOL_KEYS if not (tools.get(k) or "").strip()]
+        if missing:
+            raise ValueError(f"tools must name all four of {', '.join(TOOL_KEYS)}; missing: {', '.join(missing)}")
+        return tools
+
     def secret(self) -> str:
         value = os.environ.get(self.secret_env)
         if not value:
@@ -60,7 +70,7 @@ class AppPack(BaseModel):
 
 
 def load_packs(dir: Path, base_url: str = "") -> dict[str, AppPack]:
-    base = base_url.rstrip("/")
+    base = base_url.strip().rstrip("/")
     packs: dict[str, AppPack] = {}
     origin_files: dict[str, Path] = {}
     for path in sorted([*dir.glob("*.yaml"), *dir.glob("*.yml")]):
@@ -74,6 +84,8 @@ def load_packs(dir: Path, base_url: str = "") -> dict[str, AppPack]:
             pack = AppPack.model_validate(raw)
         except ValidationError as exc:
             raise PackError(f"{path}: invalid pack: {exc}") from exc
+        if not base and any("{base}" in v for v in [pack.mcp_url, *pack.allowed_origins]):
+            raise PackError(f"{path}: the pack uses {{base}} but public_base_url is empty")
         pack = pack.model_copy(
             update={
                 "mcp_url": pack.mcp_url.replace("{base}", base),
