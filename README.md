@@ -71,9 +71,9 @@ Cold start: `import assistant.asgi` takes about 1.08 s before and 1.07 s after t
    The bot sniffs the stored bytes and deletes anything that is not an image, a PDF or a voice format (webm, ogg, mp4/m4a, mp3, wav); the bucket's list is a second fence in front of it. (`application/octet-stream` is for a browser that does not know a file's type.) The per-app caps (image 10 MB, PDF 20 MB, voice 25 MB) are enforced by the bot, not by the bucket.
 2. Storage's **S3** settings page (`https://supabase.com/dashboard/project/REF/storage/s3`): make sure the S3 connection is enabled; it shows the endpoint and the region.
 3. Create an **access key** there: it shows an access key id and a secret once. They give full access to every bucket of the project (they bypass Storage's row-level policies), so they go into Vercel environment variables only (mark them Sensitive).
-4. From Project Settings → API: the project URL (`SUPABASE_URL`, `https://REF.supabase.co`) and the **secret (service role) key** (`SUPABASE_SERVICE_KEY`). The bot uses them to ask Supabase for the signed upload links.
+4. From Project Settings → API Keys: the project URL (`SUPABASE_URL`, `https://REF.supabase.co`) and a **secret key** (`sb_secret_…`, as `SUPABASE_SERVICE_KEY`). Use the new secret key, not the legacy `service_role` JWT: Supabase retires the legacy keys at the end of 2026. The bot uses them to ask Supabase for the signed upload links.
 
-> **Warning.** If either `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing, uploads **silently fall back to the S3 presigned PUT** (see "Alternative: another S3-compatible store"). Nothing fails at startup, and on Supabase's S3 endpoint that fallback may not work from a browser. Set both.
+> **Warning.** If either `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing, uploads **silently fall back to the S3 presigned PUT** (see "Alternative: another S3-compatible store"). Nothing fails at startup, and on Supabase's S3 endpoint that fallback may not work from a browser. Set both. The startup log names the one in use: `uploads: supabase` or `uploads: s3`.
 
 The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co/storage/v1/s3`; the `https://REF.storage.supabase.co/storage/v1/s3` form works too), `S3_REGION=` the region shown there (for example `ap-southeast-1`), `S3_BUCKET=BUCKET`, and the key id and secret as `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The bot still reads, checks and deletes files through them.
 
@@ -83,7 +83,7 @@ The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase
 
 Then put the function next to the database: Settings → Functions → **Function Region**, the Vercel region closest to the Supabase project's region (for example `sin1` for `ap-southeast-1`; Supabase shows its region under Project Settings → General). New projects run in `iad1` (Washington, D.C.), and from there every query, checkpoint write and storage call to Singapore costs about 230 ms, dozens of times per turn, and a cold start gains seconds. Hobby allows one region. You can also set it in `vercel.json` as `"regions": ["sin1"]`; the repo leaves it out because the right region depends on where your Supabase project is.
 
-**5. Environment variables.** Settings → Environment Variables, for Production (mark every secret Sensitive). Everything in `.env.example`:
+**5. Environment variables.** Settings → Environment Variables, for Production and Preview (mark every secret Sensitive); without them a Preview deployment fails at start. A Preview then uses the production database and bucket, so only deploy previews you trust. Everything in `.env.example`:
 
 | Variable | Value |
 |---|---|
@@ -91,7 +91,7 @@ Then put the function next to the database: Settings → Functions → **Functio
 | `DATABASE_URL` | the Supabase **Session pooler** string (port 5432) |
 | `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the Supabase S3 values above |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key, for the signed upload links |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key (`sb_secret_…`), for the signed upload links |
 | `CRON_SECRET` | `openssl rand -hex 32`: Vercel Cron sends it as `Authorization: Bearer ...` to `/internal/cleanup`, which refuses everything else (and is off while it is unset) |
 | `PUBLIC_BASE_URL` | the production domain, `https://bot.example.com` (no trailing slash) |
 | `DEMO_SESSION_SECRET` | `openssl rand -hex 32` |
@@ -158,11 +158,11 @@ The service refuses to start while any pack's secret variable is unset.
 
 HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools on its MCP (`https://hookplaybook.com/api/v1/mcp`), the session route `/api/assistant/session`, and the call that deletes a workspace's data here when the workspace is deleted there.
 
-- **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
+- **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production and Preview), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
 - **Origin.** Only `https://hookplaybook.com` (the dashboard is at `/dashboard` on it) may use the widget.
 - **Posts.** Two X posts per card (280 characters, no links, no long dashes, may carry one of the user's pictures). Saving goes through `save_draft`, which copies the picture into the draft.
 - **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.
-- **Charge.** `assistant_charge` charges once per `ref` (the message id). The browser first sees that id in the `done` event, after the charge.
+- **Charge.** `assistant_charge` is called once per model call, as it ends, with the ref `"<message id>:<n>"` (n counts the message's calls from 1), and charges once per `ref`: a message makes several charges. The browser first sees the message id in the `done` event, after every charge.
 
 ## Add an app
 
@@ -192,7 +192,7 @@ Two parts: a pack file here, and a few things in the app.
 - `assistant_context`: what the bot may know about the workspace: `voice`, `topics`, `recent_posts`, `patterns`, `credits_left`, `out_of_credits_message`, `language`, and optionally `kept_facts` (`[{"id", "text"}]`, facts the user kept earlier and has not used, offered when the chat opens).
 - `save_draft`: saves a draft the user tapped, with its `media` (images) if any.
 - `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft.
-- `assistant_charge`: records the cost of one message, once per message id.
+- `assistant_charge`: records the cost of one model call, once per `ref` (`"<message id>:<n>"`). A message makes several calls, so it is charged several times, each ref once; a retry with the same ref adds nothing.
 
 The app's MCP accepts the session token as `Authorization: Bearer` and treats it as a "draft" key for that workspace only.
 

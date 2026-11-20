@@ -134,7 +134,7 @@ def test_pool_sizes_default_to_a_small_budget(test_settings):
     assert (test_settings.db_schema, test_settings.db_pool_max, test_settings.saver_pool_max) == ("assistant", 2, 1)
 
 
-async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema):
+async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch, fresh_schema, capsys):
     url, schema = fresh_schema
     monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
     monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
@@ -169,6 +169,7 @@ async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, m
             cur = await conn.execute("select count(*) from threads")
             assert (await cur.fetchone())[0] >= 0
     assert http.is_closed
+    assert "uploads: s3" in capsys.readouterr().out  # a missing SUPABASE_* shows in the log
 
 
 async def test_lifespan_fails_without_packs(test_settings):

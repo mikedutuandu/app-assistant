@@ -28,6 +28,8 @@ class Storage:
             if settings.supabase_url and settings.supabase_service_key
             else None
         )
+        # Where the browser uploads: Supabase signed upload links, or an S3 presigned PUT when either SUPABASE_* is unset.
+        self.upload_backend = "supabase" if self._supabase is not None else "s3"
         self._client = boto3.client(
             "s3",
             endpoint_url=settings.s3_endpoint or None,

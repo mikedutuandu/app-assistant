@@ -22,6 +22,7 @@ from assistant.tools import McpHttpTools
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
 LOG_FORMAT = "%(levelname)s %(name)s %(message)s"
+log = logging.getLogger("assistant.main")
 
 
 class _StdoutHandler(logging.StreamHandler):
@@ -69,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.pool = pool
             app.state.checkpointer = checkpointer
             app.state.storage = Storage(settings)
+            log.info("uploads: %s", app.state.storage.upload_backend)  # a missing SUPABASE_* shows here
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
             def tools_for(pack: AppPack, session: Session) -> McpHttpTools:
