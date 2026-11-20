@@ -20,7 +20,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 from selectolax.lexbor import LexborHTMLParser
 
-from assistant.files.intake import FileRecord, UploadError
+from assistant.files.intake import FileRecord, UploadError, check_content
 from assistant.files.storage import Storage
 from assistant.graph.prompts import IMAGE_READER
 from assistant.llm import Llm, LlmError
@@ -35,6 +35,7 @@ LINK_MAX_BYTES = 2 * 1024 * 1024
 LINK_TIMEOUT = 10.0
 LINK_MAX_REDIRECTS = 3
 LINK_ERROR = "That link can't be opened."
+FILE_CHANGED = "That file changed after it was checked. Upload it again."
 _AUDIO_FORMATS = {
     "audio/mp4": "m4a",
     "audio/mpeg": "mp3",
@@ -128,13 +129,28 @@ async def _read_pdf(rec: FileRecord, data: bytes, pack: AppPack, llm: Llm) -> Fi
     return FileReading(file_id=rec.id, kind="pdf", text=joined, unsure=unsure, cost_usd=spent)
 
 
+async def _checked_bytes(rec: FileRecord, pack: AppPack, storage: Storage) -> bytes:
+    """The stored bytes, only if they are still what finish checked: the same size (read before the object is) and
+    the same kind by content within the pack's caps. Otherwise UploadError, which the turn tells the user and skips."""
+    if await asyncio.to_thread(storage.head, rec.storage_key) != rec.bytes:
+        raise UploadError("file", FILE_CHANGED)
+    data = await asyncio.to_thread(storage.get, rec.storage_key)
+    try:
+        kind, _mime = check_content(pack, data)
+    except UploadError:
+        raise UploadError("file", FILE_CHANGED) from None
+    if len(data) != rec.bytes or kind != rec.kind:
+        raise UploadError("file", FILE_CHANGED)
+    return data
+
+
 async def read_file(rec: FileRecord, pack: AppPack, llm: Llm, storage: Storage, pool) -> FileReading:
     async with pool.connection() as conn:
         row = await (await conn.execute("select reading from files where id = %s", (rec.id,))).fetchone()
     if row and row[0]:
         return FileReading.model_validate(row[0]).model_copy(update={"cost_usd": 0.0})
 
-    data = await asyncio.to_thread(storage.get, rec.storage_key)
+    data = await _checked_bytes(rec, pack, storage)
     if rec.kind == "voice":
         reading = await _read_voice(rec, data, pack, llm)
     elif rec.kind == "image":

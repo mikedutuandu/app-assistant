@@ -364,7 +364,7 @@ async def test_upload_creates_thread_and_returns_file(api: Api):
     started = r.json()
     assert set(started) == {"upload_id", "thread_id", "target"}
     target = started["target"]
-    assert target["method"] == "PUT" and target["headers"] == {"content-type": "image/png"}
+    assert target["method"] == "PUT" and target["headers"] == {"content-type": "image/png", "if-none-match": "*"}
     assert f"/real/ws1/{started['thread_id']}/{started['upload_id']}?" in target["url"]
     api.put(started, PNG)
     r = await api.finish(started["upload_id"], started["thread_id"])

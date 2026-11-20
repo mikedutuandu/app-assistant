@@ -136,13 +136,17 @@ def test_upload_target_falls_back_to_s3_presign(test_settings: Settings):
         )
         target = storage.upload_target("real/ws1/t1/u1", "image/png")
         assert target["method"] == "PUT"
-        assert target["headers"] == {"content-type": "image/png"}
+        assert target["headers"] == {"content-type": "image/png", "if-none-match": "*"}
         query = parse_qs(urlsplit(target["url"]).query)
         assert query["X-Amz-Expires"] == ["600"]
-        assert "content-type" in query["X-Amz-SignedHeaders"][0].split(";")
+        signed = query["X-Amz-SignedHeaders"][0].split(";")
+        assert "content-type" in signed and "if-none-match" in signed  # write-once: the store refuses an overwrite
         assert urlsplit(target["url"]).path.endswith("/test-bucket/real/ws1/t1/u1")
 
         assert storage.head("real/ws1/t1/u1") is None
         r = requests.put(target["url"], data=b"\x89PNG-bytes", headers=target["headers"], timeout=5)
         assert r.status_code == 200
         assert storage.head("real/ws1/t1/u1") == len(b"\x89PNG-bytes")
+        again = requests.put(target["url"], data=b"other bytes, bigger", headers=target["headers"], timeout=5)
+        assert again.status_code == 412  # the link can't replace the object finish checked
+        assert storage.get("real/ws1/t1/u1") == b"\x89PNG-bytes"

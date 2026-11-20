@@ -320,3 +320,41 @@ async def test_control_character_urls_refused():
             with pytest.raises(UploadError) as exc:
                 await read_link(url, client, res)
             assert exc.value.code == "link"
+
+
+@pytest.mark.db
+@respx.mock
+async def test_an_object_replaced_with_bigger_bytes_is_refused_at_read(pool, storage, put):
+    data = (FIX / "shot.png").read_bytes()
+    rec = await put("image", "image/png", data)
+    storage.put(rec.storage_key, data + b"\x00" * 4096, "image/png")  # overwritten after finish checked it
+    route = respx.post(CHAT).mock(return_value=vision_reply("x"))
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool)
+    assert (exc.value.code, exc.value.message) == ("file", "That file changed after it was checked. Upload it again.")
+    assert route.call_count == 0
+
+
+@pytest.mark.db
+@respx.mock
+async def test_a_missing_object_is_refused_at_read(pool, storage, put):
+    rec = await put("image", "image/png", (FIX / "shot.png").read_bytes())
+    storage.delete_prefix(rec.storage_key)
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool)
+    assert exc.value.code == "file"
+
+
+@pytest.mark.db
+@respx.mock
+async def test_an_object_replaced_with_another_kind_is_refused_at_read(pool, storage, put):
+    voice = (FIX / "voice.m4a").read_bytes()
+    rec = await put("voice", "audio/mp4", voice)
+    pdf = (FIX / "text.pdf").read_bytes()
+    same_size = (pdf + b"\n" * len(voice))[: len(voice)] if len(pdf) <= len(voice) else pdf[: len(voice)]
+    storage.put(rec.storage_key, same_size, "audio/mp4")  # same byte count, but a PDF under a voice row
+    route = respx.post(TRANSCRIBE).mock(return_value=transcript("x", 1.0, 0.001))
+    with pytest.raises(UploadError) as exc:
+        await read_file(rec, _pack(), Llm("k"), storage, pool)
+    assert exc.value.code == "file"
+    assert route.call_count == 0  # nothing is transcribed or paid for

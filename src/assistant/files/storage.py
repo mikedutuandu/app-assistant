@@ -61,7 +61,7 @@ class Storage:
             raise
 
     def upload_target(self, key: str, mime: str) -> dict:
-        """Where the browser PUTs one file's bytes: this key only, never over an object already there (Supabase).
+        """Where the browser PUTs one file's bytes: this key only, never over an object already there.
 
         On Supabase, its own signed upload link (the browser may call it: Supabase allows CORS on it); elsewhere, an S3
         presigned PUT. The browser must send exactly `headers` with the bytes.
@@ -82,10 +82,12 @@ class Storage:
             return {"url": url, "method": "PUT", "headers": {"content-type": mime, "x-upsert": "false"}}
         url = self._client.generate_presigned_url(
             "put_object",
-            Params={"Bucket": self.bucket, "Key": key, "ContentType": mime},
+            # If-None-Match is signed, so the store refuses a PUT without it and refuses any PUT once the key exists:
+            # the link writes once and can't replace the object finish checked.
+            Params={"Bucket": self.bucket, "Key": key, "ContentType": mime, "IfNoneMatch": "*"},
             ExpiresIn=UPLOAD_SECONDS,
         )
-        return {"url": url, "method": "PUT", "headers": {"content-type": mime}}
+        return {"url": url, "method": "PUT", "headers": {"content-type": mime, "if-none-match": "*"}}
 
     def signed_url(self, key: str, seconds: int = 300) -> str:
         return self._client.generate_presigned_url(
