@@ -13,6 +13,14 @@ export interface PanelOptions {
 }
 
 const SIGN_IN = "Please sign in again.";
+/** What the bot says it is doing, by the server's `status` step. A step not listed here changes nothing. */
+const STEP_LABELS: Record<string, string> = {
+  reading: "Reading your files…",
+  listening: "Listening to your voice note…",
+  thinking: "Thinking…",
+  writing: "Writing your posts…",
+  checking: "Checking every number…",
+};
 const MAX_RECORD_MS = 5 * 60_000;
 
 type Child = Node | string | null | undefined | false;
@@ -133,6 +141,26 @@ export function createPanel(opts: PanelOptions) {
     return m;
   };
   const showError = (text: string) => addMsg("err", text);
+
+  // The "bot is working" line: one element at the end of the list while the bot has said nothing yet.
+  let working: HTMLElement | null = null;
+  const workingLabel = h("span", { class: "label", text: STEP_LABELS.thinking });
+  const showWorking = (step?: string) => {
+    const label = step && STEP_LABELS[step];
+    if (label) workingLabel.textContent = label; // an unknown step keeps the label it has
+    working ??= h(
+      "div",
+      { class: "working", role: "status", "aria-live": "polite" },
+      h("span", { class: "dots", "aria-hidden": "true" }, h("i", { class: "dot" }), h("i", { class: "dot" }), h("i", { class: "dot" })),
+      workingLabel,
+    );
+    list.append(working); // appending an element already in the list moves it to the end
+    scroll();
+  };
+  const hideWorking = () => {
+    working?.remove();
+    working = null;
+  };
 
   function refresh() {
     const uploading = chips.some((c) => c.state === "uploading");
@@ -389,6 +417,8 @@ export function createPanel(opts: PanelOptions) {
       chipsEl.prepend(...sent.map((c) => c.el));
     };
     status.textContent = "";
+    workingLabel.textContent = STEP_LABELS.thinking;
+    showWorking();
     let bubble: HTMLElement | null = null;
     const onEvent = (e: BotEvent) => {
       accept();
@@ -400,12 +430,18 @@ export function createPanel(opts: PanelOptions) {
         case "transcript":
           addMsg("heard", `Heard: ${d.text}`);
           break;
+        case "status":
+          bubble = null; // whatever the bot says next goes below the indicator
+          showWorking(d.step);
+          break;
         case "text":
+          hideWorking();
           if (!bubble) bubble = addMsg("msg bot", "");
           bubble.textContent += d.delta;
           scroll();
           break;
         case "card":
+          hideWorking();
           bubble = null;
           renderCard(d.pieces ?? [], d.facts ?? []);
           break;
@@ -413,6 +449,7 @@ export function createPanel(opts: PanelOptions) {
           window.dispatchEvent(new CustomEvent("assistant:note", { detail: { text: d.text } }));
           break;
         case "failed":
+          hideWorking();
           showError(d.message || "Something went wrong. Please try again.");
           break;
       }
@@ -424,6 +461,7 @@ export function createPanel(opts: PanelOptions) {
       if (e instanceof AuthLost) stop(SIGN_IN);
       else showError(errorText(e));
     } finally {
+      hideWorking();
       busy = false;
       refresh();
       if (!signedOut) input.focus();

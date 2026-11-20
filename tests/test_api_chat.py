@@ -848,3 +848,45 @@ async def test_add_draft_never_sends_an_image_from_another_thread(api: Api):
     r = await api.act(tid, {"action_id": "a-x", "kind": "add_draft", "piece_id": pid})
     assert r.status_code == 200
     assert api.tools.drafts[0]["media"] == []
+
+
+# ---- status events ----
+
+
+def kinds_of(events: list[tuple[str, dict]]) -> list[str]:
+    return [k for k, _ in events]
+
+
+async def test_status_reading_comes_before_any_text_for_a_file(api: Api):
+    up = await api.upload(PNG)
+    tid, fid = up.json()["thread_id"], up.json()["file_id"]
+    api.llm.script = {
+        "IMAGE_READER": [Out({"text": "40 accounts on", "unsure": []}, cost=0.01)],
+        **ask_script(),
+    }
+    events = await api.send("here is the screenshot", thread=tid, file_ids=[fid])
+    assert ("status", {"step": "reading"}) in events
+    first_text = kinds_of(events).index("text")
+    assert events.index(("status", {"step": "reading"})) < first_text
+    assert ("status", {"step": "listening"}) not in events
+
+
+async def test_status_listening_for_a_voice_note(api: Api):
+    voice = (Path(__file__).parent / "fixtures" / "voice.m4a").read_bytes()
+    up = await api.upload(voice, mime="audio/mp4")
+    assert up.status_code == 200, up.text
+    tid, fid = up.json()["thread_id"], up.json()["file_id"]
+    api.llm.script = {"TRANSCRIBE": [("we shipped on friday", 4.0)], **ask_script()}
+    events = await api.send("", thread=tid, file_ids=[fid])
+    assert ("status", {"step": "listening"}) in events
+    assert ("status", {"step": "reading"}) not in events
+    assert events.index(("status", {"step": "listening"})) < kinds_of(events).index("transcript")
+
+
+async def test_status_steps_come_in_order_before_the_card(api: Api):
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    steps = [p["step"] for k, p in events if k == "status"]
+    assert steps == ["thinking", "writing", "checking"]
+    assert max(i for i, (k, _) in enumerate(events) if k == "status") < kinds_of(events).index("card")
+    assert events[-1][0] == "done"

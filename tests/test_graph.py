@@ -851,3 +851,40 @@ async def test_a_file_reads_cost_is_charged_once():
     assert h.costs[0] == (0.003, 1)
     assert [c for c, _ in h.costs].count(0.003) == 1
     assert state["cost_usd"] == pytest.approx(sum(c for c, _ in h.costs))
+
+
+async def test_status_steps_are_emitted_in_order_with_no_text():
+    h = Harness(happy_llm())
+    await h.send("Replies go out in 2 minutes instead of 2 hours")
+    steps = [p["step"] for p in h.of("status")]
+    assert steps == ["thinking", "writing", "checking"]
+    kinds = [k for k, _ in h.events]
+    assert kinds.index("card") > max(i for i, k in enumerate(kinds) if k == "status")
+
+
+async def test_ask_back_turn_only_thinks():
+    h = Harness(FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What changed?"]}))
+    await h.send("hi")
+    assert h.of("status") == [{"step": "thinking"}]
+
+
+async def test_a_second_pass_writes_and_checks_again():
+    llm = happy_llm()
+    llm.script["WRITER"] = [
+        written(piece("launch_post", "Replies are now 3x faster.", ["F1"]), piece("changelog", CHANGELOG, ["F1"])),
+        written(piece("launch_post", LAUNCH, ["F1"])),
+    ]
+    llm.script["CLAIM_CHECK"] = [OK, OK]
+    h = Harness(llm)
+    await h.send("Replies go out in 2 minutes instead of 2 hours")
+    steps = [p["step"] for p in h.of("status")]
+    assert steps == ["thinking", "writing", "checking", "writing", "checking"]
+
+
+async def test_reading_a_link_says_reading_before_any_text():
+    h = Harness(FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["Which part?"]}))
+    h.links["https://a.example/x"] = FileReading(file_id="https://a.example/x", kind="link", text="page")
+    await h.send("see https://a.example/x")
+    kinds = [k for k, _ in h.events]
+    assert h.of("status")[0] == {"step": "reading"}
+    assert kinds.index("status") < kinds.index("text")

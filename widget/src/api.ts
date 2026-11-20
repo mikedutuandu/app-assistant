@@ -17,6 +17,7 @@ export interface Piece {
 }
 export type BotEvent =
   | { event: "thread"; data: { thread_id: string; title: string } }
+  | { event: "status"; data: { step: string } }
   | { event: "transcript"; data: { file_id: string; text: string } }
   | { event: "text"; data: { delta: string } }
   | { event: "card"; data: { pieces: Piece[]; facts: Fact[] } }

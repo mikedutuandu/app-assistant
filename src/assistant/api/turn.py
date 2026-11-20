@@ -5,6 +5,10 @@ cancels it. Each model call is charged as soon as it ends, once, by `"<message i
 (a Vercel function can be) has still recorded every call that finished. The message id reaches the browser only in
 `done`, after every charge. Only ids, timings, costs and
 error kinds are logged, never text.
+
+The events a turn streams, in the order they can come: `thread` (a new chat's id and title), `status` (`{"step"}`: what
+the bot is doing now, one of `reading`, `listening`, `thinking`, `writing`, `checking`; no user text, never charged,
+and it may repeat), `transcript` (a voice note's words), `text` (`{"delta"}`), `note`, `card`, then `done` or `failed`.
 """
 
 import asyncio
@@ -172,6 +176,8 @@ def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str],
             if row is None:
                 raise UploadError("file", FILE_GONE)
             rec = FileRecord(id=row[0], kind=row[1], mime=row[2], bytes=row[3], storage_key=row[4])
+            # which kind it is is only known here: say what the bot is doing before the slow part
+            await meter.emit("status", {"step": "listening" if rec.kind == "voice" else "reading"})
             readings.append(await read_file(rec, t.pack, state.llm, state.storage, state.pool, meter))
         return readings
 
