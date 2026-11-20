@@ -185,7 +185,11 @@ export function createPanel(opts: PanelOptions) {
       }
     } catch (e) {
       if (e instanceof AuthLost) stop(SIGN_IN);
-      else store.set(null); // the thread is gone: start fresh
+      else if (e instanceof ApiError && e.status === 404) store.set(null); // the thread is gone: start fresh
+      else {
+        showError(errorText(e));
+        loaded = false; // a passing failure: try again next time the panel opens
+      }
     }
   }
 
@@ -370,14 +374,24 @@ export function createPanel(opts: PanelOptions) {
     if (!text && !sent.length) return;
     busy = true;
     refresh();
-    if (text || sent.length) {
-      addMsg("msg user", [text, ...sent.map((c) => `📎 ${c.file.name}`)].filter(Boolean).join("\n"));
-    }
+    const mine = addMsg("msg user", [text, ...sent.map((c) => `📎 ${c.file.name}`)].filter(Boolean).join("\n"));
     input.value = "";
     for (const c of chips.splice(0)) c.el.remove();
+    let accepted = false;
+    const accept = () => {
+      accepted = true;
+    };
+    // Refused before the server took it (offline, a limit, a bad file): give the text and files back to send again.
+    const giveBack = () => {
+      mine.remove();
+      if (!input.value) input.value = text;
+      chips.unshift(...sent);
+      chipsEl.prepend(...sent.map((c) => c.el));
+    };
     status.textContent = "";
     let bubble: HTMLElement | null = null;
     const onEvent = (e: BotEvent) => {
+      accept();
       const d = e.data;
       switch (e.event) {
         case "thread":
@@ -404,8 +418,9 @@ export function createPanel(opts: PanelOptions) {
       }
     };
     try {
-      await api.send(threadId, text, sent.map((c) => c.fileId!), onEvent);
+      await api.send(threadId, text, sent.map((c) => c.fileId!), onEvent, accept);
     } catch (e) {
+      if (!accepted) giveBack();
       if (e instanceof AuthLost) stop(SIGN_IN);
       else showError(errorText(e));
     } finally {

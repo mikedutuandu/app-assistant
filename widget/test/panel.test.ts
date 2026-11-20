@@ -180,4 +180,46 @@ describe("panel", () => {
     ]);
     void $;
   });
+
+  it("keeps the text and files when the message is refused before it streams", async () => {
+    const send = vi.fn().mockRejectedValueOnce(new ApiError(0, "network", "Couldn't reach the app. Try again."));
+    const { $, $$, say, flush } = setup({ send } as any);
+    const input = $("input[type=file]") as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [new File(["x"], "shot.png", { type: "image/png" })], configurable: true });
+    input.dispatchEvent(new Event("change"));
+    await flush();
+    await say("shipped dark mode");
+    expect(($("textarea") as HTMLTextAreaElement).value).toBe("shipped dark mode");
+    expect($$(".chip").map((c) => c.querySelector(".name")!.textContent)).toEqual(["shot.png"]);
+    expect($$(".msg.user")).toHaveLength(0);
+    expect($(".err").textContent).toBe("Couldn't reach the app. Try again.");
+    expect(($(".send") as HTMLButtonElement).disabled).toBe(false);
+    send.mockImplementationOnce(async () => {});
+    $(".send").click();
+    await flush();
+    expect(send.mock.calls[1].slice(0, 3)).toEqual(["t1", "shipped dark mode", ["f"]]);
+    expect(($("textarea") as HTMLTextAreaElement).value).toBe("");
+    expect($$(".chip")).toHaveLength(0);
+  });
+
+  it("does not put the text back once the server accepted the message", async () => {
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on({ event: "thread", data: { thread_id: "t1", title: "" } });
+      throw new ApiError(0, "network", "Lost the connection.");
+    });
+    const { $, $$, say } = setup({ send } as any);
+    await say("hello");
+    expect(($("textarea") as HTMLTextAreaElement).value).toBe("");
+    expect($$(".msg.user").map((m) => m.textContent)).toEqual(["hello"]);
+  });
+
+  it("keeps the stored thread when reopening it fails for a passing reason", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t7");
+    const thread = vi.fn().mockRejectedValue(new ApiError(0, "network", "Couldn't reach the app. Try again."));
+    const { $, flush } = setup({ thread } as any);
+    await flush();
+    expect($(".err").textContent).toBe("Couldn't reach the app. Try again.");
+    expect(sessionStorage.getItem("assistant:thread:demo")).toBe("t7");
+    expect(($(".send") as HTMLButtonElement).disabled).toBe(false);
+  });
 });

@@ -46,6 +46,7 @@ export class AuthLost extends Error {
 }
 
 const REFRESH_MARGIN_MS = 60_000;
+const APP_UNREACHABLE = "Couldn't reach the app. Try again.";
 const FALLBACK_TTL_MS = 5 * 60_000;
 
 function tokenExpiryMs(token: string): number {
@@ -137,15 +138,27 @@ export class BotApi {
     if (this.pending) return this.pending;
     this.pending = (async () => {
       try {
-        const res = await fetch(this.sessionUrl, { method: "POST", credentials: "include" });
-        if (!res.ok) throw new AuthLost();
-        const token = (await res.json())?.token;
+        let res: Response;
+        try {
+          res = await fetch(this.sessionUrl, { method: "POST", credentials: "include" });
+        } catch {
+          throw new ApiError(0, "network", APP_UNREACHABLE); // offline, or the app is down: try again later
+        }
+        // Only the app saying "not signed in" ends the session; anything else may pass.
+        if (res.status === 401 || res.status === 403) throw new AuthLost();
+        if (!res.ok) throw new ApiError(res.status, "app_down", APP_UNREACHABLE);
+        let token: unknown;
+        try {
+          token = (await res.json())?.token;
+        } catch {
+          token = undefined; // e.g. redirected to a sign-in page
+        }
         if (typeof token !== "string" || !token) throw new AuthLost();
         this.token = { value: token, until: tokenExpiryMs(token) - REFRESH_MARGIN_MS };
         return token;
       } catch (e) {
         this.token = null;
-        throw e instanceof AuthLost ? e : new AuthLost();
+        throw e instanceof AuthLost || e instanceof ApiError ? e : new AuthLost();
       } finally {
         this.pending = null;
       }
@@ -182,7 +195,14 @@ export class BotApi {
     return res.json();
   }
 
-  async send(threadId: string | null, text: string, fileIds: string[], onEvent: (e: BotEvent) => void): Promise<void> {
+  /** Streams one message's events. `onAccepted` runs once the server has taken the message, before any event. */
+  async send(
+    threadId: string | null,
+    text: string,
+    fileIds: string[],
+    onEvent: (e: BotEvent) => void,
+    onAccepted?: () => void,
+  ): Promise<void> {
     const res = await this.authed((token) =>
       fetch(this.url("/messages"), {
         method: "POST",
@@ -192,6 +212,7 @@ export class BotApi {
     );
     if (!res.ok) throw await errorOf(res);
     if (!res.body) throw new ApiError(res.status, "server", "Something went wrong. Please try again.");
+    onAccepted?.();
     const parser = new SseParser(onEvent);
     const reader = res.body.getReader();
     const decoder = new TextDecoder();

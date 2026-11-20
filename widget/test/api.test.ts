@@ -121,6 +121,48 @@ describe("BotApi", () => {
   });
 });
 
+describe("BotApi session URL", () => {
+  it("a network error from the session URL is retryable, not AuthLost", async () => {
+    let down = true;
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      calls.push({ url, init });
+      if (url === "/session") {
+        if (down) throw new TypeError("Failed to fetch");
+        return json({ token: jwt(nowSec() + 3600) });
+      }
+      return json([]);
+    });
+    const a = api();
+    const err = await a.threads().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(AuthLost);
+    expect(err.message).toBe("Couldn't reach the app. Try again.");
+    down = false;
+    await expect(a.threads()).resolves.toEqual([]);
+  });
+
+  it("a 5xx from the session URL is retryable", async () => {
+    vi.stubGlobal("fetch", async (url: string) =>
+      url === "/session" ? new Response("oops", { status: 503 }) : json([]),
+    );
+    const err = await api().threads().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe("Couldn't reach the app. Try again.");
+  });
+
+  it.each([401, 403])("a %i from the session URL is AuthLost", async (status) => {
+    vi.stubGlobal("fetch", async (url: string) => (url === "/session" ? json({}, status) : json([])));
+    await expect(api().threads()).rejects.toBeInstanceOf(AuthLost);
+  });
+
+  it("send tells the caller once the server accepted the message", async () => {
+    handler = () => sse(['event: text\ndata: {"delta":"Hi"}\n\n']);
+    const order: string[] = [];
+    await api().send(null, "x", [], (e) => order.push(e.event), () => order.push("accepted"));
+    expect(order).toEqual(["accepted", "text"]);
+  });
+});
+
 describe("SseParser", () => {
   it("handles several events in one chunk, CRLF, comments and multi-line data", () => {
     const got: BotEvent[] = [];

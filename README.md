@@ -177,7 +177,7 @@ The widget calls `POST <data-session-url>` with `credentials: "include"`, so the
 { "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
 ```
 
-Any non-2xx answer (or a body without a `token`) makes the widget show "Please sign in again." The token is HS256, signed with the pack's secret, with claims `iss` (the app id), `sub` (the workspace id: letters, digits and `: _ . -`, up to 200), `access: "draft"`, `iat`, and `exp` at most 1 hour after `iat`.
+A 401 or 403 (or a 2xx without a `token`, such as a redirect to a sign-in page) makes the widget show "Please sign in again." and stop. A network error or any other status (a 5xx while the app restarts) shows "Couldn't reach the app. Try again." and the next tap tries again; a message that could not be sent stays in the box with its files. The token is HS256, signed with the pack's secret, with claims `iss` (the app id), `sub` (the workspace id: letters, digits and `: _ . -`, up to 200), `access: "draft"`, `iat`, and `exp` at most 1 hour after `iat`.
 
 ```python
 import time, jwt
