@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     s3_access_key: str
     s3_secret_key: str
     s3_region: str = "auto"
+    # Supabase: the project URL and its secret (service role) key. When both are set, the browser uploads through
+    # Supabase Storage's own signed upload links; otherwise through an S3 presigned PUT.
+    supabase_url: str | None = None
+    supabase_service_key: str | None = None
     packs_dir: Path = Path("apps")
     public_base_url: str
     demo_daily_usd_cap: float = 3.0
@@ -35,10 +39,10 @@ class Settings(BaseSettings):
             raise ValueError("DB_SCHEMA must be lowercase letters, digits and _, starting with a letter or _")
         return value
 
-    @field_validator("s3_endpoint", mode="before")
+    @field_validator("s3_endpoint", "supabase_url", "supabase_service_key", mode="before")
     @classmethod
-    def _empty_endpoint_is_none(cls, value: object) -> object:
-        # `S3_ENDPOINT=` in an env file loads as "": treat it as unset so boto3 uses AWS.
+    def _empty_is_none(cls, value: object) -> object:
+        # `S3_ENDPOINT=` in an env file loads as "": treat it as unset (boto3 then uses AWS; uploads use S3 presigns).
         return None if value == "" else value
 
 

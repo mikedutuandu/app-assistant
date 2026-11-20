@@ -187,8 +187,13 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
     post = "120 paying users in March. Here is what worked."
 
     async def chat(workspace: str) -> str:
-        files = {"file": ("shot.png", PNG, "image/png")}
-        r = await hp.client.post("/v1/chat/hookplaybook/files", files=files, headers=_widget(workspace))
+        claim = {"thread_id": None, "name": "shot.png", "mime": "image/png", "size": len(PNG)}
+        r = await hp.client.post("/v1/chat/hookplaybook/uploads", json=claim, headers=_widget(workspace))
+        assert r.status_code == 200, r.text
+        started = r.json()
+        hp.put(started, PNG, workspace, "hookplaybook")
+        url = f"/v1/chat/hookplaybook/uploads/{started['upload_id']}/finish"
+        r = await hp.client.post(url, json={"thread_id": started["thread_id"]}, headers=_widget(workspace))
         assert r.status_code == 200, r.text
         up = r.json()
         hp.llm.add("IMAGE_READER", {"text": "a chart", "unsure": []})
@@ -239,3 +244,19 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
         "/v1/apps/hookplaybook/workspaces/ws_other", headers={"authorization": f"Bearer {draft}"}
     )
     assert (r.status_code, r.json()) == (401, {"error": "wrong_access"})
+
+
+@pytest.mark.db
+async def test_uploads_use_hookplaybooks_own_5_mb_image_cap(hp: Api):
+    six_mb = PNG + b"\x00" * (6 * 1024 * 1024)
+    claim = {"thread_id": None, "name": "shot.png", "mime": "image/png", "size": len(six_mb)}
+    r = await hp.client.post("/v1/chat/hookplaybook/uploads", json=claim, headers=_widget("ws_hp"))
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 5 MB."})
+
+    r = await hp.client.post("/v1/chat/hookplaybook/uploads", json={**claim, "size": 1000}, headers=_widget("ws_hp"))
+    started = r.json()
+    hp.put(started, six_mb, "ws_hp", "hookplaybook")  # the stored bytes are what count, not the claim
+    url = f"/v1/chat/hookplaybook/uploads/{started['upload_id']}/finish"
+    r = await hp.client.post(url, json={"thread_id": started["thread_id"]}, headers=_widget("ws_hp"))
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 5 MB."})
+    assert hp.storage._client.list_objects_v2(Bucket=hp.storage.bucket).get("Contents", []) == []

@@ -123,10 +123,40 @@ class Api:
         assert r.headers["content-type"].startswith("text/event-stream")
         return parse_sse(r.text)
 
-    async def upload(self, data: bytes, thread: str | None = None, workspace: str = "ws1") -> httpx.Response:
-        form = {"thread_id": thread} if thread else {}
-        files = {"file": ("shot.png", data, "image/png")}
-        return await self.client.post("/v1/chat/real/files", data=form, files=files, headers=self.headers(workspace))
+    async def start_upload(
+        self,
+        size: int,
+        thread: str | None = None,
+        workspace: str = "ws1",
+        app: str = "real",
+        mime: str = "image/png",
+        name: str = "shot.png",
+    ) -> httpx.Response:
+        body = {"thread_id": thread, "name": name, "mime": mime, "size": size}
+        return await self.client.post(f"/v1/chat/{app}/uploads", json=body, headers=self.headers(workspace, app))
+
+    async def finish(self, upload_id: str, thread: str, workspace: str = "ws1", app: str = "real") -> httpx.Response:
+        return await self.client.post(
+            f"/v1/chat/{app}/uploads/{upload_id}/finish",
+            json={"thread_id": thread},
+            headers=self.headers(workspace, app),
+        )
+
+    def put(self, started: dict, data: bytes, workspace: str = "ws1", app: str = "real") -> None:
+        """The browser's PUT to the upload target, straight into moto's bucket."""
+        key = f"{app}/{workspace}/{started['thread_id']}/{started['upload_id']}"
+        self.storage.put(key, data, started["target"]["headers"]["content-type"])
+
+    async def upload(
+        self, data: bytes, thread: str | None = None, workspace: str = "ws1", app: str = "real", mime: str = "image/png"
+    ) -> httpx.Response:
+        """The widget's three steps: ask for a target, PUT the bytes there, then finish."""
+        r = await self.start_upload(len(data), thread, workspace, app, mime)
+        if r.status_code != 200:
+            return r
+        started = r.json()
+        self.put(started, data, workspace, app)
+        return await self.finish(started["upload_id"], started["thread_id"], workspace, app)
 
     async def act(self, thread: str, body: dict, workspace: str = "ws1") -> httpx.Response:
         return await self.client.post(

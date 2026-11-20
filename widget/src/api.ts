@@ -1,4 +1,4 @@
-/** The bot's HTTP API: session tokens, SSE over fetch, XHR uploads, actions and reads. */
+/** The bot's HTTP API: session tokens, SSE over fetch, direct uploads to storage (XHR), actions and reads. */
 
 export interface Fact {
   id: string;
@@ -45,7 +45,15 @@ export class AuthLost extends Error {
   }
 }
 
+/** Where the browser PUTs a file's bytes: storage's own signed link, never the bot (it takes no large bodies). */
+export interface UploadTarget {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+}
+
 const REFRESH_MARGIN_MS = 60_000;
+const UPLOAD_FAILED = "Couldn't upload. Check your connection.";
 const APP_UNREACHABLE = "Couldn't reach the app. Try again.";
 const FALLBACK_TTL_MS = 5 * 60_000;
 
@@ -231,34 +239,20 @@ export class BotApi {
     parser.end();
   }
 
+  /** Three steps: the bot reserves the upload, the bytes go straight to storage, then the bot checks what arrived. */
   async upload(
     threadId: string | null,
     file: File,
     onProgress: (fraction: number) => void,
   ): Promise<{ file_id: string; kind: string; thread_id: string }> {
-    const xhrCall = (token: string) =>
-      new Promise<Raw & { text: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", this.url("/files"));
-        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
-        };
-        xhr.onerror = () => reject(new ApiError(0, "network", "Couldn't upload. Check your connection."));
-        xhr.onload = () =>
-          resolve({
-            status: xhr.status,
-            text: xhr.responseText,
-            json: async () => JSON.parse(xhr.responseText),
-          });
-        const form = new FormData();
-        form.append("file", file, file.name);
-        if (threadId) form.append("thread_id", threadId);
-        xhr.send(form);
-      });
-    const res = await this.authed(xhrCall);
-    if (res.status < 200 || res.status >= 300) throw await errorOf(res);
-    return res.json();
+    const started: { upload_id: string; thread_id: string; target: UploadTarget } = await this.request("POST", "/uploads", {
+      thread_id: threadId,
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+    });
+    await putFile(started.target, file, onProgress);
+    return this.request("POST", `/uploads/${encodeURIComponent(started.upload_id)}/finish`, { thread_id: started.thread_id });
   }
 
   act(threadId: string, body: ActionBody): Promise<any> {
@@ -272,4 +266,20 @@ export class BotApi {
   thread(id: string): Promise<{ messages: { role: "user" | "assistant"; text: string; card?: any }[]; pieces: any[] }> {
     return this.request("GET", `/threads/${encodeURIComponent(id)}`);
   }
+}
+
+/** The bytes to storage with XHR (fetch has no upload progress). Only the target's headers go: no bearer token. */
+function putFile(target: UploadTarget, file: File, onProgress: (fraction: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(target.method || "PUT", target.url);
+    for (const [name, value] of Object.entries(target.headers ?? {})) xhr.setRequestHeader(name, value);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, "network", UPLOAD_FAILED));
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, "upload", "Couldn't upload. Try again."));
+    xhr.send(file);
+  });
 }

@@ -132,6 +132,90 @@ describe("BotApi", () => {
   });
 });
 
+class FakeXhr {
+  static sent: FakeXhr[] = [];
+  static status = 200;
+  method = "";
+  url = "";
+  headers: Record<string, string> = {};
+  body: unknown;
+  status = 0;
+  responseText = "";
+  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
+  send(body: unknown) {
+    this.body = body;
+    FakeXhr.sent.push(this);
+    queueMicrotask(() => {
+      this.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 });
+      this.status = FakeXhr.status;
+      this.onload?.();
+    });
+  }
+}
+
+describe("BotApi upload", () => {
+  const target = {
+    url: "https://ref.supabase.co/storage/v1/object/upload/sign/b/demo/ws/t1/u1?token=tok",
+    method: "PUT",
+    headers: { "content-type": "image/png", "x-upsert": "false" },
+  };
+  beforeEach(() => {
+    FakeXhr.sent = [];
+    FakeXhr.status = 200;
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+  });
+
+  it("upload calls uploads, PUTs with the target headers, then finish", async () => {
+    handler = (url) =>
+      url.endsWith("/uploads")
+        ? json({ upload_id: "u1", thread_id: "t1", target })
+        : json({ file_id: "u1", kind: "image", thread_id: "t1" });
+    const file = new File([new Uint8Array(10)], "shot.png", { type: "image/png" });
+    const progress: number[] = [];
+    const out = await api().upload(null, file, (f) => progress.push(f));
+    expect(out).toEqual({ file_id: "u1", kind: "image", thread_id: "t1" });
+
+    const posts = calls.filter((c) => c.url !== "/session");
+    expect(posts.map((c) => c.url)).toEqual([
+      "https://bot.test/v1/chat/demo/uploads",
+      "https://bot.test/v1/chat/demo/uploads/u1/finish",
+    ]);
+    expect(JSON.parse(posts[0].init.body as string)).toEqual({ thread_id: null, name: "shot.png", mime: "image/png", size: 10 });
+    expect(JSON.parse(posts[1].init.body as string)).toEqual({ thread_id: "t1" });
+
+    const [put] = FakeXhr.sent;
+    expect(put.method).toBe("PUT");
+    expect(put.url).toBe(target.url);
+    expect(put.headers).toEqual(target.headers); // no bearer token goes to storage
+    expect(put.body).toBe(file);
+    expect(progress).toEqual([0.5]);
+  });
+
+  it("a refused PUT stops before finish", async () => {
+    FakeXhr.status = 400;
+    handler = () => json({ upload_id: "u1", thread_id: "t1", target });
+    const file = new File([new Uint8Array(10)], "shot.png", { type: "image/png" });
+    await expect(api().upload("t1", file, () => {})).rejects.toBeInstanceOf(ApiError);
+    expect(calls.filter((c) => c.url.endsWith("/finish"))).toHaveLength(0);
+  });
+
+  it("a refused claim is the server's error, with no PUT", async () => {
+    handler = () => json({ error: "too_big", message: "Images can be up to 10 MB." }, 400);
+    const file = new File([new Uint8Array(10)], "shot.png", { type: "image/png" });
+    await expect(api().upload(null, file, () => {})).rejects.toMatchObject({ code: "too_big", message: "Images can be up to 10 MB." });
+    expect(FakeXhr.sent).toHaveLength(0);
+  });
+});
+
 describe("BotApi session URL", () => {
   it("a network error from the session URL is retryable, not AuthLost", async () => {
     let down = true;

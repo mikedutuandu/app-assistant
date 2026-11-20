@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from chat_api import (
@@ -358,39 +359,110 @@ async def test_demo_ip_cap_and_dollar_cap(api: Api, test_settings: Settings):
 
 
 async def test_upload_creates_thread_and_returns_file(api: Api):
-    r = await api.upload(PNG)
-    assert r.status_code == 200
+    r = await api.start_upload(len(PNG))
+    assert r.status_code == 200, r.text
+    started = r.json()
+    assert set(started) == {"upload_id", "thread_id", "target"}
+    target = started["target"]
+    assert target["method"] == "PUT" and target["headers"] == {"content-type": "image/png"}
+    assert f"/real/ws1/{started['thread_id']}/{started['upload_id']}?" in target["url"]
+    api.put(started, PNG)
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body["kind"] == "image" and len(body["file_id"]) == 26
+    assert body == {"file_id": started["upload_id"], "kind": "image", "thread_id": started["thread_id"]}
     r = await api.client.get("/v1/chat/real/threads", headers=api.headers())
     assert [(t["id"], t["title"]) for t in r.json()] == [(body["thread_id"], "Files")]
     again = (await api.upload(PNG, thread=body["thread_id"])).json()
     assert again["thread_id"] == body["thread_id"]
 
 
+async def test_old_files_route_is_gone(api: Api):
+    files = {"file": ("shot.png", PNG, "image/png")}
+    r = await api.client.post("/v1/chat/real/files", files=files, headers=api.headers())
+    assert r.status_code in (404, 405)
+
+
+async def test_upload_claim_refused_400_before_anything(api: Api):
+    r = await api.start_upload(10, mime="text/html", name="page.html")
+    assert (r.status_code, r.json()) == (400, {"error": "type", "message": "This file type isn't supported here."})
+    r = await api.start_upload(11 * 1024 * 1024)
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 10 MB."})
+    r = await api.start_upload(10, app="demo", mime="application/pdf", name="a.pdf")
+    assert (r.status_code, r.json()) == (400, {"error": "kind_off", "message": "This app doesn't take PDF files."})
+    assert await api.count("threads") == 0 and await api.count("files") == 0
+
+
 async def test_upload_refused_type_400_and_leaves_no_thread(api: Api):
     r = await api.upload(b"just some text, not a file type")
     assert r.status_code == 400
     assert r.json() == {"error": "type", "message": "This file type isn't supported here."}
-    assert await api.count("threads") == 0
+    assert await api.count("threads") == 0 and await api.count("files") == 0
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
 
 
-async def test_upload_body_too_big_413(api: Api):
-    big = b"\x89PNG\r\n\x1a\n" + b"\x00" * (26 * 1024 * 1024)
-    r = await api.upload(big)
-    assert r.status_code == 413
-    assert r.json() == {"error": "too_big", "message": "That file is too big."}
+async def test_finish_refuses_missing_object(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert (r.status_code, r.json()) == (400, {"error": "missing", "message": "The file didn't arrive. Try again."})
+    api.put(started, PNG)  # the upload is still open: the browser may try again
+    r = await api.finish(started["upload_id"], started["thread_id"])
+    assert r.status_code == 200 and r.json()["file_id"] == started["upload_id"]
 
-    async def chunks():  # no Content-Length: the running cap stops it
-        yield b'--b\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\n\r\n'
-        for _ in range(27):
-            yield b"\x00" * (1024 * 1024)
 
-    headers = api.headers(**{"Content-Type": "multipart/form-data; boundary=b"})
-    r = await api.client.post("/v1/chat/real/files", content=chunks(), headers=headers)
-    assert r.status_code == 413
-    assert r.json() == {"error": "too_big", "message": "That file is too big."}
-    assert await api.count("threads") == 0
+async def test_finish_deletes_and_refuses_a_pdf_uploaded_as_an_image_to_the_demo(api: Api):
+    pdf = (Path(__file__).parent / "fixtures" / "text.pdf").read_bytes()
+    r = await api.start_upload(len(pdf), app="demo", mime="image/png", name="shot.png")
+    assert r.status_code == 200, r.text
+    started = r.json()
+    api.put(started, pdf, app="demo")
+    r = await api.finish(started["upload_id"], started["thread_id"], app="demo")
+    assert (r.status_code, r.json()) == (400, {"error": "kind_off", "message": "This app doesn't take PDF files."})
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
+    assert await api.count("files") == 0
+    assert await api.count("threads") == 0  # the thread made for this upload got no file, so it is not kept
+
+
+async def test_finish_deletes_and_refuses_an_object_over_the_cap(api: Api):
+    tid = await api.thread_row()
+    started = (await api.start_upload(1000, thread=tid)).json()  # it claimed 1000 bytes
+    api.put(started, PNG + b"\x00" * (11 * 1024 * 1024))
+    r = await api.finish(started["upload_id"], tid)
+    assert (r.status_code, r.json()) == (400, {"error": "too_big", "message": "Images can be up to 10 MB."})
+    assert api.storage._client.list_objects_v2(Bucket=api.storage.bucket).get("Contents", []) == []
+    assert await api.count("files") == 0
+    assert await api.count("threads") == 1  # a thread the user already had stays
+    r = await api.finish(started["upload_id"], tid)
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+
+
+async def test_finish_is_idempotent(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    first = await api.finish(started["upload_id"], started["thread_id"])
+    second = await api.finish(started["upload_id"], started["thread_id"])
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert await api.count("files") == 1
+
+
+async def test_another_workspaces_upload_id_is_404(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    r = await api.finish(started["upload_id"], started["thread_id"], workspace="ws2")
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+    r = await api.finish(started["upload_id"], await api.thread_row())  # another thread of the same workspace
+    assert (r.status_code, r.json()) == (404, {"error": "upload"})
+    assert (await api.finish(started["upload_id"], started["thread_id"])).status_code == 200
+
+
+async def test_a_pending_upload_cannot_be_sent(api: Api):
+    started = (await api.start_upload(len(PNG))).json()
+    api.put(started, PNG)
+    body = {"thread_id": started["thread_id"], "text": "hi", "file_ids": [started["upload_id"]]}
+    r = await api.client.post("/v1/chat/real/messages", json=body, headers=api.headers())
+    assert (r.status_code, r.json()) == (404, {"error": "file"})
+    assert api.llm.calls == []
 
 
 # ---- actions ----

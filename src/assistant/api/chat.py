@@ -11,15 +11,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
-from starlette.datastructures import UploadFile
-from starlette.formparsers import MultiPartException, MultiPartParser
 
 from assistant.api.deps import ApiError, bearer, client_ip, pack_for, session_for
 from assistant.api.turn import TurnInput, start, tool_failure
 from assistant.auth import AuthError, Session, verify_delete_token
 from assistant.checks import Fact, numbers_in
 from assistant.db import new_id
-from assistant.files.intake import UploadError, accept_upload
+from assistant.files.intake import PENDING, UploadError, UploadNotFound, check_claim, finish_upload, start_upload
 from assistant.graph.build import build_graph
 from assistant.graph.build import thread_id as graph_thread_id
 from assistant.limits import hit
@@ -28,7 +26,6 @@ from assistant.tools import ToolError
 
 log = logging.getLogger("assistant.api")
 
-MAX_UPLOAD_BYTES = 26 * 1024 * 1024  # the largest cap (voice, 25 MB) plus room for the multipart wrapping
 THREADS_LISTED = 30
 MAX_TEXT_CHARS = 4000
 UPLOADS_PER_HOUR = 30
@@ -41,10 +38,6 @@ PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again a
 Auth = Annotated[tuple[AppPack, Session], Depends(session_for)]
 router = APIRouter(prefix="/v1/chat/{app}")
 workspaces = APIRouter()
-
-
-def _too_big() -> ApiError:
-    return ApiError(413, "too_big", "That file is too big.")
 
 
 async def owned_thread(pool, session: Session, chat_id: str) -> None:
@@ -60,44 +53,47 @@ async def owned_thread(pool, session: Session, chat_id: str) -> None:
 # ---- uploads ----
 
 
-async def _read_form(request: Request):
-    """The multipart form, read with a running cap so an oversized body is refused before it is all in memory."""
-    length = request.headers.get("content-length", "")
-    if length.isdigit() and int(length) > MAX_UPLOAD_BYTES:
-        raise _too_big()
-    if not request.headers.get("content-type", "").startswith("multipart/form-data"):
-        raise ApiError(400, "form", "Send the file as multipart/form-data.")
-    body = bytearray()
-    async for chunk in request.stream():
-        body.extend(chunk)
-        if len(body) > MAX_UPLOAD_BYTES:
-            raise _too_big()
-
-    async def stream():
-        yield bytes(body)
-
-    try:
-        return await MultiPartParser(request.headers, stream(), max_files=1, max_fields=4).parse()
-    except MultiPartException:
-        raise ApiError(400, "form", "Send the file as multipart/form-data.") from None
+# The browser PUTs the bytes straight to storage (Vercel refuses request bodies over 4.5 MB): it asks for a target,
+# uploads there, then asks the bot to check what arrived.
 
 
-@router.post("/files")
-async def upload(request: Request, auth: Auth) -> dict:
+class UploadIn(BaseModel):
+    thread_id: str | None = None
+    name: Annotated[str, StringConstraints(max_length=500)] = ""  # the browser's; never trusted or stored
+    mime: Annotated[str, StringConstraints(max_length=200)] = ""
+    size: int = Field(ge=0)
+
+
+class FinishIn(BaseModel):
+    thread_id: str
+
+
+async def _drop_if_empty(state, session: Session, chat_id: str) -> None:
+    """An upload-first thread that got no file is not kept: one `/uploads` opened, still with no file and no messages."""
+    config = {"configurable": {"thread_id": graph_thread_id(session.app, session.workspace, chat_id)}}
+    if await state.checkpointer.aget_tuple(config) is not None:
+        return
+    async with state.pool.connection() as conn:
+        await conn.execute(
+            "delete from threads where id = %s and app = %s and workspace = %s and title = %s"
+            " and not exists (select 1 from files where thread_id = threads.id)"
+            " and not exists (select 1 from pieces where thread_id = threads.id)",
+            (chat_id, session.app, session.workspace, UPLOAD_THREAD_TITLE),
+        )
+
+
+@router.post("/uploads")
+async def start_uploading(body: UploadIn, request: Request, auth: Auth) -> dict:
+    """Reserves one upload: returns its id, the thread (opened if none was given) and where to PUT the bytes."""
     pack, session = auth
     state = request.app.state
+    try:
+        mime = check_claim(pack, body.mime, body.size)
+    except UploadError as e:
+        raise ApiError(400, e.code, e.message) from None
     if not await hit(state.pool, f"upload:{session.app}:{session.workspace}", timedelta(hours=1), UPLOADS_PER_HOUR):
         raise ApiError(429, "limit", "You've uploaded a lot this hour. Try again a bit later.")
-    form = await _read_form(request)
-    try:
-        file = form.get("file")
-        if not isinstance(file, UploadFile):
-            raise ApiError(400, "no_file", "Attach a file.")
-        data = await file.read()
-    finally:
-        await form.close()
-    given = form.get("thread_id")
-    chat_id = given if isinstance(given, str) and given else None
+    chat_id = body.thread_id
     created = chat_id is None
     if chat_id is None:
         chat_id = new_id()
@@ -109,16 +105,30 @@ async def upload(request: Request, auth: Auth) -> dict:
     else:
         await owned_thread(state.pool, session, chat_id)
     try:
-        rec = await accept_upload(pack, session, chat_id, file.filename or "", data, state.pool, state.storage)
-    except Exception as e:
+        upload_id, target = await start_upload(pack, session, chat_id, mime, body.size, state.pool, state.storage)
+    except Exception:
         if created:  # an upload-first thread that got no file is not kept
             async with state.pool.connection() as conn:
                 await conn.execute("delete from threads where id = %s", (chat_id,))
-        if isinstance(e, UploadError):
-            raise ApiError(400, e.code, e.message) from None
         raise
-    log.info("upload app=%s thread=%s file=%s kind=%s bytes=%d", pack.id, chat_id, rec.id, rec.kind, rec.bytes)
-    return {"file_id": rec.id, "kind": rec.kind, "thread_id": chat_id}
+    return {"upload_id": upload_id, "thread_id": chat_id, "target": target}
+
+
+@router.post("/uploads/{upload_id}/finish")
+async def finish_uploading(upload_id: str, body: FinishIn, request: Request, auth: Auth) -> dict:
+    """Checks what arrived in storage and makes it a file of the thread; a repeat answers the same."""
+    pack, session = auth
+    state = request.app.state
+    try:
+        rec = await finish_upload(pack, session, body.thread_id, upload_id, state.pool, state.storage)
+    except UploadNotFound:
+        raise ApiError(404, "upload") from None
+    except UploadError as e:
+        if e.code != "missing":
+            await _drop_if_empty(state, session, body.thread_id)
+        raise ApiError(400, e.code, e.message) from None
+    log.info("upload app=%s thread=%s file=%s kind=%s bytes=%d", pack.id, body.thread_id, rec.id, rec.kind, rec.bytes)
+    return {"file_id": rec.id, "kind": rec.kind, "thread_id": body.thread_id}
 
 
 # ---- messages ----
@@ -156,8 +166,9 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
             raise ApiError(404, "file")  # a file always belongs to a thread
         async with pool.connection() as conn:
             cur = await conn.execute(
-                "select count(*) from files where id = any(%s) and app = %s and workspace = %s and thread_id = %s",
-                (file_ids, session.app, session.workspace, body.thread_id),
+                "select count(*) from files where id = any(%s) and app = %s and workspace = %s and thread_id = %s"
+                " and kind <> %s",
+                (file_ids, session.app, session.workspace, body.thread_id, PENDING),
             )
             if (await cur.fetchone())[0] != len(file_ids):
                 raise ApiError(404, "file")
@@ -218,8 +229,9 @@ async def _piece(pool, session: Session, chat_id: str, piece_id: str) -> tuple[s
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select storage_key from files where id = %s and app = %s and workspace = %s and thread_id = %s",
-            (file_id, session.app, session.workspace, chat_id),
+            "select storage_key from files where id = %s and app = %s and workspace = %s and thread_id = %s"
+            " and kind <> %s",
+            (file_id, session.app, session.workspace, chat_id, PENDING),
         )
         row = await cur.fetchone()
     if row is None:

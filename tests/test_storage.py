@@ -1,8 +1,14 @@
 """Storage against S3-compatible stores: the wire format of each call, and failures that must not be silent."""
 
+from urllib.parse import parse_qs, urlsplit
+
+import httpx
 import pytest
+import requests
+import respx
 from botocore.awsrequest import AWSResponse
 from botocore.stub import Stubber
+from moto import mock_aws
 
 from assistant.config import Settings
 from assistant.files.storage import Storage, StorageError
@@ -85,3 +91,58 @@ def test_delete_prefix_counts_when_the_store_reports_no_errors(test_settings: Se
             {"Bucket": "test-bucket", "Delete": {"Objects": [{"Key": "a/1"}], "Quiet": True}},
         )
         assert storage.delete_prefix("a/") == 1
+
+
+# ---- direct uploads ----
+
+SUPABASE_URL = "https://ref.supabase.co"
+
+
+@respx.mock
+def test_upload_target_uses_supabase_signed_upload_when_configured(test_settings: Settings):
+    storage = Storage(
+        test_settings.model_copy(update={"supabase_url": SUPABASE_URL + "/", "supabase_service_key": "svc-key"})
+    )
+    sign = respx.post(f"{SUPABASE_URL}/storage/v1/object/upload/sign/test-bucket/real/ws1/t1/u1").mock(
+        return_value=httpx.Response(200, json={"url": "/object/upload/sign/test-bucket/real/ws1/t1/u1?token=tok"})
+    )
+    target = storage.upload_target("real/ws1/t1/u1", "image/png")
+    assert target == {
+        "url": f"{SUPABASE_URL}/storage/v1/object/upload/sign/test-bucket/real/ws1/t1/u1?token=tok",
+        "method": "PUT",
+        "headers": {"content-type": "image/png", "x-upsert": "false"},
+    }
+    sent = sign.calls.last.request
+    assert sent.headers["authorization"] == "Bearer svc-key"
+    assert sent.headers["apikey"] == "svc-key"
+    assert sent.headers["x-upsert"] == "false"
+
+
+@respx.mock
+def test_upload_target_raises_when_supabase_refuses(test_settings: Settings):
+    storage = Storage(test_settings.model_copy(update={"supabase_url": SUPABASE_URL, "supabase_service_key": "bad"}))
+    respx.post(f"{SUPABASE_URL}/storage/v1/object/upload/sign/test-bucket/a/b").mock(
+        return_value=httpx.Response(403, json={"error": "Unauthorized"})
+    )
+    with pytest.raises(StorageError, match="403"):
+        storage.upload_target("a/b", "image/png")
+
+
+def test_upload_target_falls_back_to_s3_presign(test_settings: Settings):
+    with mock_aws():
+        storage = Storage(test_settings)
+        storage._client.create_bucket(
+            Bucket=test_settings.s3_bucket, CreateBucketConfiguration={"LocationConstraint": test_settings.s3_region}
+        )
+        target = storage.upload_target("real/ws1/t1/u1", "image/png")
+        assert target["method"] == "PUT"
+        assert target["headers"] == {"content-type": "image/png"}
+        query = parse_qs(urlsplit(target["url"]).query)
+        assert query["X-Amz-Expires"] == ["600"]
+        assert "content-type" in query["X-Amz-SignedHeaders"][0].split(";")
+        assert urlsplit(target["url"]).path.endswith("/test-bucket/real/ws1/t1/u1")
+
+        assert storage.head("real/ws1/t1/u1") is None
+        r = requests.put(target["url"], data=b"\x89PNG-bytes", headers=target["headers"], timeout=5)
+        assert r.status_code == 200
+        assert storage.head("real/ws1/t1/u1") == len(b"\x89PNG-bytes")

@@ -1,7 +1,12 @@
-"""Private S3-compatible object storage (Supabase Storage, GCS, R2, S3, MinIO). Sync boto3: call it with asyncio.to_thread."""
+"""Private S3-compatible object storage (Supabase Storage, GCS, R2, S3, MinIO). Sync boto3 and httpx: call it with
+asyncio.to_thread."""
+
+from urllib.parse import quote
 
 import boto3
+import httpx
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from assistant.config import Settings
 
@@ -10,9 +15,19 @@ class StorageError(Exception):
     """The store answered, but did not do all it was asked."""
 
 
+UPLOAD_SECONDS = 600  # an S3 presigned PUT lives 10 minutes (Supabase's own signed upload links live 2 hours)
+_SIGN_TIMEOUT = 10.0
+_MISSING = {"404", "NoSuchKey", "NotFound"}
+
+
 class Storage:
     def __init__(self, settings: Settings):
         self.bucket = settings.s3_bucket
+        self._supabase = (
+            (settings.supabase_url.rstrip("/"), settings.supabase_service_key)
+            if settings.supabase_url and settings.supabase_service_key
+            else None
+        )
         self._client = boto3.client(
             "s3",
             endpoint_url=settings.s3_endpoint or None,
@@ -35,6 +50,42 @@ class Storage:
 
     def get(self, key: str) -> bytes:
         return self._client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+
+    def head(self, key: str) -> int | None:
+        """The object's size in bytes, or None when there is no such object."""
+        try:
+            return self._client.head_object(Bucket=self.bucket, Key=key)["ContentLength"]
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in _MISSING:
+                return None
+            raise
+
+    def upload_target(self, key: str, mime: str) -> dict:
+        """Where the browser PUTs one file's bytes: this key only, never over an object already there (Supabase).
+
+        On Supabase, its own signed upload link (the browser may call it: Supabase allows CORS on it); elsewhere, an S3
+        presigned PUT. The browser must send exactly `headers` with the bytes.
+        """
+        if self._supabase is not None:
+            base, service_key = self._supabase
+            path = quote(f"{self.bucket}/{key}", safe="/")
+            r = httpx.post(
+                f"{base}/storage/v1/object/upload/sign/{path}",
+                headers={"Authorization": f"Bearer {service_key}", "apikey": service_key, "x-upsert": "false"},
+                timeout=_SIGN_TIMEOUT,
+            )
+            if r.status_code != 200:
+                raise StorageError(f"signed upload link refused: {r.status_code}")
+            url = r.json()["url"]  # relative to the Storage API: /object/upload/sign/{bucket}/{key}?token=...
+            if not url.startswith(("https://", "http://")):
+                url = f"{base}/storage/v1/{url.lstrip('/')}"
+            return {"url": url, "method": "PUT", "headers": {"content-type": mime, "x-upsert": "false"}}
+        url = self._client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": key, "ContentType": mime},
+            ExpiresIn=UPLOAD_SECONDS,
+        )
+        return {"url": url, "method": "PUT", "headers": {"content-type": mime}}
 
     def signed_url(self, key: str, seconds: int = 300) -> str:
         return self._client.generate_presigned_url(
