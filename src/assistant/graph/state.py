@@ -25,6 +25,7 @@ class ChatState(TypedDict, total=False):
     facts: list[Fact]  # accumulate across turns
     readings: list[FileReading]  # every file and link read in this thread
     rounds_asked: int  # ask-back rounds since the last card
+    kept_offered: bool  # the context's kept facts were offered (once per thread)
     context: AppContext | None
     context_at: float  # when `context` was loaded (epoch seconds)
     past_pieces: list[str]  # texts of pieces shown in earlier turns, for the repeat check

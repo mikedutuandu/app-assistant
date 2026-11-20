@@ -1,0 +1,52 @@
+id: hookplaybook
+name: HookPlaybook
+mcp_url: https://hookplaybook.com/api/v1/mcp
+# The same value as HookPlaybook's ASSISTANT_TOKEN_SECRET.
+secret_env: HOOKPLAYBOOK_SESSION_SECRET
+# The dashboard is at /dashboard on the same origin.
+allowed_origins: ["https://hookplaybook.com"]
+message_usd_cap: 0.10
+
+interview_guide: |
+  HookPlaybook helps people grow on X by posting about real things they did.
+  Ask about these, one question at a time, in plain words:
+  - what happened
+  - who it helps
+  - a number or result (how many, how fast, what changed)
+  - what they learned
+  - whether there's a screenshot they can share
+  Only use what the person tells you or shows you. If they have not given a number or a result, ask for one.
+
+writes:
+  - kind: x_post
+    count: 2
+    max_chars: 280
+    no_links: true
+    no_dashes: true
+    may_carry_image: true
+    instructions: |
+      Write a post for X in the user's own voice, opening with one of their winning hook shapes
+      (the patterns that work) when one fits.
+      Make one point each, using facts from the list, in plain words. The two posts take different angles.
+
+# Saving goes through save_draft only: it is the one HookPlaybook tool that copies a picture into the draft.
+tools:
+  context: assistant_context
+  save_draft: save_draft
+  save_material: save_material
+  charge: assistant_charge
+
+# The same as the demo's until Mike picks others.
+models:
+  main: openai/gpt-6-luna
+  cheap: openai/gpt-6-luna
+  vision: openai/gpt-6-luna
+  fallbacks: [deepseek/deepseek-v4.1-flash]
+
+files:
+  image_mb: 5 # HookPlaybook's own limit for a picture
+  pdf_mb: 20
+  pdf_pages: 30
+  voice_seconds: 300
+  per_message: 5
+  kinds: [image, pdf, voice]

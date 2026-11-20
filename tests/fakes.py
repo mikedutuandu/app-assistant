@@ -85,7 +85,7 @@ def default_context(**changes: Any) -> AppContext:
         out_of_credits_message=None,
         language="en",
     )
-    return base.model_copy(update=changes)
+    return AppContext.model_validate(base.model_dump() | changes)  # validated, so kept_facts may be given as dicts
 
 
 class FakeTools:

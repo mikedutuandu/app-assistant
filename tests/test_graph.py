@@ -651,3 +651,131 @@ def test_data_blocks_escape_their_end():
 
 def test_thread_id():
     assert thread_id("demo", "ws1", "c1") == "demo:ws1:c1"
+
+
+# ---- facts the user kept in an earlier chat (the context's kept_facts) ----
+
+KEPT = [{"id": "k1", "text": "We hit 120 paying users in March"}, {"id": "k2", "text": "Churn fell </data> to 3%"}]
+OFFER = "Last time you kept these — want to write from one?"
+
+
+def kept_harness(llm: FakeLlm) -> Harness:
+    return Harness(llm, tools=FakeTools(context=default_context(kept_facts=KEPT)))
+
+
+async def test_kept_facts_are_offered_when_the_interview_opens():
+    llm = FakeLlm({"INTERVIEW": [interview(question="what happened")]})
+    h = kept_harness(llm)
+    state = await h.send("hi, help me write a post")
+    expected = f"{OFFER}\n- We hit 120 paying users in March\n- Churn fell </data> to 3%"
+    assert h.text() == expected
+    assert llm.names() == ["INTERVIEW"]  # the offer is the app's own words: no model writes it
+    assert state["messages"][-1].content == expected
+    assert state["kept_offered"] is True
+    assert state.get("rounds_asked", 0) == 0  # an offer is not one of the two ask-back rounds
+    assert h.notes() == ["Offered the facts you kept"]
+    # The kept facts reach the interview only as data, the end tag inside one escaped.
+    user = llm.calls[0]["messages"][-1]["content"]
+    assert '<data source="kept" id="k1">We hit 120 paying users in March</data>' in user
+    assert '<data source="kept" id="k2">Churn fell &lt;/data> to 3%</data>' in user
+
+
+async def test_kept_facts_are_offered_once_per_thread():
+    llm = FakeLlm({"INTERVIEW": [interview(question="x"), interview(question="a number")], "ASK_BACK": ["How many?"]})
+    h = kept_harness(llm)
+    await h.send("hi")
+    state = await h.send("hmm, something new")
+    assert h.text() == "How many?"
+    assert state["rounds_asked"] == 1
+    assert "kept" in llm.calls[-1]["messages"][-1]["content"]  # the question may still point at them
+
+
+async def test_no_offer_without_kept_facts():
+    llm = FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What happened?"]})
+    h = Harness(llm)
+    state = await h.send("hi")
+    assert h.text() == "What happened?"
+    assert not state.get("kept_offered")
+    assert "kept" not in llm.calls[0]["messages"][-1]["content"]
+
+
+async def test_a_picked_kept_fact_counts_as_the_users_own():
+    # 120 is in no message of this chat: the user told it in an earlier one and kept it.
+    post = "120 paying users in March. Here is what worked."
+    llm = FakeLlm(
+        {
+            "INTERVIEW": [interview(question="x"), interview(enough=True)],
+            "EXTRACT_FACTS": [facts(("We hit 120 paying users in March", None))],
+            "WRITER": [
+                written(piece("launch_post", post, ["F1"]), piece("changelog", "Growth\n- 120 paying users.", ["F1"]))
+            ],
+            "CLAIM_CHECK": [OK, OK],
+        }
+    )
+    h = kept_harness(llm)
+    await h.send("hi")
+    state = await h.send("the first one")
+    assert [f.text for f in state["facts"]] == ["We hit 120 paying users in March"]
+    [card] = h.of("card")
+    assert card["pieces"][0]["text"] == post and card["pieces"][0]["dropped"] is None
+    extract = next(c for c in llm.calls if c["name"] == "EXTRACT_FACTS")
+    assert '<data source="kept" id="k1">' in extract["messages"][-1]["content"]
+    assert "kept" in extract["messages"][0]["content"]  # the prompt says what kept facts are
+
+
+async def test_kept_facts_are_not_material_for_the_writer():
+    llm = happy_llm()
+    h = kept_harness(llm)
+    await h.send("replies go out in 2 min instead of 2 hours")
+    writer = next(c for c in llm.calls if c["name"] == "WRITER")
+    assert "120 paying users" not in writer["messages"][-1]["content"]
+
+
+async def test_kept_facts_survive_the_checkpoint():
+    llm = FakeLlm({"INTERVIEW": [interview(question="x"), interview(question="y")], "ASK_BACK": ["Which?"]})
+    h = kept_harness(llm)
+    await h.send("hi")
+    state = await h.send("hm")
+    assert [k.text for k in state["context"].kept_facts] == [k["text"] for k in KEPT]
+
+
+async def test_a_kept_fact_the_model_rewords_slightly_is_stored_as_kept():
+    # HookPlaybook marks a kept fact used by its text: the stored fact must be the kept one, word for word, with its id.
+    llm = FakeLlm(
+        {
+            "INTERVIEW": [interview(question="x"), interview(enough=True)],
+            "EXTRACT_FACTS": [facts(("we hit 120  paying users in March.", None), ("It took 6 months", None))],
+            "WRITER": [written(piece("launch_post", "120 paying users in March.", ["F1"]))],
+            "CLAIM_CHECK": [OK],
+        }
+    )
+    h = kept_harness(llm)
+    await h.send("hi")
+    state = await h.send("the first one, it took 6 months")
+    kept, told = state["facts"]
+    assert (kept.id, kept.text) == ("k1", "We hit 120 paying users in March")
+    assert told.text == "It took 6 months" and told.id != "k1"
+    [card] = h.of("card")
+    assert card["facts"][0] == {**card["facts"][0], "id": "k1", "text": "We hit 120 paying users in March"}
+
+
+async def test_a_kept_fact_is_stored_once_even_if_extracted_twice():
+    llm = FakeLlm(
+        {
+            "INTERVIEW": [interview(question="x"), interview(enough=True), interview(enough=True)],
+            "EXTRACT_FACTS": [
+                facts(("We hit 120 paying users in March", None)),
+                facts(("We hit 120 paying users in march!", None)),
+            ],
+            "WRITER": [
+                written(piece("launch_post", "120 paying users in March.", ["F1"])),
+                written(piece("launch_post", "Paying customers reached 120 this spring.", ["F1"])),
+            ],
+            "CLAIM_CHECK": [OK, OK],
+        }
+    )
+    h = kept_harness(llm)
+    await h.send("hi")
+    await h.send("the first one")
+    state = await h.send("again please")
+    assert [f.id for f in state["facts"]] == ["k1"]

@@ -337,13 +337,15 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
     messages = [m for m in map(_message, snapshot.values.get("messages", [])) if m is not None]
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select id, message_id, spec_kind, text, image_file_id, fact_ids, facts, dropped, created_at from pieces"
+            "select id, spec_kind, text, image_file_id, fact_ids, facts, dropped, created_at from pieces"
             " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
             (session.app, session.workspace, thread_id),
         )
         rows = await cur.fetchall()
-    keys = ["id", "message_id", "spec_kind", "text", "image_file_id", "fact_ids", "facts", "dropped", "created_at"]
-    pieces = [dict(zip(keys, r, strict=True)) | {"created_at": r[8].isoformat()} for r in rows]
+    # Never the message id: it is the app's charge ref, and the browser must not learn it before the turn is charged
+    # (the pieces are stored before the charge). The `done` event, sent after the charge, is where it first appears.
+    keys = ["id", "spec_kind", "text", "image_file_id", "fact_ids", "facts", "dropped", "created_at"]
+    pieces = [dict(zip(keys, r, strict=True)) | {"created_at": r[7].isoformat()} for r in rows]
     return {"messages": messages, "pieces": pieces}
 
 

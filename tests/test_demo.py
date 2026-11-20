@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from test_api_chat import PNG, Api, api  # noqa: F401 - the shared fixture
+from chat_api import PNG, Api
 
 from assistant.auth import verify_session
 from assistant.demo.cleanup import cleanup_demo
