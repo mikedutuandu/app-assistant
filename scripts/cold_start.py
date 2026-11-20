@@ -23,7 +23,8 @@ SNIPPET = "import time; t = time.perf_counter(); import assistant.asgi; print(ti
 def main() -> None:
     env = {**PLACEHOLDERS, **os.environ}
     runs = [
-        subprocess.run([sys.executable, "-c", SNIPPET], capture_output=True, text=True, env=env) for _ in range(RUNS)
+        subprocess.run([sys.executable, "-c", SNIPPET], check=False, capture_output=True, text=True, env=env)
+        for _ in range(RUNS)
     ]
     for run in runs:
         if run.returncode != 0:
