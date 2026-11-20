@@ -53,9 +53,10 @@ def test_new_id_sorts_by_time():
     assert len(first) == 26
 
 
-async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings):
+async def test_lifespan_opens_migrates_and_sets_up_checkpointer(test_settings, monkeypatch):
     if not os.environ.get("TEST_DATABASE_URL"):
         pytest.skip("TEST_DATABASE_URL is not set")
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
     settings = Settings(
         **{
             **test_settings.model_dump(),
@@ -85,5 +86,14 @@ async def test_lifespan_fails_without_packs(test_settings):
     settings = Settings(**{**test_settings.model_dump(), "run_lifespan": True})  # packs_dir is an empty tmp dir
     app = create_app(settings)
     with pytest.raises(PackError, match="no app packs"):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+async def test_lifespan_fails_when_a_pack_secret_is_unset(test_settings, monkeypatch):
+    monkeypatch.delenv("DEMO_SESSION_SECRET", raising=False)
+    settings = Settings(**{**test_settings.model_dump(), "packs_dir": Path("apps"), "run_lifespan": True})
+    app = create_app(settings)
+    with pytest.raises(PackError, match="DEMO_SESSION_SECRET"):
         async with app.router.lifespan_context(app):
             pass

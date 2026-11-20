@@ -3,6 +3,7 @@
 Errors are JSON bodies the widget reads (`{"error": ...}`), never FastAPI's `{"detail": ...}`.
 """
 
+import logging
 import re
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
@@ -13,6 +14,8 @@ from fastapi.responses import JSONResponse
 from assistant.auth import AuthError, Session, verify_session
 from assistant.packs import AppPack
 
+log = logging.getLogger("assistant.api")
+SERVER_ERROR = {"error": "server", "message": "Something went wrong on our side."}
 _CHAT_PATH = re.compile(r"^/v1/chat/([^/]+)/")
 _CORS_HEADERS = [
     (b"access-control-allow-methods", b"GET, POST, DELETE"),
@@ -125,11 +128,42 @@ class ChatCors:
         await self.app(scope, receive, send_with_cors)
 
 
+class CatchAll:
+    """Any unhandled error becomes a JSON 500 the widget can read, logged by its type and the path's ids only.
+
+    No traceback is logged and nothing is re-raised (the server would log one): an exception message or a frame
+    can hold the user's text. It sits inside ChatCors, so an allowed origin still gets its CORS header.
+    """
+
+    def __init__(self, app: Callable[[Scope, Receive, Send], Awaitable[None]]):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def tracking_send(message: MutableMapping[str, Any]) -> None:
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, tracking_send)
+        except Exception as e:  # noqa: BLE001 - the last line of defence: answer in JSON, log the kind only
+            log.error("unhandled error=%s method=%s path=%s", type(e).__name__, scope.get("method"), scope.get("path"))
+            if not started:
+                await JSONResponse(SERVER_ERROR, status_code=500)(scope, receive, send)
+
+
 def install(app: FastAPI) -> None:
-    """The JSON error handler and the CORS middleware."""
+    """The JSON error handler, the catch-all and the CORS middleware (outermost)."""
 
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(exc.body, status_code=exc.status)
 
-    app.add_middleware(ChatCors)
+    app.add_middleware(CatchAll)
+    app.add_middleware(ChatCors)  # added last, so it wraps CatchAll's 500s too

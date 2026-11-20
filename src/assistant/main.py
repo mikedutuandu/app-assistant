@@ -7,7 +7,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from assistant.api import chat, deps
+from assistant.api import chat, deps, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, migrate, open_pool
@@ -29,6 +29,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         packs = load_packs(settings.packs_dir, settings.public_base_url)
         if not packs:
             raise PackError(f"no app packs in {settings.packs_dir}")
+        for pack in packs.values():
+            pack.secret()  # fail at startup, not on every request, when a pack's secret is unset
         pool = await open_pool(settings.database_url)
         # LangGraph's saver needs autocommit connections and dict rows, so it gets its own pool.
         saver_pool = AsyncConnectionPool(
@@ -56,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             app.state.tools_for = tools_for
             yield
+            await turn.drain()  # running turns finish and charge before their pools close
         finally:
             await close_pool(saver_pool)
             await close_pool(pool)

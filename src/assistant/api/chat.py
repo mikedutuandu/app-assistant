@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
@@ -21,6 +22,7 @@ from assistant.db import new_id
 from assistant.files.intake import UploadError, accept_upload
 from assistant.graph.build import build_graph
 from assistant.graph.build import thread_id as graph_thread_id
+from assistant.limits import hit
 from assistant.packs import AppPack
 from assistant.tools import ToolError
 
@@ -28,6 +30,8 @@ log = logging.getLogger("assistant.api")
 
 MAX_UPLOAD_BYTES = 26 * 1024 * 1024  # the largest cap (voice, 25 MB) plus room for the multipart wrapping
 THREADS_LISTED = 30
+MAX_TEXT_CHARS = 4000
+UPLOADS_PER_HOUR = 30
 UPLOAD_THREAD_TITLE = "Files"
 PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again after this
 
@@ -79,6 +83,8 @@ async def _read_form(request: Request):
 async def upload(request: Request, auth: Auth) -> dict:
     pack, session = auth
     state = request.app.state
+    if not await hit(state.pool, f"upload:{session.app}:{session.workspace}", timedelta(hours=1), UPLOADS_PER_HOUR):
+        raise ApiError(429, "limit", "You've uploaded a lot this hour. Try again a bit later.")
     form = await _read_form(request)
     try:
         file = form.get("file")
@@ -135,6 +141,8 @@ async def messages(body: MessageIn, request: Request, auth: Auth) -> EventSource
     file_ids = list(dict.fromkeys(body.file_ids))
     if not text and not file_ids:
         raise ApiError(400, "empty", "Type a message or attach a file.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ApiError(400, "too_long", "That message is too long. Keep it under 4,000 characters.")
     if len(file_ids) > pack.files.per_message:
         n = pack.files.per_message
         raise ApiError(400, "too_many_files", f"You can send up to {n} file{'s' if n != 1 else ''} at a time.")
@@ -197,11 +205,11 @@ async def _piece(pool, session: Session, chat_id: str, piece_id: str) -> tuple[s
     return row[0], row[1], [Fact.model_validate(f) for f in row[2]]
 
 
-async def _image_url(state, session: Session, file_id: str) -> list[dict]:
+async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select storage_key from files where id = %s and app = %s and workspace = %s",
-            (file_id, session.app, session.workspace),
+            "select storage_key from files where id = %s and app = %s and workspace = %s and thread_id = %s",
+            (file_id, session.app, session.workspace, chat_id),
         )
         row = await cur.fetchone()
     if row is None:
@@ -231,7 +239,7 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     try:
         if piece is not None:
             text, image_file_id, facts = piece
-            media = await _image_url(state, session, image_file_id) if image_file_id else []
+            media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
             draft = await tools.save_draft(text, media, key=body.action_id)
             if facts:
                 await tools.save_material(facts, draft.id, key=body.action_id + ":facts")

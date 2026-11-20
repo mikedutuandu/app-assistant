@@ -146,3 +146,13 @@ def test_delete_token_checks_like_a_session():
     assert _delete_reason(_raw(_claims(access="delete", iss="other-app")), pack) == "wrong_app"
     assert _delete_reason(_raw(_claims(access="delete"), "o" * 64), pack) == "invalid"
     assert _delete_reason(_raw(_claims(access="delete", iat=now, exp=now + 3601)), pack) == "invalid"
+
+
+@pytest.mark.parametrize("workspace", ["a/b", "", "x" * 201, "ws 1", "../ws"])
+def test_workspace_ids_outside_the_safe_set_are_invalid(workspace):
+    assert _reason(_raw(_claims(sub=workspace)), _pack()) == "invalid"
+    assert _delete_reason(_raw(_claims(sub=workspace, access="delete")), _pack()) == "invalid"
+
+
+def test_demo_style_workspace_id_is_valid():
+    assert verify_session(_raw(_claims(sub="demo:0123abcd")), _pack()).workspace == "demo:0123abcd"

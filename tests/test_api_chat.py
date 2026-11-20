@@ -678,3 +678,98 @@ async def test_action_ids_are_per_workspace(api: Api):
     other = {**body, "facts": [{"text": "a"}, {"text": "b"}]}
     assert (await api.act(await api.thread_row("ws2"), other, workspace="ws2")).json() == {"kept": 2}
     assert len(api.tools.materials) == 2
+
+
+# ---- review round 1 ----
+
+
+async def test_pieces_not_saved_shows_card_fails_turn_and_charges_once(api: Api, monkeypatch):
+    async def broken(*_args):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(turn, "_save_pieces", broken)
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    assert len(of(events, "card")) == 1  # what was written is still shown
+    assert of(events, "done") == []
+    assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.005)]
+
+
+async def test_message_over_4000_chars_400(api: Api):
+    body = {"thread_id": None, "text": "a" * 4001, "file_ids": []}
+    r = await api.client.post("/v1/chat/real/messages", json=body, headers=api.headers())
+    assert r.status_code == 400
+    assert r.json() == {"error": "too_long", "message": "That message is too long. Keep it under 4,000 characters."}
+    api.llm.script = ask_script()
+    assert of(await api.send("a" * 3999 + "?"), "done")
+
+
+async def test_workspace_with_slash_is_invalid(api: Api):
+    r = await api.client.get("/v1/chat/real/threads", headers=api.headers("a/b"))
+    assert (r.status_code, r.json()) == (401, {"error": "invalid"})
+    token = raw_token("real", "a/b", "delete")
+    r = await api.client.delete("/v1/apps/real/workspaces/a", headers={"Authorization": f"Bearer {token}"})
+    assert (r.status_code, r.json()) == (401, {"error": "invalid"})
+
+
+async def test_unhandled_error_is_json_500_with_cors_and_no_text_logged(api: Api, monkeypatch, caplog):
+    secret_text = "my secret launch post about 40 customers"
+
+    async def boom(*_args):
+        raise ValueError(secret_text)
+
+    with caplog.at_level("DEBUG"):
+        with monkeypatch.context() as m:
+            m.setattr(chat, "owned_thread", boom)
+            r = await api.client.get("/v1/chat/real/threads/t1", headers=api.headers())
+        assert r.status_code == 500
+        assert r.json() == {"error": "server", "message": "Something went wrong on our side."}
+        assert r.headers["access-control-allow-origin"] == ORIGIN
+
+        # an action whose tool raises something unexpected frees its claim and answers in JSON too
+        tid = await api.thread_row()
+        api.tools.errors["save_material"] = ValueError(secret_text)
+        body = {"action_id": "x1", "kind": "keep_facts", "facts": [{"text": FACT}]}
+        r = await api.act(tid, body)
+        assert (r.status_code, r.json()["error"]) == (500, "server")
+        del api.tools.errors["save_material"]
+        assert (await api.act(tid, body)).json() == {"kept": 1}
+    assert secret_text not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "ValueError" in caplog.text
+
+
+async def test_upload_limit_429(api: Api):
+    assert await hit(api.pool, "upload:real:ws1", timedelta(hours=1), 30, 30)
+    r = await api.upload(PNG)
+    assert r.status_code == 429
+    assert r.json() == {"error": "limit", "message": "You've uploaded a lot this hour. Try again a bit later."}
+    assert (await api.upload(PNG, workspace="ws2")).status_code == 200
+
+
+async def test_drain_waits_for_running_turns():
+    done: list[str] = []
+
+    async def slow(seconds: float, name: str) -> None:
+        await asyncio.sleep(seconds)
+        done.append(name)
+
+    turn.track(asyncio.create_task(slow(0.05, "quick")))
+    await turn.drain(timeout=5)
+    assert done == ["quick"]
+    stuck = asyncio.create_task(slow(10, "stuck"))
+    turn.track(stuck)
+    started = time.monotonic()
+    await turn.drain(timeout=0.05)
+    assert time.monotonic() - started < 1 and done == ["quick"]
+    stuck.cancel()
+
+
+async def test_add_draft_never_sends_an_image_from_another_thread(api: Api):
+    elsewhere = (await api.upload(PNG)).json()
+    tid = await api.thread_row()
+    pid = await api.piece_row(tid, image_file_id=elsewhere["file_id"])
+    r = await api.act(tid, {"action_id": "a-x", "kind": "add_draft", "piece_id": pid})
+    assert r.status_code == 200
+    assert api.tools.drafts[0]["media"] == []

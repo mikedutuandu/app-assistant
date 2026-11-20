@@ -44,6 +44,7 @@ OUT_OF_CREDITS = "You're out of credits in this app."
 APP_DOWN = "The app couldn't be reached. Try again in a minute."
 OUR_FAULT = "Something went wrong on our side. Nothing was saved."
 FILE_GONE = "That file can't be found anymore."
+SHUTDOWN_WAIT = 20.0
 
 Emit = Callable[[str, dict], Awaitable[None]]
 _RUNNING: set[asyncio.Task] = set()  # strong references, so a running turn is never garbage-collected
@@ -82,10 +83,19 @@ def start(state: Any, turn: TurnInput) -> asyncio.Queue:
         finally:
             queue.put_nowait(None)
 
-    task = asyncio.create_task(run())
+    track(asyncio.create_task(run()))
+    return queue
+
+
+def track(task: asyncio.Task) -> None:
     _RUNNING.add(task)
     task.add_done_callback(_RUNNING.discard)
-    return queue
+
+
+async def drain(timeout: float = SHUTDOWN_WAIT) -> None:
+    """On shutdown: lets running turns finish (and charge) for up to `timeout` seconds."""
+    if _RUNNING:
+        await asyncio.wait(set(_RUNNING), timeout=timeout)
 
 
 async def _gate(state: Any, t: TurnInput, tools: AppTools) -> None:
@@ -108,7 +118,10 @@ async def _open_thread(pool, t: TurnInput) -> tuple[str, bool]:
     """The turn's thread id and whether it was just created; touches updated_at."""
     async with pool.connection() as conn:
         if t.thread_id is not None:
-            await conn.execute("update threads set updated_at = now() where id = %s", (t.thread_id,))
+            await conn.execute(
+                "update threads set updated_at = now() where id = %s and app = %s and workspace = %s",
+                (t.thread_id, t.session.app, t.session.workspace),
+            )
             return t.thread_id, False
         chat_id = new_id()
         await conn.execute(
@@ -207,13 +220,16 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     if created:
         await emit("thread", {"thread_id": chat_id, "title": t.text[:TITLE_CHARS]})
 
+    unsaved: list[str] = []  # a card whose pieces could not be stored: its Add buttons would never work
+
     async def on_event(kind: str, payload: dict) -> None:
-        try:
-            if kind == "card":
+        if kind == "card":
+            try:
                 await _save_pieces(state.pool, t, chat_id, message_id, payload)
-            await emit(kind, payload)
-        except Exception as e:  # noqa: BLE001 - the graph must never fail because of an event
-            log.error("event failed message=%s kind=%s error=%s", message_id, kind, type(e).__name__)
+            except Exception as e:  # noqa: BLE001 - the graph must never fail because of an event
+                unsaved.append(type(e).__name__)
+                log.error("pieces not saved message=%s error=%s", message_id, type(e).__name__)
+        await emit(kind, payload)
 
     graph = build_graph(
         t.pack,
@@ -235,7 +251,10 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
 
     await _record_cost(state, t, tools, cost, message_id)
     took = time.monotonic() - started
-    if failure is None:
+    if failure is None and unsaved:
+        log.error("turn failed app=%s message=%s error=pieces_not_saved cost=%.6f", t.pack.id, message_id, cost)
+        await emit("failed", {"error": "server", "message": OUR_FAULT})
+    elif failure is None:
         log.info(
             "turn done app=%s thread=%s message=%s cost=%.6f took=%.2fs", t.pack.id, chat_id, message_id, cost, took
         )
