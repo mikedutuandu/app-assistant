@@ -49,6 +49,23 @@ def log_to_stdout() -> None:
     logger.propagate = False
 
 
+PLACEHOLDER_MARKER = "change-before-you-expose"  # in the throwaway secrets docker-compose.yml gives for localhost
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def refuse_placeholder_secrets(secrets: dict[str, str], settings: Settings) -> None:
+    """A throwaway secret from docker-compose.yml is public: it may run only where PUBLIC_BASE_URL is this machine."""
+    host = urlsplit(settings.public_base_url).hostname or ""
+    if host in LOCAL_HOSTS:
+        return
+    for name, value in secrets.items():
+        if PLACEHOLDER_MARKER in value:
+            raise PackError(
+                f"{name} is still docker-compose's placeholder, which is public: set your own "
+                f"(openssl rand -hex 32) before PUBLIC_BASE_URL ({host or 'unset'}) is anything but localhost"
+            )
+
+
 CORS_SECONDS = 8  # a hanging store must not hold up startup
 
 
@@ -96,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise PackError(f"no app packs in {settings.packs_dir}")
         for key in [*local.values(), *registry]:
             key.secret()  # fail at startup, not on every request, when an app's secret is unset
+        refuse_placeholder_secrets({k.secret_env: k.secret() for k in [*local.values(), *registry]}, settings)
         pool = await open_pool(direct_url(settings), settings.db_schema, settings.db_pool_max)
         saver_pool = await open_saver_pool(direct_url(settings), settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links

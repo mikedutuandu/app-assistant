@@ -275,7 +275,7 @@ class Storage:
             deleted = sum(1 for p in target.rglob("*") if p.is_file())
             shutil.rmtree(target)
             shutil.rmtree(self._types(prefix), ignore_errors=True)
-        else:
+        elif not prefix.endswith("/"):  # "a/b/" with no such folder matches nothing, never a sibling like "a/bc"
             parent = target.parent
             if parent.is_dir():
                 for p in list(parent.iterdir()):

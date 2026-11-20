@@ -24,7 +24,8 @@ def valid(secret: str, method: str, key: str, exp: str, sig: str, now: float | N
         return False
     if when < (time.time() if now is None else now):
         return False
-    return hmac.compare_digest(sign(secret, method, key, when), sig)
+    # Bytes, not str: compare_digest raises TypeError on a non-ASCII str, and the query string is anyone's.
+    return hmac.compare_digest(sign(secret, method, key, when).encode(), sig.encode())
 
 
 async def load_signing_key(pool) -> str:

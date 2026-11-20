@@ -3,12 +3,13 @@
 #
 # OPENROUTER_API_KEY is needed for real replies (export it or put it in a `.env` file next to this one). The two
 # *_SESSION_SECRET defaults below are for trying it on your own machine: set your own before the bot is reachable by
-# anyone else (`openssl rand -hex 32`), and set PUBLIC_BASE_URL to its public address.
+# anyone else (`openssl rand -hex 32`), and set PUBLIC_BASE_URL to its public address: the bot refuses to start with
+# these placeholders while PUBLIC_BASE_URL is not localhost. The port is bound to this machine only.
 services:
   bot:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # this machine only; see README to publish it
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DATABASE_URL: postgresql://assistant:assistant@postgres:5432/assistant

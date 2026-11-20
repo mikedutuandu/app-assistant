@@ -221,3 +221,30 @@ def test_a_get_url_is_valid_for_the_seconds_asked(local: Storage):
     query = dict(p.split("=") for p in urlsplit(url).query.split("&"))
     assert abs(int(query["exp"]) - (time.time() + 300)) < 5
     assert local.object_url("demo/ws/").startswith("http://testserver/v1/files/demo/ws/")
+
+
+async def test_a_non_ascii_signature_is_403_not_500(local_api):
+    target = (await _start(local_api))["target"]
+    path = urlsplit(target["url"]).path
+    exp = int(time.time()) + 300
+    for method in ("put", "get"):
+        r = await getattr(local_api.client, method)(f"{path}?exp={exp}&sig=%C3%A9", headers=target["headers"])
+        assert r.status_code == 403, method
+
+
+def test_a_folder_prefix_never_matches_a_sibling(local: Storage):
+    local.put("a/bc", b"x", "image/png")
+    assert local.delete_prefix("a/b/") == 0
+    assert local.head("a/bc") == 1
+
+
+def test_a_symlink_out_of_data_dir_is_refused(local: Storage, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_bytes(b"s")
+    local.put("a/f", b"x", "image/png")
+    (local.object_path("a/f").parent / "link").symlink_to(outside)
+    with pytest.raises(StorageError):
+        local.get("a/link/secret")
+    with pytest.raises(StorageError):
+        local.object_path("a/link/secret")
