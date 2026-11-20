@@ -53,6 +53,8 @@ class Meter(Protocol):
 
     def gate(self) -> None: ...
 
+    async def emit(self, kind: str, payload: dict) -> None: ...  # a stream event (`status`)
+
 
 class FileReading(BaseModel):
     file_id: str

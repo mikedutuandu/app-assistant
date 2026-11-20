@@ -244,6 +244,8 @@ async def read_files(state: ChatState, t: Turn) -> dict:
     try:
         for ref, is_link in jobs:
             t.gate()
+            if is_link:
+                await t.emit("status", {"step": "reading"})
             try:  # the reader reports each model call's cost to the turn as it ends, and checks the cap before each
                 got = [await t.deps.read_link(ref)] if is_link else await t.deps.read_files([ref], t)
             except UploadError as e:
@@ -277,6 +279,7 @@ async def load_context(state: ChatState, t: Turn) -> dict:
 
 async def interview(state: ChatState, t: Turn) -> dict:
     """Is there enough to write? After 2 ask-back rounds there is, by rule."""
+    await t.emit("status", {"step": "thinking"})
     if state.get("rounds_asked", 0) >= MAX_ROUNDS:
         return {"ready": True}
     system = _system(prompts.INTERVIEW, t.pack, state, guide=True)
@@ -333,6 +336,7 @@ async def extract_facts(state: ChatState, t: Turn) -> dict:
 
 async def write(state: ChatState, t: Turn) -> dict:
     """Writes every piece the pack asks for; on the second pass, rewrites only the failing ones."""
+    await t.emit("status", {"step": "writing"})
     specs = {w.kind: w for w in t.pack.writes}
     facts = state.get("facts", [])
     labels = {f"F{i}": f.id for i, f in enumerate(facts, 1)} | {f.id: f.id for f in facts}
@@ -388,6 +392,7 @@ async def write(state: ChatState, t: Turn) -> dict:
 
 async def check(state: ChatState, t: Turn) -> dict:
     """Numbers, the app's rules, repeats, then a cheap claim check. Failing pieces go to `problems`."""
+    await t.emit("status", {"step": "checking"})
     specs = {w.kind: w for w in t.pack.writes}
     facts = state.get("facts", [])
     second = state.get("rewrites", 0) > 0
