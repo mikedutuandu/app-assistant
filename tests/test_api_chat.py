@@ -183,11 +183,53 @@ async def test_charge_refs_reach_the_browser_only_after_their_charges(api: Api):
     assert kinds.index("done") == len(kinds) - 1  # every charge came before `done`
     message_id = json.loads(dict(timeline)["done"])["message_id"]
     refs = [p for k, p in timeline if k == "charge"]
-    assert refs == [f"{message_id}:{n}" for n in range(1, 6)]
+    assert sorted(refs) == [f"{message_id}:{n}" for n in range(1, 6)]  # sent without waiting: any order
     # Nothing the browser was sent or could read before `done` carries the message id, so no ref.
     before = [p for k, p in timeline if k not in ("charge", "done")]
     assert all(message_id not in p for p in before)
     assert len(seen_at_charge) == 5 and all(message_id not in r for r in seen_at_charge)
+
+
+async def test_a_slow_charge_does_not_hold_up_the_next_model_call(api: Api):
+    """Charging is a round trip to the app (2-3 s live): the turn goes on while it is in flight, and `done` still
+    waits for every charge."""
+    timeline: list[str] = []
+    release = asyncio.Event()
+
+    class SlowCharge(FakeTools):
+        async def charge(self, cost_usd: float, ref: str) -> None:
+            timeline.append(f"charge-start {ref.split(':')[1]}")
+            await release.wait()
+            timeline.append("charge-end")
+            await super().charge(cost_usd, ref)
+
+    class Counting(FakeLlm):
+        async def chat_json(self, *args, **kwargs):
+            timeline.append("model")
+            if timeline.count("model") == 2:
+                release.set()  # the second call started while the first charge was still waiting
+            return await super().chat_json(*args, **kwargs)
+
+    api.tools = SlowCharge()
+    counting = Counting()
+    counting.script = happy_script()
+    api.app.state.llm = counting
+    pack = api.app.state.packs["real"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+    events: list[str] = []
+
+    async def emit(kind: str, payload: dict) -> None:
+        events.append(kind)
+        timeline.append(f"event {kind}")
+
+    await asyncio.wait_for(
+        turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), emit), timeout=5
+    )
+    assert timeline.index("charge-start 1") < timeline.index("model", timeline.index("charge-start 1"))
+    assert events[-1] == "done"
+    assert timeline.count("charge-end") == 5 and timeline.index("event done") > max(
+        i for i, x in enumerate(timeline) if x == "charge-end"
+    )
 
 
 class BlocksAtWriter(FakeLlm):

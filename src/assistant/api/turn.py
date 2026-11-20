@@ -186,13 +186,17 @@ def _file_reader(state: Any, t: TurnInput, chat_id: str) -> Callable[[list[str],
 
 def _cost_recorder(
     state: Any, t: TurnInput, tools: AppTools, message_id: str
-) -> Callable[[float, int], Awaitable[None]]:
-    """What the graph awaits after each model call: charges the app by `"<message_id>:<n>"` (the demo adds to its
-    daily spend instead), so a retry of the same call adds nothing. Never raises: a failure is logged by kind."""
+) -> tuple[Callable[[float, int], Awaitable[None]], Callable[[], Awaitable[None]]]:
+    """What the graph calls after each model call, and what the turn awaits before it ends.
 
-    async def on_cost(cost: float, n: int) -> None:
-        if cost <= 0:
-            return
+    Each call is charged by `"<message_id>:<n>"` (the demo adds to its daily spend instead), so a retry of the same
+    call adds nothing. The charge is sent at once but not waited for: it is a round trip to the app (2-3 s live)
+    and the next model call need not wait for it. `settle` waits for every charge sent, and the turn calls it
+    before `done` or `failed`, so no ref reaches the browser before its charge. Never raises: a failure is
+    logged by kind."""
+    pending: set[asyncio.Task[None]] = set()
+
+    async def charge(cost: float, n: int) -> None:
         try:
             if t.pack.demo:
                 await hit(state.pool, DEMO_USD_KEY, timedelta(days=1), cap=float("inf"), amount=cost)
@@ -203,7 +207,18 @@ def _cost_recorder(
         except Exception as e:  # noqa: BLE001 - the turn goes on and ends with its own outcome
             log.error("charge failed message=%s call=%d error=%s cost=%.6f", message_id, n, type(e).__name__, cost)
 
-    return on_cost
+    async def on_cost(cost: float, n: int) -> None:
+        if cost <= 0:
+            return
+        task = asyncio.create_task(charge(cost, n))
+        pending.add(task)
+        task.add_done_callback(pending.discard)
+
+    async def settle() -> None:
+        while pending:
+            await asyncio.gather(*list(pending), return_exceptions=True)
+
+    return on_cost, settle
 
 
 async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
@@ -245,6 +260,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
                 log.error("pieces not saved message=%s error=%s", message_id, type(e).__name__)
         await emit(kind, payload)
 
+    on_cost, settle_charges = _cost_recorder(state, t, tools, message_id)
     graph = build_graph(
         t.pack,
         state.llm,
@@ -253,16 +269,20 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         on_event,
         _file_reader(state, t, chat_id),
         lambda url: read_link(url, state.http),
-        _cost_recorder(state, t, tools, message_id),
+        on_cost,
     )
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
     try:
         final = await graph.ainvoke({"messages": [HumanMessage(t.text)], "file_ids": t.file_ids}, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
+    except asyncio.CancelledError:
+        await asyncio.shield(settle_charges())  # the client left: what was spent is still charged
+        raise
     except Exception as e:  # noqa: BLE001 - every failure is told to the user and its cost still charged
         failure = e
         cost = float(getattr(e, "cost_usd", 0.0) or 0.0)  # what the turn spent; never the checkpoint's on top
+    await settle_charges()  # before `done` or `failed`: no ref reaches the browser before its charge
 
     took = time.monotonic() - started
     if failure is None and unsaved:
