@@ -68,6 +68,8 @@ def test_ipv6_keys_on_64():
     assert ip_key("203.0.113.9") == "203.0.113.9"
     assert ip_key("2001:db8:1:2:aaaa:bbbb:cccc:dddd") == "2001:db8:1:2::/64"
     assert ip_key("2001:db8:1:2:1::1") == ip_key("2001:db8:1:2:ffff::2")
+    assert ip_key("::ffff:203.0.113.9") == "203.0.113.9"
+    assert ip_key("::ffff:198.51.100.1") == "198.51.100.1"
     assert ip_key("not-an-ip") == "not-an-ip"
 
 

@@ -25,6 +25,8 @@ def ip_key(ip: str) -> str:
         return ip
     if address.version == 4:
         return ip
+    if address.ipv4_mapped is not None:  # ::ffff:a.b.c.d is an IPv4 visitor on a dual-stack socket
+        return str(address.ipv4_mapped)
     return str(ipaddress.ip_network(f"{ip}/64", strict=False))
 
 
