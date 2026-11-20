@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,12 @@ class Settings(BaseSettings):
     public_base_url: str
     demo_daily_usd_cap: float = 3.0
     run_lifespan: bool = True
+
+    @field_validator("s3_endpoint", mode="before")
+    @classmethod
+    def _empty_endpoint_is_none(cls, value: object) -> object:
+        # `S3_ENDPOINT=` in an env file loads as "": treat it as unset so boto3 uses AWS.
+        return None if value == "" else value
 
 
 @lru_cache
