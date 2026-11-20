@@ -34,7 +34,7 @@ build-backend = "uv_build"
 module-name = "assistant"
 
 [tool.vercel]
-entrypoint = "assistant.asgi:app"
+entrypoint = "app:app"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

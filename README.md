@@ -43,7 +43,7 @@ cd widget && npm run build
 
 ## Deploy on Vercel
 
-The service runs on Vercel as one Python Function (Fluid compute), built from the repo's `pyproject.toml` and `vercel.json`; the entrypoint is `src/assistant/asgi.py`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket. Files go from the browser straight to Supabase (Vercel caps a request body at 4.5 MB); the bot only issues the upload link and then checks the stored file.
+The service runs on Vercel as one Python Function (Fluid compute), built from the repo's `pyproject.toml` and `vercel.json`; the entrypoint is the root-level `app.py`, which imports the app from `src/assistant/asgi.py`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket. Files go from the browser straight to Supabase (Vercel caps a request body at 4.5 MB); the bot only issues the upload link and then checks the stored file.
 
 *20 Nov 2026: hosting moved from Cloud Run to Vercel.*
 
@@ -97,7 +97,7 @@ Do not set `RUN_LIFESPAN=false` in production (it skips the database and storage
 
 **6. Deploy.** Deploy once; after that every push to `main` redeploys. A change to an environment variable applies from the next deployment (redeploy to pick it up). Migrations run on a cold start, under a Postgres advisory lock, so several instances starting together run them once.
 
-**7. Check.** `curl https://<domain>/health` answers `{"ok":true}`; then open `https://<domain>/demo` on a phone. If a pack's secret variable is missing, the function fails to start and the logs say which one.
+**7. Check.** `curl https://<domain>/health` answers `{"ok":true}`; then open `https://<domain>/demo` on a phone. If a pack's secret variable is missing, the function fails to start and the logs say which one. In the first deploy's build log, confirm Vercel used `app.py` as the entrypoint (the root-level `app.py` imports the app from `src/assistant/asgi.py`); if it says it found no entrypoint, or the function limits (300 s) are not applied, fix that before anything else.
 
 **Limits on the Hobby plan.** A function runs at most 300 s per request (a chat turn is one streamed response, so a turn is cut at 5 minutes); request bodies are at most 4.5 MB (files do not pass through the function); a cron runs at most once a day, which is why the demo's clean-up (`GET /internal/cleanup`, deleting the demo's data older than a day and every app's expired, unfinished uploads) is daily at 03:00 UTC. Nothing in the bot relies on work continuing after a response ends: every model call is charged as soon as it finishes, and there is no background loop.
 

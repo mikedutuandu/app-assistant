@@ -72,7 +72,7 @@ def client_ip(request: Request) -> str:
     """The visitor's IP as Vercel's edge reports it: `x-vercel-forwarded-for`, then `x-real-ip`, then the rightmost
     `x-forwarded-for` entry (the one our own proxy appended), else the socket's peer."""
     for name in ("x-vercel-forwarded-for", "x-real-ip"):
-        value = request.headers.get(name, "").strip()
+        value = request.headers.get(name, "").split(",")[0].strip()
         if value:
             return value
     forwarded = request.headers.get("x-forwarded-for")

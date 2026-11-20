@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from starlette.requests import Request
@@ -16,7 +19,6 @@ def _request(headers: dict[str, str]) -> Request:
 
 def test_asgi_module_exposes_app(monkeypatch):
     import importlib
-    import sys
 
     from fastapi import FastAPI
 
@@ -33,7 +35,7 @@ def test_asgi_module_exposes_app(monkeypatch):
     }.items():
         monkeypatch.setenv(name, value)
     get_settings.cache_clear()
-    sys.modules.pop("assistant.asgi", None)
+    monkeypatch.delitem(sys.modules, "assistant.asgi", raising=False)
     asgi = importlib.import_module("assistant.asgi")
     get_settings.cache_clear()
 
@@ -45,6 +47,11 @@ def test_client_ip_prefers_x_vercel_forwarded_for():
         {"x-vercel-forwarded-for": "198.51.100.7", "x-real-ip": "192.0.2.1", "x-forwarded-for": "1.1.1.1"}
     )
     assert client_ip(request) == "198.51.100.7"
+
+
+def test_client_ip_takes_the_first_entry_of_a_list():
+    assert client_ip(_request({"x-vercel-forwarded-for": "198.51.100.7, 10.1.1.1"})) == "198.51.100.7"
+    assert client_ip(_request({"x-real-ip": " 192.0.2.1 , 10.1.1.1"})) == "192.0.2.1"
 
 
 def test_client_ip_then_x_real_ip():
@@ -69,11 +76,40 @@ def test_vercel_json_points_at_the_entrypoint():
     config = json.loads((ROOT / "vercel.json").read_text())
     (function,) = config["functions"]
     assert (ROOT / function).is_file()
-    assert function == "src/assistant/asgi.py"
+    assert function == "app.py"
+    assert "src" not in config["functions"][function]["excludeFiles"]
     assert config["functions"][function]["maxDuration"] == 300
     assert config["crons"] == [{"path": "/internal/cleanup", "schedule": "0 3 * * *"}]
 
 
-def test_pyproject_entrypoint_matches_asgi_module():
+def test_pyproject_entrypoint_is_the_root_shim():
     text = (ROOT / "pyproject.toml").read_text()
-    assert '[tool.vercel]\nentrypoint = "assistant.asgi:app"' in text
+    assert '[tool.vercel]\nentrypoint = "app:app"' in text
+    assert (ROOT / "app.py").is_file()
+    assert (ROOT / "src" / "assistant" / "asgi.py").is_file()
+
+
+def test_app_py_shim_imports_with_a_clean_path():
+    # A fresh interpreter whose path has no `assistant` package: the shim must add src/ itself.
+    code = (
+        "import os, runpy, sys\n"
+        "sys.path[:] = [p for p in sys.path if not os.path.isdir(os.path.join(p or '.', 'assistant'))]\n"
+        "import importlib.util as u\n"
+        "assert u.find_spec('assistant') is None\n"
+        "ns = runpy.run_path('app.py')\n"
+        "print(type(ns['app']).__name__)\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"} | {
+        "OPENROUTER_API_KEY": "k",
+        "DATABASE_URL": "postgresql://x",
+        "S3_BUCKET": "b",
+        "S3_ACCESS_KEY": "a",
+        "S3_SECRET_KEY": "s",
+        "PUBLIC_BASE_URL": "http://t",
+        "RUN_LIFESPAN": "false",
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "FastAPI"
