@@ -1,6 +1,6 @@
 {
   "case": "story_over_turns",
-  "recorded_at": "2026-11-20T13:26:19+00:00",
+  "recorded_at": "2026-11-20T13:41:30+00:00",
   "models": {
     "chat": "anthropic/claude-haiku-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -32,77 +32,78 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Dark mode went live today. Who's been asking for it?",
+      "reply": "Dark mode is live as of today. Who has been asking for it?",
       "drafts": [],
       "saved": [
         "We launched dark mode today."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0010025
+      "cost_usd": 0.0009744
     },
     {
       "user": "it was the most requested feature, 52 people asked for it",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Dark mode with 52 requests is a solid story. Did it take long to build?",
+      "reply": "Dark mode was the most requested feature, so that's a good one to share. Want me to try a different angle next time?",
       "drafts": [
         {
-          "id": "9534AD2F000010",
+          "id": "9534AD2F000011",
           "kind": "x_post",
           "posts": [
-            "dark mode is live. 52 people asked for it, more than any other feature. so it's here."
+            "52 people asked for dark mode. It was the most requested feature. We launched it today."
           ]
         }
       ],
       "saved": [
-        "Dark mode was the most requested feature, with 52 people asking for it."
+        "Dark mode was the most requested feature.",
+        "52 people asked for dark mode."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0057884
+      "cost_usd": 0.0058525
     },
     {
       "user": "write it",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Here's your post. Want me to try a different angle?",
+      "reply": "Here's another take for you.",
       "drafts": [
         {
-          "id": "9534AD2F000012",
+          "id": "9534AD2F000014",
           "kind": "x_post",
           "posts": [
-            "52 people asked for the same thing. dark mode. it was the most requested feature. we launched it today."
+            "Dark mode is live. 52 people asked for it, and it was the most requested feature."
           ]
         }
       ],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.011306499999999999
+      "cost_usd": 0.022550999999999998
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The second reply says \"Dark mode with 52 requests is a solid story,\" building on dark mode without asking what launched.",
+      "why": "The second reply says \"Dark mode was the most requested feature, so that's a good one to share,\" building on dark mode without asking what launched.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The last draft says \"52 people asked for the same thing. dark mode... we launched it today,\" with 52 exact and the launch stated.",
+      "why": "The last draft says \"Dark mode is live. 52 people asked for it,\" so it covers the launch and the exact figure 52.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Both drafts use only 52, dark mode, most requested and launched today, with no invented numbers, results or quotes.",
+      "why": "Both drafts use only 52, the most-requested claim and today's launch, all from Mike, with nothing invented.",
       "holds": true
     },
     {
       "note": 4,
-      "why": "The last reply \"Here's your post. Want me to try a different angle?\" doesn't repeat the draft's text and offers another take without asking for details.",
+      "why": "The last reply, \"Here's another take for you.\", does not repeat the draft text, and the turn shows a new draft, so the condition is met.",
       "holds": true
     }
   ],
@@ -121,7 +122,7 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "c3ce2805d43e3713",
+        "system_sha256": "267354da5def49a7",
         "messages_sha256": "0ebec3418fa2b7c0",
         "messages": [
           {
@@ -131,10 +132,10 @@
         ]
       },
       "response": {
-        "text": "Dark mode went live today. Who's been asking for it?",
+        "text": "",
         "calls": [
           {
-            "id": "toolu_01TKCKfnQ3QAq6RnKZdUyHvn",
+            "id": "toolu_01HYyavw4faQ1xckaRGbjZ4a",
             "name": "save_facts",
             "arguments": {
               "facts": [
@@ -146,7 +147,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.0005159,
+        "cost_usd": 0.0005168,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -164,8 +165,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "e1aeac2278bde292",
-        "messages_sha256": "50d24cf4f9382b79",
+        "system_sha256": "82fefb9122910004",
+        "messages_sha256": "b5e4b17dddd00a61",
         "messages": [
           {
             "role": "user",
@@ -173,7 +174,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode went live today. Who's been asking for it?",
+            "content": "",
             "tool_calls": [
               "save_facts"
             ]
@@ -185,9 +186,9 @@
         ]
       },
       "response": {
-        "text": "",
+        "text": "Dark mode is live as of today. Who has been asking for it?",
         "calls": [],
-        "cost_usd": 0.0004866,
+        "cost_usd": 0.0004576,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -205,8 +206,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "e1aeac2278bde292",
-        "messages_sha256": "6e13ec83b3c527c1",
+        "system_sha256": "82fefb9122910004",
+        "messages_sha256": "1ad486666cc2e683",
         "messages": [
           {
             "role": "user",
@@ -214,7 +215,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode went live today. Who's been asking for it?"
+            "content": "Dark mode is live as of today. Who has been asking for it?"
           },
           {
             "role": "user",
@@ -226,22 +227,25 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_018H2xsT33semvCVCwcGRY4L",
+            "id": "toolu_01LfsE85nu4JVSfghzdshriL",
             "name": "save_facts",
             "arguments": {
               "facts": [
                 {
-                  "text": "Dark mode was the most requested feature, with 52 people asking for it."
+                  "text": "Dark mode was the most requested feature."
+                },
+                {
+                  "text": "52 people asked for dark mode."
                 }
               ]
             },
             "bad_arguments": null
           },
           {
-            "id": "toolu_01HnSpAwAjyjdjKie5Jfea73",
+            "id": "toolu_01PP4x57BdrJWH97CfSpumYB",
             "name": "write_drafts",
             "arguments": {
-              "brief": "We launched dark mode today. It was the most requested feature, with 52 people asking for it.",
+              "brief": "We launched dark mode today. It was the most requested feature, and 52 people asked for it.",
               "kind": "x_post",
               "language": "en",
               "count": 1
@@ -249,7 +253,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.0005568,
+        "cost_usd": 0.0005824,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -263,11 +267,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "c3f5d44afcf6acc5",
+        "messages_sha256": "4772c36b6948ff7b",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">We launched dark mode today. It was the most requested feature, with 52 people asking for it.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">We launched dark mode today. It was the most requested feature, and 52 people asked for it.</data>"
           }
         ]
       },
@@ -276,17 +280,18 @@
           "drafts": [
             {
               "posts": [
-                "dark mode is live. 52 people asked for it, more than any other feature. so it's here."
+                "52 people asked for dark mode. It was the most requested feature. We launched it today."
               ],
               "fact_ids": [
                 "F1",
-                "F2"
+                "F2",
+                "F3"
               ],
               "image_file_id": null
             }
           ]
         },
-        "cost_usd": 0.004746
+        "cost_usd": 0.00479
       }
     },
     {
@@ -299,11 +304,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "9946f6fc61389333",
+        "messages_sha256": "8b164fe528ccb7b7",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nThe piece to check:\n<data source=\"draft\">dark mode is live. 52 people asked for it, more than any other feature. so it's here.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nThe piece to check:\n<data source=\"draft\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>"
           }
         ]
       },
@@ -311,7 +316,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 6.39e-05
+        "cost_usd": 5.22e-05
       }
     },
     {
@@ -328,8 +333,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "78a18418e3d4b5e7",
-        "messages_sha256": "0f53537abdbea3f9",
+        "system_sha256": "09416720c5d65db4",
+        "messages_sha256": "15cd51f63ccc3834",
         "messages": [
           {
             "role": "user",
@@ -337,7 +342,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode went live today. Who's been asking for it?"
+            "content": "Dark mode is live as of today. Who has been asking for it?"
           },
           {
             "role": "user",
@@ -353,18 +358,18 @@
           },
           {
             "role": "tool",
-            "content": "saved 1 facts"
+            "content": "saved 2 facts"
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"9534AD2F000010\" kind=\"x_post\">dark mode is live. 52 people asked for it, more than any other feature. so it's here.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"9534AD2F000011\" kind=\"x_post\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>"
           }
         ]
       },
       "response": {
-        "text": "Dark mode with 52 requests is a solid story. Did it take long to build?",
+        "text": "Dark mode was the most requested feature, so that's a good one to share. Want me to try a different angle next time?",
         "calls": [],
-        "cost_usd": 0.0004217,
+        "cost_usd": 0.0004279,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -382,8 +387,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "78a18418e3d4b5e7",
-        "messages_sha256": "b725a7a037de1131",
+        "system_sha256": "09416720c5d65db4",
+        "messages_sha256": "2318a626a9237db4",
         "messages": [
           {
             "role": "user",
@@ -391,7 +396,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode went live today. Who's been asking for it?"
+            "content": "Dark mode is live as of today. Who has been asking for it?"
           },
           {
             "role": "user",
@@ -399,7 +404,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode with 52 requests is a solid story. Did it take long to build?"
+            "content": "Dark mode was the most requested feature, so that's a good one to share. Want me to try a different angle next time?"
           },
           {
             "role": "user",
@@ -411,18 +416,17 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01Sjc5B1Kjwx7G4XaBWwukZv",
+            "id": "toolu_01Asso4RhvQZJjJERuTJjXiF",
             "name": "write_drafts",
             "arguments": {
-              "brief": "We launched dark mode today. It was the most requested feature, with 52 people asking for it. Angle: the story of listening to users and shipping what they asked for.",
+              "brief": "Dark mode just launched. It was the most requested feature, and 52 people asked for it. Angle: thank the people who asked and credit their requests for shipping it, rather than the same announcement as before.",
               "kind": "x_post",
-              "language": "en",
-              "count": 1
+              "language": "en"
             },
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.00058,
+        "cost_usd": 0.0005395,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -436,11 +440,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "493bb96bce0429e2",
+        "messages_sha256": "b44afb381760fde7",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">dark mode is live. 52 people asked for it, more than any other feature. so it's here.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">We launched dark mode today. It was the most requested feature, with 52 people asking for it. Angle: the story of listening to users and shipping what they asked for.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Dark mode just launched. It was the most requested feature, and 52 people asked for it. Angle: thank the people who asked and credit their requests for shipping it, rather than the same announcement as before.</data>"
           }
         ]
       },
@@ -449,17 +453,18 @@
           "drafts": [
             {
               "posts": [
-                "52 people asked for the same thing. dark mode. it was the most requested feature, so I built it. we launched it today."
+                "Dark mode is live. Thank you to the 52 people who asked for it. It was the most requested feature, and your requests are why it shipped."
               ],
               "fact_ids": [
                 "F1",
-                "F2"
+                "F2",
+                "F3"
               ],
               "image_file_id": null
             }
           ]
         },
-        "cost_usd": 0.00499
+        "cost_usd": 0.005156
       }
     },
     {
@@ -472,21 +477,21 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "27fa099241df1ab1",
+        "messages_sha256": "09e50b97351d9bf3",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nThe piece to check:\n<data source=\"draft\">52 people asked for the same thing. dark mode. it was the most requested feature, so I built it. we launched it today.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nThe piece to check:\n<data source=\"draft\">Dark mode is live. Thank you to the 52 people who asked for it. It was the most requested feature, and your requests are why it shipped.</data>"
           }
         ]
       },
       "response": {
         "value": {
           "unsupported": [
-            "so I built it"
+            "your requests are why it shipped"
           ]
         },
-        "cost_usd": 9.7e-05
+        "cost_usd": 8.05e-05
       }
     },
     {
@@ -499,11 +504,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "e83dbc4d880b3010",
+        "messages_sha256": "80dc63921b8ae423",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">dark mode is live. 52 people asked for it, more than any other feature. so it's here.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">We launched dark mode today. It was the most requested feature, with 52 people asking for it. Angle: the story of listening to users and shipping what they asked for.</data>\n\nRewrite these 1 draft(s), in this order, fixing the problems listed:\n1. problems: it s…"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Dark mode just launched. It was the most requested feature, and 52 people asked for it. Angle: thank the people who asked and credit their requests for shipping it, rather than the same announcement as before.</data>\n\nRew…"
           }
         ]
       },
@@ -512,42 +517,18 @@
           "drafts": [
             {
               "posts": [
-                "52 people asked for the same thing. dark mode. it was the most requested feature. we launched it today."
+                "Thank you to the 52 people who asked for dark mode. It was the most requested feature. We launched it today."
               ],
               "fact_ids": [
                 "F1",
-                "F2"
+                "F2",
+                "F3"
               ],
               "image_file_id": null
             }
           ]
         },
-        "cost_usd": 0.005152
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "CLAIM_CHECK",
-        "model": "openai/gpt-6-luna",
-        "reasoning": null,
-        "max_tokens": 400,
-        "schema": "ClaimOut",
-        "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "ddb6b551d531cd5c",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature, with 52 people asking for it.</data>\n\nThe piece to check:\n<data source=\"draft\">52 people asked for the same thing. dark mode. it was the most requested feature. we launched it today.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "unsupported": []
-        },
-        "cost_usd": 7.15e-05
+        "cost_usd": 0.005294
       }
     },
     {
@@ -564,8 +545,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "519ab352bf32e7f5",
-        "messages_sha256": "69279f1059c963f0",
+        "system_sha256": "09416720c5d65db4",
+        "messages_sha256": "3d7dc51d8a80a86c",
         "messages": [
           {
             "role": "user",
@@ -573,7 +554,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode went live today. Who's been asking for it?"
+            "content": "Dark mode is live as of today. Who has been asking for it?"
           },
           {
             "role": "user",
@@ -581,7 +562,7 @@
           },
           {
             "role": "assistant",
-            "content": "Dark mode with 52 requests is a solid story. Did it take long to build?"
+            "content": "Dark mode was the most requested feature, so that's a good one to share. Want me to try a different angle next time?"
           },
           {
             "role": "user",
@@ -596,14 +577,219 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"9534AD2F000012\" kind=\"x_post\">52 people asked for the same thing. dark mode. it was the most requested feature. we launched it today.</data>"
+            "content": "nothing written: dropped one draft: it is too close to a draft already shown"
           }
         ]
       },
       "response": {
-        "text": "Here's your post. Want me to try a different angle?",
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01B4hWc8TBGmc21yjtBnm1dn",
+            "name": "write_drafts",
+            "arguments": {
+              "brief": "Dark mode just launched. 52 people asked for it, making it the most requested feature. Angle: credit the people who asked, and say their requests shaped what got built next.",
+              "kind": "x_post",
+              "language": "en"
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.0004669,
+        "model": "anthropic/claude-haiku-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "f07cf13ae7f856bc",
+        "system_sha256": "cacdba84fef7a77e",
+        "messages_sha256": "4545fae4200d0f3c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Dark mode just launched. 52 people asked for it, making it the most requested feature. Angle: credit the people who asked, and say their requests shaped what got built next.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "Dark mode is live. 52 of you asked for it, and it was the most requested feature. Thanks to everyone who asked."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2",
+                "F3"
+              ],
+              "image_file_id": null
+            }
+          ]
+        },
+        "cost_usd": 0.005096
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "62c552a7632e3663",
+        "messages_sha256": "b850b1d15b7920cd",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nThe piece to check:\n<data source=\"draft\">Dark mode is live. 52 of you asked for it, and it was the most requested feature. Thanks to everyone who asked.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": [
+            "52 of you asked for it"
+          ]
+        },
+        "cost_usd": 0.000142
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "f07cf13ae7f856bc",
+        "system_sha256": "cacdba84fef7a77e",
+        "messages_sha256": "11f871f9c06e5de6",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">52 people asked for dark mode. It was the most requested feature. We launched it today.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Dark mode just launched. 52 people asked for it, making it the most requested feature. Angle: credit the people who asked, and say their requests shaped what got built next.</data>\n\nRewrite these 1 draft(s), in this order…"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "Dark mode is live. 52 people asked for it, and it was the most requested feature."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2",
+                "F3"
+              ],
+              "image_file_id": null
+            }
+          ]
+        },
+        "cost_usd": 0.005194
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "62c552a7632e3663",
+        "messages_sha256": "0df4ba046daa4c76",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We launched dark mode today.</data>\n<data source=\"user\" fact=\"F2\">Dark mode was the most requested feature.</data>\n<data source=\"user\" fact=\"F3\">52 people asked for dark mode.</data>\n\nThe piece to check:\n<data source=\"draft\">Dark mode is live. 52 people asked for it, and it was the most requested feature.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 7.08e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-haiku-5.5",
+        "reasoning": null,
+        "temperature": 0.4,
+        "max_tokens": 1200,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "86e72e53c355143a",
+        "system_sha256": "a49b05656f6ad527",
+        "messages_sha256": "66d4ba2a66fe0333",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">we launched dark mode today</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Dark mode is live as of today. Who has been asking for it?"
+          },
+          {
+            "role": "user",
+            "content": "<data source=\"user\">it was the most requested feature, 52 people asked for it</data>"
+          },
+          {
+            "role": "assistant",
+            "content": "Dark mode was the most requested feature, so that's a good one to share. Want me to try a different angle next time?"
+          },
+          {
+            "role": "user",
+            "content": "<data source=\"user\">write it</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "nothing written: dropped one draft: it is too close to a draft already shown"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft:\n<data source=\"draft\" id=\"9534AD2F000014\" kind=\"x_post\">Dark mode is live. 52 people asked for it, and it was the most requested feature.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's another take for you.",
         "calls": [],
-        "cost_usd": 0.000416,
+        "cost_usd": 0.0005113,
         "model": "anthropic/claude-haiku-5.5"
       }
     }

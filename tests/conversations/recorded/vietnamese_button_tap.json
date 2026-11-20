@@ -1,6 +1,6 @@
 {
   "case": "vietnamese_button_tap",
-  "recorded_at": "2026-11-20T13:29:16+00:00",
+  "recorded_at": "2026-11-20T13:43:01+00:00",
   "models": {
     "chat": "anthropic/claude-haiku-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -30,13 +30,13 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Mình đã viết xong bản nháp, bạn xem ở bên dưới nhé.",
+      "reply": "Mình đã viết xong bản nháp bên dưới, con số 500 bài từ 30 người dùng beta nổi bật ngay trong bài.",
       "drafts": [
         {
           "id": "2699C851000007",
           "kind": "x_post",
           "posts": [
-            "30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.\n\nMình vừa ra mắt tính năng tự động lên lịch đăng bài cho X."
+            "Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.\n\n30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
           ]
         }
       ],
@@ -46,43 +46,43 @@
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0064762
+      "cost_usd": 0.0064123999999999995
     },
     {
       "user": "Make it shorter",
       "file": null,
       "shows": null,
       "draft_id": "2699C851000007",
-      "reply": "Mình đã rút gọn bản nháp, bạn xem bên dưới nhé.",
+      "reply": "Mình đã rút gọn bản nháp xuống còn hai câu ngắn gọn hơn.",
       "drafts": [
         {
           "id": "2699C851000009",
           "kind": "x_post",
           "posts": [
-            "Mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
+            "Mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
           ]
         }
       ],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0063019
+      "cost_usd": 0.0063861000000000005
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "Mike wrote in Vietnamese, and both replies ('Mình đã viết xong bản nháp...', 'Mình đã rút gọn bản nháp...') and both drafts are in Vietnamese, including the turn after the English 'Make it shorter' tap.",
+      "why": "Both assistant replies ('Mình đã viết xong bản nháp...', 'Mình đã rút gọn bản nháp...') and both drafts are in Vietnamese, even after the English 'Make it shorter' tap.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The last draft 'Mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.' is shorter than the first, keeps the same news and figures, and adds no new numbers.",
+      "why": "The last draft ('Mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.') is a two-sentence merge of the first, with the same facts and no new numbers.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The last reply 'Mình đã rút gọn bản nháp, bạn xem bên dưới nhé.' is a single short line and does not repeat the draft's text.",
+      "why": "The last reply 'Mình đã rút gọn bản nháp xuống còn hai câu ngắn gọn hơn.' is one short line and does not repeat the draft text.",
       "holds": true
     }
   ],
@@ -101,7 +101,7 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "c3ce2805d43e3713",
+        "system_sha256": "267354da5def49a7",
         "messages_sha256": "65d219cff6535d5a",
         "messages": [
           {
@@ -114,7 +114,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01UZbjiL9XjarskTes8ADXAm",
+            "id": "toolu_012f6XUtcyL4w7oRL2wcosaD",
             "name": "save_facts",
             "arguments": {
               "facts": [
@@ -129,10 +129,10 @@
             "bad_arguments": null
           },
           {
-            "id": "toolu_01U3zp85EpJ1BabvqsQruPpr",
+            "id": "toolu_01TJJAKvu268snsXFnC2o3Dz",
             "name": "write_drafts",
             "arguments": {
-              "brief": "Launched this week an auto-scheduling feature for X posts. In the first 3 days, 30 beta users scheduled 500 posts.",
+              "brief": "Announce this week's launch of auto-scheduling for X posts. In the first 3 days, 30 beta users scheduled 500 posts.",
               "kind": "x_post",
               "language": "vi",
               "count": 1
@@ -140,7 +140,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.0006672,
+        "cost_usd": 0.0005756,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -154,11 +154,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "7e6ad0341ce6a5ed",
-        "messages_sha256": "bbe94af43f23db0e",
+        "messages_sha256": "d4283a3112999875",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Launched this week an auto-scheduling feature for X posts. In the first 3 days, 30 beta users scheduled 500 posts.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Announce this week's launch of auto-scheduling for X posts. In the first 3 days, 30 beta users scheduled 500 posts.</data>"
           }
         ]
       },
@@ -167,7 +167,7 @@
           "drafts": [
             {
               "posts": [
-                "30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.\n\nMình vừa ra mắt tính năng tự động lên lịch đăng bài cho X."
+                "Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.\n\n30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
               ],
               "fact_ids": [
                 "F1",
@@ -177,7 +177,7 @@
             }
           ]
         },
-        "cost_usd": 0.005236
+        "cost_usd": 0.005258
       }
     },
     {
@@ -190,11 +190,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "4a85b97a1318ef74",
+        "messages_sha256": "28a714114f4f364e",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nThe piece to check:\n<data source=\"draft\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.\n\nMình vừa ra mắt tính năng tự động lên lịch đăng bài cho X.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nThe piece to check:\n<data source=\"draft\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.\n\n30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
           }
         ]
       },
@@ -202,7 +202,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 6.3e-05
+        "cost_usd": 6.21e-05
       }
     },
     {
@@ -219,8 +219,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "f7d1df086b4cf747",
-        "messages_sha256": "b578975c0f21e015",
+        "system_sha256": "29b85f93e4ca1789",
+        "messages_sha256": "a27ff250b43f4e6f",
         "messages": [
           {
             "role": "user",
@@ -240,14 +240,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in vi; the user already sees it under your reply. Answer in one short sentence in vi; don't repeat or describe the draft:\n<data source=\"draft\" id=\"2699C851000007\" kind=\"x_post\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.\n\nMình vừa ra mắt tính năng tự động lên lịch đăng bài cho X.</data>"
+            "content": "wrote 1 draft in vi; the user already sees it under your reply. Answer in one short sentence in vi; don't repeat or describe the draft:\n<data source=\"draft\" id=\"2699C851000007\" kind=\"x_post\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.\n\n30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
           }
         ]
       },
       "response": {
-        "text": "Mình đã viết xong bản nháp, bạn xem ở bên dưới nhé.",
+        "text": "Mình đã viết xong bản nháp bên dưới, con số 500 bài từ 30 người dùng beta nổi bật ngay trong bài.",
         "calls": [],
-        "cost_usd": 0.00051,
+        "cost_usd": 0.0005167,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -265,8 +265,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "f7d1df086b4cf747",
-        "messages_sha256": "b0c8601128552819",
+        "system_sha256": "29b85f93e4ca1789",
+        "messages_sha256": "a74cf20d44034c6a",
         "messages": [
           {
             "role": "user",
@@ -274,7 +274,7 @@
           },
           {
             "role": "assistant",
-            "content": "Mình đã viết xong bản nháp, bạn xem ở bên dưới nhé."
+            "content": "Mình đã viết xong bản nháp bên dưới, con số 500 bài từ 30 người dùng beta nổi bật ngay trong bài."
           },
           {
             "role": "user",
@@ -286,7 +286,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01MbK657fRwFUqJPVBKuweSv",
+            "id": "toolu_0126LSeYJM8ZXekb6hQmWrer",
             "name": "revise_draft",
             "arguments": {
               "draft_id": "2699C851000007",
@@ -296,7 +296,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.0004411,
+        "cost_usd": 0.0004431,
         "model": "anthropic/claude-haiku-5.5"
       }
     },
@@ -310,11 +310,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
         "system_sha256": "7e6ad0341ce6a5ed",
-        "messages_sha256": "9da994aa82385db1",
+        "messages_sha256": "5bdaefb4cc004168",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nRevise this draft of kind \"x_post\" as the user asks, and reply with exactly 1 draft.\nThe draft:\n<data source=\"draft\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.\n\nMình vừa ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\nWhat the user asks:\n<data source=\"instruction\">Make it shorter</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nKind \"x_post\". Rules: one post; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nRevise this draft of kind \"x_post\" as the user asks, and reply with exactly 1 draft.\nThe draft:\n<data source=\"draft\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.\n\n30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\nWhat the user asks:\n<data source=\"instruction\">Make it shorter</data>"
           }
         ]
       },
@@ -323,7 +323,7 @@
           "drafts": [
             {
               "posts": [
-                "Mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
+                "Mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu."
               ],
               "fact_ids": [
                 "F1",
@@ -333,7 +333,7 @@
             }
           ]
         },
-        "cost_usd": 0.005282
+        "cost_usd": 0.005314
       }
     },
     {
@@ -346,11 +346,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "f8ab45d69bae634f",
+        "messages_sha256": "97dd6bbda74d30e5",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nThe piece to check:\n<data source=\"draft\">Mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X.</data>\n<data source=\"user\" fact=\"F2\">30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>\n\nThe piece to check:\n<data source=\"draft\">Mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
           }
         ]
       },
@@ -358,7 +358,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 6.25e-05
+        "cost_usd": 7.31e-05
       }
     },
     {
@@ -375,8 +375,8 @@
           "save_facts"
         ],
         "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "4d9fdb03bb11da6a",
-        "messages_sha256": "d80620f78e9e98ad",
+        "system_sha256": "1dd509e41c7d0876",
+        "messages_sha256": "9683b92e72f2a53e",
         "messages": [
           {
             "role": "user",
@@ -384,7 +384,7 @@
           },
           {
             "role": "assistant",
-            "content": "Mình đã viết xong bản nháp, bạn xem ở bên dưới nhé."
+            "content": "Mình đã viết xong bản nháp bên dưới, con số 500 bài từ 30 người dùng beta nổi bật ngay trong bài."
           },
           {
             "role": "user",
@@ -399,14 +399,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in vi; the user already sees it under your reply. Answer in one short sentence in vi; don't repeat or describe the draft:\n<data source=\"draft\" id=\"2699C851000009\" kind=\"x_post\">Mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
+            "content": "wrote 1 draft in vi; the user already sees it under your reply. Answer in one short sentence in vi; don't repeat or describe the draft:\n<data source=\"draft\" id=\"2699C851000009\" kind=\"x_post\">Mình vừa ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu.</data>"
           }
         ]
       },
       "response": {
-        "text": "Mình đã rút gọn bản nháp, bạn xem bên dưới nhé.",
+        "text": "Mình đã rút gọn bản nháp xuống còn hai câu ngắn gọn hơn.",
         "calls": [],
-        "cost_usd": 0.0005163,
+        "cost_usd": 0.0005559,
         "model": "anthropic/claude-haiku-5.5"
       }
     }
