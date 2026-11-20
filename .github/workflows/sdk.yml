@@ -1,5 +1,5 @@
 # The npm package @app-assistant/host (sdk/js): tested on every pull request that touches it, published when a push
-# to main changes sdk/js/package.json to a version that isn't on npm yet. Publishing needs the repository secret
+# to main changes sdk/js/package.json to a version that isn't on npm yet, or by hand (Actions tab, Run workflow). Publishing needs the repository secret
 # NPM_TOKEN (an npm automation token for the @app-assistant scope); until it is set, the publish job says so and passes.
 name: sdk
 
@@ -13,6 +13,8 @@ on:
     branches: [main]
     paths:
       - "sdk/js/package.json"
+  # By hand from the Actions tab: the same publish job (it skips a version already on npm).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -39,7 +41,7 @@ jobs:
       - run: npm pack --dry-run
 
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Two quick version bumps publish one after the other, never racing.
     concurrency:
