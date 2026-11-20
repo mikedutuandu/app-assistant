@@ -171,3 +171,36 @@ async def test_lifespan_fails_when_a_pack_secret_is_unset(test_settings, monkeyp
     with pytest.raises(PackError, match="DEMO_SESSION_SECRET"):
         async with app.router.lifespan_context(app):
             pass
+
+
+async def test_lifespan_starts_no_background_loop(test_settings, monkeypatch, fresh_schema):
+    """Vercel runs nothing between requests: the demo clean-up comes from Cron (GET /internal/cleanup)."""
+    import asyncio
+
+    url, schema = fresh_schema
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+    settings = Settings(
+        **{
+            **test_settings.model_dump(),
+            "database_url": url,
+            "db_schema": schema,
+            "packs_dir": Path("apps"),
+            "run_lifespan": True,
+        }
+    )
+    created: list[str] = []
+    real_create_task = asyncio.create_task
+
+    def spy(coro, **kwargs):
+        created.append(getattr(coro, "__qualname__", repr(coro)))
+        return real_create_task(coro, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", spy)
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        pass
+    assert not [name for name in created if "cleanup" in name.lower()], created
+    from assistant.demo import cleanup
+
+    assert not hasattr(cleanup, "cleanup_loop")

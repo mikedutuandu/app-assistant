@@ -269,7 +269,7 @@ async def test_demo_cleanup_removes_day_old(api: Api):
     api.app.state.checkpointer = api.checkpointer
 
     result = await cleanup_demo(api.app.state)
-    assert result == {"drafts": 1, "facts": 1, "files": 2, "threads": 1}
+    assert result == {"drafts": 1, "facts": 1, "files": 2, "threads": 1, "pending": 0}
     assert deleted == [thread_id("demo", ws, thread)]
 
     async with pool.connection() as conn:
@@ -283,4 +283,100 @@ async def test_demo_cleanup_removes_day_old(api: Api):
             storage.get(gone)
     for kept in (f"demo/{ws}/drafts/d_new", "demo/f_new", "real/keep"):
         assert storage.get(kept) == b"x"
-    assert await cleanup_demo(api.app.state) == {"drafts": 0, "facts": 0, "files": 0, "threads": 0}
+    assert await cleanup_demo(api.app.state) == {"drafts": 0, "facts": 0, "files": 0, "threads": 0, "pending": 0}
+
+
+async def test_cleanup_removes_expired_pending_uploads_of_every_app(api: Api):
+    """A browser that PUT and never finished leaves an object nobody checked, on a real app as on the demo."""
+    storage = api.storage
+    rows = []
+    for app, ws in (("real", "ws1"), ("demo", "demo:" + "b" * 32)):
+        thread = await api.thread_row(workspace=ws, app=app)
+        for name, expiry in (("old", "now() - interval '1 minute'"), ("live", "now() + interval '10 minutes'")):
+            key = f"{app}/{ws}/{thread}/up_{name}"
+            storage.put(key, b"x", "image/png")
+            rows.append((f"{app}_{name}", app, ws, thread, key, expiry))
+    async with api.pool.connection() as conn:
+        for fid, app, ws, thread, key, expiry in rows:
+            await conn.execute(
+                "insert into files (id, app, workspace, thread_id, kind, mime, bytes, storage_key, expires_at)"
+                f" values (%s, %s, %s, %s, 'pending', 'image/png', 1, %s, {expiry})",
+                (fid, app, ws, thread, key),
+            )
+        # a finished real file with no expiry is never touched
+        real_thread = rows[0][3]
+        await conn.execute(
+            "insert into files (id, app, workspace, thread_id, kind, mime, bytes, storage_key)"
+            " values ('f_done', 'real', 'ws1', %s, 'image', 'image/png', 1, 'real/f_done')",
+            (real_thread,),
+        )
+    storage.put("real/f_done", b"x", "image/png")
+
+    result = await cleanup_demo(api.app.state)
+    assert result["pending"] == 2
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id from files order by id")
+        assert [r[0] for r in await cur.fetchall()] == ["demo_live", "f_done", "real_live"]
+    for _, _, _, _, key, _ in rows:
+        if key.endswith("up_old"):
+            with pytest.raises(Exception):  # noqa: B017 - botocore NoSuchKey
+                storage.get(key)
+        else:
+            assert storage.get(key) == b"x"
+    assert storage.get("real/f_done") == b"x"
+
+
+async def test_cleanup_deletes_a_dropped_threads_whole_storage_prefix(api: Api):
+    """An expired upload link can still create an object under the thread with no row: it goes with the thread."""
+    storage = api.storage
+    ws = "demo:" + "c" * 32
+    old = datetime.now(UTC) - timedelta(days=2)
+    gone, kept = await api.thread_row(workspace=ws, app="demo"), await api.thread_row(workspace=ws, app="demo")
+    storage.put(f"demo/{ws}/{gone}/stray_object", b"x", "image/png")
+    storage.put(f"demo/{ws}/{kept}/stray_object", b"x", "image/png")
+    async with api.pool.connection() as conn:
+        await conn.execute("update threads set updated_at = %s where id = %s", (old, gone))
+
+    await cleanup_demo(api.app.state)
+    with pytest.raises(Exception):  # noqa: B017 - botocore NoSuchKey
+        storage.get(f"demo/{ws}/{gone}/stray_object")
+    assert storage.get(f"demo/{ws}/{kept}/stray_object") == b"x"
+
+
+def with_cron_secret(api: Api, secret: str | None) -> None:
+    api.app.state.settings = api.app.state.settings.model_copy(update={"cron_secret": secret})
+
+
+async def test_cleanup_endpoint_needs_the_cron_secret(api: Api):
+    with_cron_secret(api, "s" * 32)
+    for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "s" * 32}, {"Authorization": "Bearer "}):
+        r = await api.client.get("/internal/cleanup", headers=headers)
+        assert r.status_code == 401, headers
+    assert (
+        await api.client.post("/internal/cleanup", headers={"Authorization": "Bearer " + "s" * 32})
+    ).status_code == 405
+
+
+async def test_cleanup_endpoint_is_off_without_a_cron_secret(api: Api):
+    with_cron_secret(api, None)
+    for headers in ({}, {"Authorization": "Bearer "}, {"Authorization": "Bearer anything"}):
+        r = await api.client.get("/internal/cleanup", headers=headers)
+        assert (r.status_code, r.json()) == (503, {"error": "off"})
+
+
+async def test_cleanup_endpoint_runs_with_the_secret_and_removes_day_old_rows(api: Api):
+    with_cron_secret(api, "s" * 32)
+    ws = "demo:" + "d" * 32
+    old = datetime.now(UTC) - timedelta(days=2)
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "insert into demo_facts (id, workspace, text, idem_key, created_at) values"
+            " ('o', %s, 'old', 'a', %s), ('n', %s, 'new', 'b', now())",
+            (ws, old, ws),
+        )
+    r = await api.client.get("/internal/cleanup", headers={"Authorization": "Bearer " + "s" * 32})
+    assert r.status_code == 200
+    assert r.json() == {"drafts": 0, "facts": 1, "files": 0, "threads": 0, "pending": 0}
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select id from demo_facts")
+        assert [x[0] for x in await cur.fetchall()] == ["n"]

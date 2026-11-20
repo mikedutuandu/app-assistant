@@ -1,23 +1,36 @@
-"""Everything the demo keeps is deleted after a day: drafts, facts, files, threads and their storage objects."""
+"""Everything the demo keeps is deleted after a day: drafts, facts, files, threads and their storage objects.
+
+Also every app's reserved uploads that were never finished. Run once a day by Vercel Cron (GET /internal/cleanup).
+"""
 
 import asyncio
-import contextlib
-import logging
 from datetime import UTC, datetime, timedelta
 
 from assistant.graph.build import thread_id as graph_thread_id
 
-log = logging.getLogger("assistant.demo")
 DEMO_TTL = timedelta(days=1)
-EVERY_SECONDS = 3600
 
 
 async def cleanup_demo(state, now: datetime | None = None) -> dict:
-    """Delete demo data older than a day; returns how many of each were removed."""
+    """Delete demo data older than a day and every app's expired pending uploads; returns how many of each."""
     now = now or datetime.now(UTC)
     cutoff = now - DEMO_TTL
     pool, storage = state.pool, state.storage
-    out = {"drafts": 0, "facts": 0, "files": 0, "threads": 0}
+    out = {"drafts": 0, "facts": 0, "files": 0, "threads": 0, "pending": 0}
+
+    # An upload the browser PUT (or never finished) leaves an unchecked object: remove it, its row last so a failed
+    # delete is tried again. Every app, not only the demo.
+    async with pool.connection() as conn:
+        cur = await conn.execute("select id, storage_key from files where kind = 'pending' and expires_at < %s", (now,))
+        stale = await cur.fetchall()
+    for _, key in stale:
+        await asyncio.to_thread(storage.delete_prefix, key)
+    if stale:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "delete from files where kind = 'pending' and id = any(%s)", ([r[0] for r in stale],)
+            )
+            out["pending"] = cur.rowcount
 
     async with pool.connection() as conn:
         cur = await conn.execute("delete from demo_drafts where created_at < %s returning image_key", (cutoff,))
@@ -43,6 +56,9 @@ async def cleanup_demo(state, now: datetime | None = None) -> dict:
         file_keys = [r[0] for r in await cur.fetchall()]
     for key in file_keys:
         await asyncio.to_thread(storage.delete_prefix, key)
+    # An expired upload link can still create an object in the thread with no row: take the whole prefix.
+    for chat_id, workspace in threads:
+        await asyncio.to_thread(storage.delete_prefix, f"demo/{workspace}/{chat_id}/")
     async with pool.connection() as conn, conn.transaction():
         cur = await conn.execute(
             "delete from files where app = 'demo' and (thread_id = any(%s) or expires_at < %s)", (ids, now)
@@ -51,20 +67,3 @@ async def cleanup_demo(state, now: datetime | None = None) -> dict:
         cur = await conn.execute("delete from threads where app = 'demo' and id = any(%s)", (ids,))
         out["threads"] = cur.rowcount
     return out
-
-
-async def cleanup_loop(state) -> None:
-    """On startup, then every hour. A failed round is logged by its error kind and tried again next hour."""
-    while True:
-        try:
-            result = await cleanup_demo(state)
-            log.info("demo cleanup %s", result)
-        except Exception as e:  # noqa: BLE001 - never let the loop die
-            log.error("demo cleanup failed error=%s", type(e).__name__)
-        await asyncio.sleep(EVERY_SECONDS)
-
-
-async def stop(task: asyncio.Task) -> None:
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task

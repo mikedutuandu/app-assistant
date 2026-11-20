@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import sys
 from collections.abc import AsyncIterator
@@ -9,11 +8,10 @@ import httpx
 from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from assistant.api import chat, deps, turn
+from assistant.api import chat, deps, internal, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, migrate, open_pool, open_saver_pool
-from assistant.demo import cleanup as demo_cleanup
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
@@ -78,11 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return McpHttpTools(pack, session, http)
 
             app.state.tools_for = tools_for
-            cleanup_task = asyncio.create_task(demo_cleanup.cleanup_loop(app.state))
-            try:
-                yield
-            finally:
-                await demo_cleanup.stop(cleanup_task)
+            yield
             await turn.drain(
                 settings.shutdown_drain_seconds
             )  # running turns finish and charge before their pools close
@@ -94,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="app-assistant", lifespan=lifespan)
     app.state.settings = settings
     deps.install(app)
+    app.include_router(internal.router)
     app.include_router(chat.router)
     app.include_router(chat.workspaces)
     app.include_router(demo_routes.router)
