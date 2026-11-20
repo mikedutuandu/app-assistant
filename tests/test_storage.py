@@ -247,7 +247,9 @@ async def test_cors_is_not_set_on_the_supabase_backend(test_settings, monkeypatc
 
 def test_cors_origins_drop_empty_wildcard_and_invalid_entries(test_settings: Settings):
     packs = {
-        "a": SimpleNamespace(allowed_origins=["", "*", "not-a-url", "ftp://x.example", "https://a.example/path"]),
+        "a": SimpleNamespace(
+            allowed_origins=["", "*", "not-a-url", "http://[bad", "ftp://x.example", "https://a.example/path"]
+        ),
         "b": SimpleNamespace(allowed_origins=["http://localhost:3000"]),
     }
     settings = test_settings.model_copy(update={"public_base_url": "https://bot.example/demo"})

@@ -56,7 +56,10 @@ def cors_origins(packs: dict[str, AppPack], settings: Settings) -> list[str]:
     found = [o for pack in packs.values() for o in pack.allowed_origins] + [settings.public_base_url]
     origins = []
     for value in found:  # a pack's {base} carries the demo's path: CORS wants the origin alone
-        parts = urlsplit(value.strip())
+        try:
+            parts = urlsplit(value.strip())
+        except ValueError:  # e.g. "http://[bad": drop this entry, keep the rest
+            continue
         if parts.scheme in {"http", "https"} and parts.netloc:
             origins.append(f"{parts.scheme}://{parts.netloc}")
     return origins
