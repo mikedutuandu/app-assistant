@@ -13,7 +13,7 @@ pytestmark = pytest.mark.db
 
 
 async def test_migrate_applies_once(pool):
-    assert await migrate(pool) == ["001_init.sql", "002_pieces.sql"]
+    assert await migrate(pool) == ["001_init.sql", "002_pieces.sql", "003_demo.sql"]
     assert await migrate(pool) == []
 
 

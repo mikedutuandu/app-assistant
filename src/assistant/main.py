@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,9 @@ from assistant.api import chat, deps, turn
 from assistant.auth import Session
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, migrate, open_pool
+from assistant.demo import cleanup as demo_cleanup
+from assistant.demo import routes as demo_routes
+from assistant.demo import tools as demo_tools
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
@@ -57,7 +61,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return McpHttpTools(pack, session, http)
 
             app.state.tools_for = tools_for
-            yield
+            cleanup_task = asyncio.create_task(demo_cleanup.cleanup_loop(app.state))
+            try:
+                yield
+            finally:
+                await demo_cleanup.stop(cleanup_task)
             await turn.drain()  # running turns finish and charge before their pools close
         finally:
             await close_pool(saver_pool)
@@ -69,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deps.install(app)
     app.include_router(chat.router)
     app.include_router(chat.workspaces)
+    app.include_router(demo_routes.router)
+    app.include_router(demo_tools.router)
 
     @app.get("/health")
     async def health() -> dict[str, bool]:
