@@ -1,0 +1,317 @@
+"""scripts/converse_eval.py with no network: the hard-rule checker, and recording a run then replaying it."""
+
+import json
+import re
+
+import pytest
+from converse_eval import (
+    Case,
+    RecordingLlm,
+    ReplayLlm,
+    ReplayMismatch,
+    TurnLog,
+    check_hard,
+    in_language,
+    inputs_of,
+    load_pack,
+    load_recording,
+    load_suite,
+    main,
+    questions,
+    run_case,
+    save_recording,
+    transcript,
+)
+from fakes import FakeLlm, Reply, call, marker
+from pydantic import BaseModel, ValidationError
+
+from assistant.db import migrate
+from assistant.files.read import ImageRead
+from assistant.llm import LlmError
+
+POST = "We got 184 signups this week. Thank you all."
+SHORT = "184 signups this week."
+
+
+def case(**hard) -> Case:
+    rules = {"drafts": "any", "saved": "any", "max_questions_per_reply": 1, **hard}
+    return Case.model_validate({"name": "t", "turns": ["one", "two"], "expect": ["a note"], "hard": rules})
+
+
+def turn(reply: str = "Nice.", drafts: list[dict] | None = None, saved: list[str] | None = None, **kw) -> TurnLog:
+    base = {"user": "x", "file": None, "shows": None, "draft_id": None, "ended": "done"}
+    return TurnLog(**(base | kw), reply=reply, drafts=drafts or [], saved=saved or [])
+
+
+def draft(*posts: str, id: str = "d1", kind: str = "x_post") -> dict:
+    return {"id": id, "kind": kind, "posts": list(posts)}
+
+
+# ---- the hard rules ----
+
+
+def test_a_chat_that_keeps_every_rule_passes():
+    c = case(drafts=1, saved=">=1", said=["184"], never_said=["weet"], never_kept=["10k"])
+    logs = [turn("You got 184 signups?"), turn("Here's a first go.", [draft(POST)], ["We got 184 signups."])]
+    assert check_hard(c, logs) == []
+
+
+@pytest.mark.parametrize(
+    ("rule", "shown", "ok"),
+    [(0, 0, True), (0, 1, False), (1, 1, True), (1, 2, False), (">=1", 2, True), (">=1", 0, False), ("any", 5, True)],
+)
+def test_drafts_and_saved_count_the_last_turn(rule, shown, ok):
+    first = turn(drafts=[draft("an earlier one", id="d0")], saved=["an earlier fact"])
+    last = turn(
+        drafts=[draft(f"post {i}", id=f"d{i + 1}") for i in range(shown)], saved=[f"f{i}" for i in range(shown)]
+    )
+    problems = check_hard(case(drafts=rule, saved=rule), [first, last])
+    assert (problems == []) is ok
+    if not ok:
+        assert any(p.startswith("drafts:") for p in problems) and any(p.startswith("saved:") for p in problems)
+
+
+def test_a_count_is_a_number_at_least_n_or_any():
+    for bad in ("some", ">1", -1, True, 1.5):
+        with pytest.raises(ValidationError):
+            case(drafts=bad)
+    assert case(drafts=">= 2").hard.drafts == ">= 2"
+
+
+def test_every_reply_is_held_to_the_question_limit():
+    logs = [turn("Who is it for? And what changed?"), turn("Nice.")]
+    [problem] = check_hard(case(), logs)
+    assert problem.startswith("questions: reply 1 asks 2")
+    assert questions("Ai dùng nó？") == 1  # a full-width question mark counts
+    assert check_hard(case(max_questions_per_reply=2), logs) == []
+
+
+def test_a_failed_turn_or_a_missing_turn_fails_the_case():
+    problems = check_hard(
+        case(), [turn(ended="failed", failure="Something went wrong on our side. Nothing was saved.")]
+    )
+    assert problems == [
+        "turn 1 ended failed: Something went wrong on our side. Nothing was saved.",
+        "1 of 2 turns ran",
+    ]
+
+
+def test_language_checks_every_reply_and_every_post():
+    assert in_language("Chào Mike! Tuần này bạn ra mắt gì vậy?", "vi")
+    assert not in_language("Hi Mike! What did you ship?", "vi")
+    assert in_language("Hi Mike! What did you ship?", "en")
+    assert not in_language("Chào Mike, bạn khỏe không?", "en")
+    vi = [turn("Chào Mike! Bạn ra mắt tính năng gì?"), turn("Đây nhé.", [draft("We launched scheduling.")])]
+    [problem] = check_hard(case(language="vi"), vi)
+    assert problem.startswith("language: turn 2 is not in vi") and "We launched" in problem
+
+
+def test_draft_kind_is_checked_on_the_last_turn():
+    thread = draft("one", "two", kind="x_thread")
+    assert check_hard(case(draft_kind="x_thread"), [turn(drafts=[draft("a")]), turn(drafts=[thread])]) == []
+    [problem] = check_hard(case(draft_kind="x_thread"), [turn(), turn(drafts=[draft("a")])])
+    assert problem == "draft_kind: the last turn's draft is x_post, expected x_thread"
+
+
+def test_shorter_compares_with_the_draft_the_turn_is_about():
+    c = case(shorter_than_previous_draft=True)
+    before = turn(drafts=[draft(POST, id="d1")])
+    assert check_hard(c, [before, turn(drafts=[draft(SHORT, id="d2")], draft_id="d1")]) == []
+    [longer] = check_hard(c, [before, turn(drafts=[draft(POST + " More.", id="d2")], draft_id="d1")])
+    assert longer.startswith("shorter_than_previous_draft: 50 characters")
+    [no_draft] = check_hard(c, [before, turn(draft_id="d1")])
+    assert no_draft == "shorter_than_previous_draft: the last turn showed no draft"
+    [not_about] = check_hard(c, [before, turn(drafts=[draft(SHORT, id="d2")])])
+    assert not_about == "shorter_than_previous_draft: the last turn is not about an earlier draft"
+
+
+def test_said_never_said_and_never_kept_match_whole_words():
+    c = case(said=["184"], never_said=["weet", "What I used"], never_kept=["10k"])
+    clean = [turn("A chatbot that plans your week of tweets? 1840 is not it."), turn("Is 10k your real number?")]
+    assert check_hard(c, clean) == ["said: no reply says '184'"]  # "tweets" is not "weet"; a reply may ask about 10k
+    broken = [
+        turn("plan weet, 184 signups"),
+        turn("Done. what i used: your facts", [draft("We have 10K users.")], ["Mike has 10k users."]),
+    ]
+    assert check_hard(c, broken) == [
+        "never_said: 'weet' came back in a reply or a draft",
+        "never_said: 'What I used' came back in a reply or a draft",
+        "never_kept: '10k' is in a draft or a saved fact",
+    ]
+
+
+def test_the_cases_file_loads():
+    suite = load_suite()
+    assert {"hi", "my_name_mike", "say_10k_users"} <= {c.name for c in suite.cases}
+
+
+# ---- recording and replaying the model's calls ----
+
+
+class Echo(BaseModel):
+    said: str
+
+
+def convo(text: str) -> list[dict]:
+    return [{"role": "system", "content": "[[CONVERSE]]\nbe kind"}, {"role": "user", "content": text}]
+
+
+async def test_a_recorded_run_replays_the_same_answers_in_order():
+    fake = FakeLlm(
+        {
+            "CONVERSE": [
+                Reply(text="Saving that.", calls=[call("save_facts", facts=[{"text": "We shipped."}])]),
+                "Hi!",
+            ],
+            "JUDGE_ME": [{"said": "yes"}],
+            "TRANSCRIBE": [("we shipped it", 4.0)],
+            "PLAIN": ["plain text"],
+        },
+        cost=0.002,
+    )
+    recorder = RecordingLlm(fake)
+    streamed: list[str] = []
+
+    async def on_text(delta: str) -> None:
+        streamed.append(delta)
+
+    tools = [{"type": "function", "function": {"name": "save_facts"}}]
+    first = await recorder.chat_tools(convo("we shipped"), "chat/model", [], tools, 100, on_text=on_text)
+    second = await recorder.chat_tools(convo("hi"), "chat/model", [], tools, 100, on_text=on_text)
+    judged = await recorder.chat_json([{"role": "system", "content": "[[JUDGE_ME]]"}], "m", [], Echo, 50)
+    heard = await recorder.transcribe(b"\x00" * 10, "m4a")
+    plain = await recorder.chat([{"role": "system", "content": "[[PLAIN]]"}], "m", [], 50)
+
+    stored = json.loads(json.dumps(recorder.calls))  # what a recording file holds
+    assert [c["request"]["marker"] for c in stored] == ["CONVERSE", "CONVERSE", "JUDGE_ME", "TRANSCRIBE", "PLAIN"]
+    assert stored[0]["request"]["tools"] == ["save_facts"]
+    assert stored[0]["request"]["messages"] == [{"role": "user", "content": "we shipped"}]
+    assert stored[3]["request"]["audio_bytes"] == 10
+
+    replay = ReplayLlm(stored)
+    again: list[str] = []
+
+    async def on_text_again(delta: str) -> None:
+        again.append(delta)
+
+    assert await replay.chat_tools(convo("we shipped"), "chat/model", [], tools, 100, on_text=on_text_again) == first
+    assert await replay.chat_tools(convo("hi"), "chat/model", [], tools, 100, on_text=on_text_again) == second
+    assert await replay.chat_json([{"role": "system", "content": "[[JUDGE_ME]]"}], "m", [], Echo, 50) == judged
+    assert await replay.transcribe(b"", "m4a") == heard
+    assert await replay.chat([{"role": "system", "content": "[[PLAIN]]"}], "m", [], 50) == plain
+    assert again == streamed == ["Saving that.", "Hi!"]
+    assert replay.left == 0
+    with pytest.raises(ReplayMismatch, match="was not recorded"):
+        await replay.chat([{"role": "system", "content": "[[PLAIN]]"}], "m", [], 50)
+
+
+async def test_replay_refuses_a_different_call_and_replays_a_failure():
+    fake = FakeLlm({"CONVERSE": [LlmError("unavailable", "every model failed", 0.01)]})
+    recorder = RecordingLlm(fake)
+    with pytest.raises(LlmError):
+        await recorder.chat_tools(convo("hi"), "chat/model", [], [], 100)
+    [failed] = recorder.calls
+    assert failed["error"]["kind"] == "unavailable" and failed["error"]["cost_usd"] == 0.01
+
+    with pytest.raises(LlmError) as e:
+        await ReplayLlm(recorder.calls).chat_tools(convo("hi"), "chat/model", [], [], 100)
+    assert e.value.kind == "unavailable" and e.value.cost_usd == 0.01
+    with pytest.raises(ReplayMismatch, match="recorded chat_tools CONVERSE, the bot now makes chat_json DRAFT_WRITER"):
+        await ReplayLlm(recorder.calls).chat_json([{"role": "system", "content": "[[DRAFT_WRITER]]"}], "m", [], Echo, 9)
+
+
+# ---- a whole case, recorded and replayed through the bot ----
+
+_DRAFT_ID = re.compile(r'<data source="draft" id="([^"]+)"')
+
+
+class Scripted(FakeLlm):
+    """A FakeLlm whose CONVERSE replies may be functions of the messages (to name a draft the bot made)."""
+
+    async def chat_tools(self, messages, *args, **kwargs):
+        queue = self.script.get(marker(messages))
+        if queue and callable(queue[0]):
+            queue[0] = queue[0](messages)
+        return await super().chat_tools(messages, *args, **kwargs)
+
+
+def _revise_latest(messages: list[dict]) -> Reply:
+    latest = _DRAFT_ID.findall(messages[0]["content"])[-1]
+    return Reply(calls=[call("revise_draft", draft_id=latest, instruction="shorter")])
+
+
+def scripted_chat() -> Scripted:
+    return Scripted(
+        {
+            "IMAGE_READER": [ImageRead(text="Signups this week 184", unsure=[]).model_dump()],
+            "CONVERSE": [
+                "You got 184 signups this week?",
+                Reply(calls=[call("save_facts", facts=[{"text": "We got 184 signups this week."}])]),
+                Reply(calls=[call("write_drafts", brief="184 signups", kind="x_post")]),
+                "Here's a first go.",
+                _revise_latest,
+                "Shorter.",
+            ],
+            "DRAFT_WRITER": [
+                {"drafts": [{"posts": [POST], "fact_ids": ["F1"], "image_file_id": None}]},
+                {"drafts": [{"posts": [SHORT], "fact_ids": ["F1"], "image_file_id": None}]},
+            ],
+            "CLAIM_CHECK": [{"unsupported": []}, {"unsupported": []}],
+        }
+    )
+
+
+ROUND_TRIP = Case.model_validate(
+    {
+        "name": "round_trip",
+        "turns": [
+            {"text": "signups this week", "file": "signups.png", "shows": "184 signups"},
+            "yes, write it",
+            {"text": "shorter", "draft": "last"},
+        ],
+        "expect": ["a note"],
+        "hard": {"drafts": 1, "saved": 0, "max_questions_per_reply": 1, "said": ["184"]},
+    }
+)
+
+
+async def test_a_case_recorded_through_the_bot_replays_to_the_same_chat(pool, tmp_path):
+    await migrate(pool)
+    suite = load_suite()
+    pack = load_pack()
+    recorder = RecordingLlm(scripted_chat())
+    logs = await run_case(ROUND_TRIP.model_copy(), suite.context, recorder, pool, pack)
+
+    assert [t.ended for t in logs] == ["done", "done", "done"]
+    assert logs[0].reply == "You got 184 signups this week?"
+    assert [d["posts"] for d in logs[1].drafts] == [[POST]] and logs[1].saved == ["We got 184 signups this week."]
+    assert logs[2].draft_id == logs[1].drafts[0]["id"] and [d["posts"] for d in logs[2].drafts] == [[SHORT]]
+    image_call = next(c for c in recorder.calls if c["request"]["marker"] == "IMAGE_READER")
+    assert "[image]" in image_call["request"]["messages"][0]["content"]  # read through the normal read path
+    hard = ROUND_TRIP.model_copy(
+        update={"hard": ROUND_TRIP.hard.model_copy(update={"shorter_than_previous_draft": True})}
+    )
+    assert check_hard(hard, logs) == []
+
+    path = save_recording(ROUND_TRIP, pack, logs, recorder.calls, None, tmp_path)
+    recording = load_recording(path)
+    assert recording["inputs"] == inputs_of(ROUND_TRIP) and recording["turns"] == transcript(logs)
+
+    # the replay makes the same ids, so the recorded run's rows go first (as on a fresh schema in CI)
+    async with pool.connection() as conn:
+        for table in ("saved_lines", "pieces", "files", "threads"):
+            await conn.execute(f"delete from {table}")
+    replay = ReplayLlm(recording["calls"])
+    again = await run_case(ROUND_TRIP, suite.context, replay, pool, pack)
+    assert replay.left == 0
+    assert transcript(again) == recording["turns"]  # the same ids, replies and drafts
+
+
+async def test_the_command_needs_a_key_for_live_and_live_for_record(monkeypatch, capsys):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert await main(["--live"]) == 2
+    assert "OPENROUTER_API_KEY" in capsys.readouterr().err
+    assert await main(["--record"]) == 2
+    assert "--live --record" in capsys.readouterr().err
+    assert await main(["--case", "nope", "--database-url", "postgresql://x@localhost/none"]) == 2
+    assert "No such case: nope" in capsys.readouterr().err

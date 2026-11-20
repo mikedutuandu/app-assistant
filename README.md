@@ -35,6 +35,20 @@ uv run ruff check . && uv run ruff format --check .
 cd widget && npm install && npm test
 ```
 
+### Conversation tests
+
+`tests/conversations/cases.yaml` holds about 20 real chats (Mike's "hi", "my name mike", "just write it", a screenshot with a number, Vietnamese, "say we have 10k users"...), each with `expect` notes a judge model decides and `hard` rules checked in code (drafts and saved facts on the last turn, at most one question per reply, the language, words that must or must never come back). Each case runs through the whole bot (`run_turn`) in the HookPlaybook pack, with FakeTools and the context at the top of the file, on a fresh schema of `TEST_DATABASE_URL`.
+
+```bash
+export TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live            # the real models, then the judge (anthropic/claude-sonnet-5.5)
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --record   # and save each case to tests/conversations/recorded/
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --case hi  # one case (repeat --case for more)
+uv run python scripts/converse_eval.py                                          # replay the recordings, hard rules only, no key
+```
+
+It prints a table (case, PASS or FAIL, hard rules, judge, what the bot spent, why) and exits non-zero when any case fails. Run it live before every release that changes the prompt (`prompts.CONVERSE`), the tools or the models. When a case fails, fix the prompt or the tools, not the case, and run it again. Once every case passes, run `--live --record` and commit `tests/conversations/recorded/`: CI then replays each recording through the bot (`tests/test_conversations.py`) and checks its hard rules with no key. A recording holds the chat as the bot showed it, the judge's verdicts, and every model call in order (a request summary and the raw response). A replay that hits a different call than the recording holds, or a case whose turns changed, says so: record that case again.
+
 ## Build the widget
 
 The built file `src/assistant/static/widget.js` is committed, so the server and the Vercel build need no Node. After changing `widget/`:
