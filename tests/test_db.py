@@ -204,3 +204,38 @@ async def test_lifespan_starts_no_background_loop(test_settings, monkeypatch, fr
     from assistant.demo import cleanup
 
     assert not hasattr(cleanup, "cleanup_loop")
+
+
+async def test_several_first_starts_at_once_all_succeed(test_settings, monkeypatch, fresh_schema):
+    """Vercel can start several instances on the first deploy: the bot's migrations and LangGraph's checkpoint
+    setup both run under the one advisory lock, so none of them fails on a fresh schema."""
+    import asyncio
+
+    url, base = fresh_schema
+    monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
+    monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "h" * 64)
+
+    async def start(schema: str) -> set[str]:
+        settings = Settings(
+            **{
+                **test_settings.model_dump(),
+                "database_url": url,
+                "db_schema": schema,
+                "packs_dir": Path("apps"),
+                "run_lifespan": True,
+            }
+        )
+        app = create_app(settings)
+        async with app.router.lifespan_context(app):
+            return await _tables(url, schema)
+
+    schemas = [f"{base}_{i}" for i in range(3)]
+    try:
+        for schema in schemas:  # a few rounds: one race can pass by luck
+            results = await asyncio.gather(*(start(schema) for _ in range(4)), return_exceptions=True)
+            assert [r for r in results if isinstance(r, BaseException)] == []
+            assert all({"threads", "checkpoints", "checkpoint_migrations"} <= r for r in results)
+    finally:
+        async with await AsyncConnection.connect(url, autocommit=True) as admin:
+            for schema in schemas:
+                await admin.execute(sql.SQL("drop schema if exists {} cascade").format(sql.Identifier(schema)))

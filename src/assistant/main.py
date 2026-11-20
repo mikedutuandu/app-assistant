@@ -62,9 +62,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         saver_pool = await open_saver_pool(settings.database_url, settings.db_schema, settings.saver_pool_max)
         http = httpx.AsyncClient()  # one client for OpenRouter, every app's MCP and pasted links
         try:
-            await migrate(pool, settings.db_schema)
             checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
-            await checkpointer.setup()
+            await migrate(pool, settings.db_schema, after=checkpointer.setup)  # both under one advisory lock
             app.state.packs = packs
             app.state.http = http
             app.state.pool = pool

@@ -97,7 +97,7 @@ The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase
 
 Do not set `RUN_LIFESPAN=false` in production (it skips the database and storage). `SHUTDOWN_DRAIN_SECONDS` stays at `0.4`: Vercel gives a function about 500 ms at shutdown.
 
-**6. Deploy.** Deploy once; after that every push to `main` redeploys. A change to an environment variable applies from the next deployment (redeploy to pick it up). Migrations run on a cold start, under a Postgres advisory lock, so several instances starting together run them once.
+**6. Deploy.** Deploy once; after that every push to `main` redeploys. A change to an environment variable applies from the next deployment (redeploy to pick it up). On a cold start the bot's migrations and LangGraph's checkpoint setup both run under one Postgres advisory lock, so several instances starting together (the first deploy, or an upgrade that adds a migration) run them once while the others wait.
 
 **7. Check.** `curl https://<domain>/health` answers `{"ok":true}`; then open `https://<domain>/demo` on a phone. If a pack's secret variable is missing, the function fails to start and the logs say which one. In the first deploy's build log, confirm Vercel used `app.py` as the entrypoint (the root-level `app.py` imports the app from `src/assistant/asgi.py`); if it says it found no entrypoint, or the function limits (300 s) are not applied, fix that before anything else.
 

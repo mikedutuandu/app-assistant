@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from ulid import ULID
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK = 4_815_162_342  # advisory lock key: one instance migrates at a time
+_LOCK_POLL_SECONDS = 0.1
 
 
 def _use_schema(schema: str | None) -> Callable[[AsyncConnection], Awaitable[None]] | None:
@@ -49,15 +51,35 @@ async def close_pool(pool: AsyncConnectionPool) -> None:
     await pool.close()
 
 
+async def _take_migration_lock(conn: AsyncConnection) -> None:
+    """Wait for the migration lock by polling, not with a blocking pg_advisory_lock.
+
+    A blocked pg_advisory_lock is a statement that holds a snapshot while it waits, and LangGraph's setup (run by
+    the holder, under the lock) creates its indexes CONCURRENTLY, which waits for every older snapshot to end: the
+    two would wait on each other for ever. Between polls a waiter holds no snapshot.
+    """
+    while True:
+        cur = await conn.execute("select pg_try_advisory_lock(%s)", (_MIGRATION_LOCK,))
+        row = await cur.fetchone()
+        if row is not None and row[0]:
+            return
+        await asyncio.sleep(_LOCK_POLL_SECONDS)
+
+
 def new_id() -> str:
     return str(ULID())
 
 
-async def migrate(pool: AsyncConnectionPool, schema: str | None = None) -> list[str]:
+async def migrate(
+    pool: AsyncConnectionPool,
+    schema: str | None = None,
+    after: Callable[[], Awaitable[None]] | None = None,
+) -> list[str]:
     """Apply the missing migrations/*.sql in name order, each in its own transaction.
 
     Table names are unqualified, so they land in the connection's search_path schema; `schema` (the pool's) is
-    created first when given.
+    created first when given. `after` (LangGraph's checkpoint setup) runs while the lock is still held: its own
+    migrations take no lock, so instances starting together on a fresh schema would otherwise collide.
     """
     applied: list[str] = []
     async with pool.connection() as conn:
@@ -65,7 +87,7 @@ async def migrate(pool: AsyncConnectionPool, schema: str | None = None) -> list[
         await conn.set_autocommit(True)
         try:
             # Session-level lock across the whole run: two instances starting together take turns.
-            await conn.execute("select pg_advisory_lock(%s)", (_MIGRATION_LOCK,))
+            await _take_migration_lock(conn)
             try:
                 if schema is not None:
                     await conn.execute(sql.SQL("create schema if not exists {}").format(sql.Identifier(schema)))
@@ -78,6 +100,8 @@ async def migrate(pool: AsyncConnectionPool, schema: str | None = None) -> list[
                         await conn.execute(path.read_text())
                         await conn.execute("insert into schema_migrations (name) values (%s)", (path.name,))
                     applied.append(path.name)
+                if after is not None:
+                    await after()
             finally:
                 await conn.execute("select pg_advisory_unlock(%s)", (_MIGRATION_LOCK,))
         finally:
