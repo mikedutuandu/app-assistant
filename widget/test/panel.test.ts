@@ -252,4 +252,128 @@ describe("panel", () => {
     expect(sessionStorage.getItem("assistant:thread:demo")).toBe("t7");
     expect(($(".send") as HTMLButtonElement).disabled).toBe(false);
   });
+
+  describe("working indicator", () => {
+    // A send that stays open until the test lets it go, so the stream can be fed event by event.
+    function held() {
+      let on!: (e: BotEvent) => void;
+      let finish!: () => void;
+      let fail!: (e: unknown) => void;
+      const send = vi.fn(
+        (_t: any, _x: string, _f: string[], cb: (e: BotEvent) => void) =>
+          new Promise<void>((res, rej) => {
+            on = cb;
+            finish = res;
+            fail = rej;
+          }),
+      );
+      return { send, emit: (e: BotEvent) => on(e), finish: () => finish(), fail: (e: unknown) => fail(e) };
+    }
+    const status = (step: string): BotEvent => ({ event: "status", data: { step } });
+
+    it("appears right after the message is sent, as one polite status at the end of the list", async () => {
+      const h = held();
+      const { $, $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      const w = $$(".working");
+      expect(w).toHaveLength(1);
+      expect(w[0].textContent).toContain("Thinking…");
+      expect(w[0].getAttribute("role")).toBe("status");
+      expect(w[0].getAttribute("aria-live")).toBe("polite");
+      expect($(".list").lastElementChild).toBe(w[0]);
+      expect($(".list").children[$(".list").children.length - 2].classList.contains("user")).toBe(true);
+      expect(w[0].querySelectorAll(".dot")).toHaveLength(3);
+    });
+
+    it("changes its label on a status event and keeps it for an unknown code", async () => {
+      const h = held();
+      const { $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      const label = () => $$(".working")[0].textContent;
+      const expected: [string, string][] = [
+        ["reading", "Reading your files…"],
+        ["listening", "Listening to your voice note…"],
+        ["thinking", "Thinking…"],
+        ["writing", "Writing your posts…"],
+        ["checking", "Checking every number…"],
+      ];
+      for (const [step, text] of expected) {
+        h.emit(status(step));
+        expect(label()).toContain(text);
+        expect($$(".working")).toHaveLength(1);
+      }
+      h.emit(status("something-new"));
+      expect(label()).toContain("Checking every number…");
+      h.finish();
+    });
+
+    it("goes away when the first text arrives", async () => {
+      const h = held();
+      const { $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      h.emit({ event: "text", data: { delta: "Hi" } });
+      expect($$(".working")).toHaveLength(0);
+      expect($$(".bot")[0].textContent).toBe("Hi");
+      h.finish();
+    });
+
+    it("goes away when a card arrives", async () => {
+      const h = held();
+      const { $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      h.emit(status("writing"));
+      h.emit({ event: "card", data: card } as BotEvent);
+      expect($$(".working")).toHaveLength(0);
+      h.finish();
+    });
+
+    it("goes away when the turn fails", async () => {
+      const h = held();
+      const { $, $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      h.emit({ event: "failed", data: { error: "server", message: "Oops" } });
+      expect($$(".working")).toHaveLength(0);
+      expect($(".err").textContent).toBe("Oops");
+      h.finish();
+    });
+
+    it("shows again at the end on a later status, and the next text starts a new bubble below", async () => {
+      const h = held();
+      const { $, $$, say } = setup({ send: h.send as any });
+      await say("hello");
+      h.emit({ event: "text", data: { delta: "First." } });
+      h.emit(status("writing"));
+      expect($$(".working")).toHaveLength(1);
+      expect($(".list").lastElementChild).toBe($$(".working")[0]);
+      expect($$(".working")[0].textContent).toContain("Writing your posts…");
+      h.emit({ event: "text", data: { delta: "Second." } });
+      expect($$(".working")).toHaveLength(0);
+      expect($$(".bot").map((b) => b.textContent)).toEqual(["First.", "Second."]);
+      h.finish();
+    });
+
+    it("is removed when the send finishes without any event", async () => {
+      const h = held();
+      const { $$, say, flush } = setup({ send: h.send as any });
+      await say("hello");
+      h.finish();
+      await flush();
+      expect($$(".working")).toHaveLength(0);
+    });
+
+    it("is removed when the send errors", async () => {
+      const h = held();
+      const { $$, say, flush } = setup({ send: h.send as any });
+      await say("hello");
+      h.fail(new ApiError(500, "server", "Boom"));
+      await flush();
+      expect($$(".working")).toHaveLength(0);
+    });
+
+    it("has CSS that stops the dots moving for reduced motion but keeps them visible", () => {
+      const { p } = setup();
+      const css = p.root.querySelector("style")!.textContent!;
+      expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\.dot[^}]*animation: none/s);
+    });
+  });
 });

@@ -31,6 +31,13 @@ header h2 { margin: 0; font-size: 16px; }
 .user { align-self: flex-end; background: var(--a); color: #fff; }
 .bot { align-self: flex-start; background: var(--soft); }
 .heard { align-self: flex-end; color: var(--muted); font-size: 13px; font-style: italic; padding: 0 4px; max-width: 88%; overflow-wrap: anywhere; }
+.working { align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 2px 4px; color: var(--muted); font-size: 13px; }
+.dots { display: inline-flex; gap: 4px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--a); opacity: .35; animation: assistant-dot 1.2s ease-in-out infinite; }
+.dot:nth-child(2) { animation-delay: .2s; }
+.dot:nth-child(3) { animation-delay: .4s; }
+@keyframes assistant-dot { 0%, 80%, 100% { opacity: .35; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; opacity: .7; } }
 .err { align-self: stretch; color: var(--bad); font-size: 14px; }
 .card { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
 .piece { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; background: var(--bg); }
