@@ -24,6 +24,22 @@ async def test_migrate_creates_tables(pool):
     assert {"threads", "files", "counters", "actions", "schema_migrations"} <= names
 
 
+async def test_failed_migration_keeps_earlier_ones(pool, tmp_path, monkeypatch):
+    (tmp_path / "001_ok.sql").write_text("create table first_ok (id int);")
+    (tmp_path / "002_bad.sql").write_text("create table second_bad (id int); select * from does_not_exist;")
+    monkeypatch.setattr("assistant.db.MIGRATIONS_DIR", tmp_path)
+    with pytest.raises(Exception, match="does_not_exist"):
+        await migrate(pool)
+    async with pool.connection() as conn:
+        cur = await conn.execute("select name from schema_migrations")
+        assert [r[0] for r in await cur.fetchall()] == ["001_ok.sql"]
+        cur = await conn.execute("select to_regclass('first_ok'), to_regclass('second_bad')")
+        assert await cur.fetchone() == ("first_ok", None)
+    # a fixed second migration then applies alone
+    (tmp_path / "002_bad.sql").write_text("create table second_bad (id int);")
+    assert await migrate(pool) == ["002_bad.sql"]
+
+
 def test_new_id_sorts_by_time():
     import time
 

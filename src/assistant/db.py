@@ -28,14 +28,23 @@ async def migrate(pool: AsyncConnectionPool) -> list[str]:
     """
     applied: list[str] = []
     async with pool.connection() as conn:
-        await conn.execute("create table if not exists schema_migrations (name text primary key)")
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            async with conn.transaction():
-                await conn.execute("select pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK,))
-                cur = await conn.execute("select 1 from schema_migrations where name = %s", (path.name,))
-                if await cur.fetchone():
-                    continue
-                await conn.execute(path.read_text())
-                await conn.execute("insert into schema_migrations (name) values (%s)", (path.name,))
-                applied.append(path.name)
+        # Autocommit, so each file below is a real transaction (not a savepoint in an outer one).
+        await conn.set_autocommit(True)
+        try:
+            # Session-level lock across the whole run: two instances starting together take turns.
+            await conn.execute("select pg_advisory_lock(%s)", (_MIGRATION_LOCK,))
+            try:
+                await conn.execute("create table if not exists schema_migrations (name text primary key)")
+                for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                    cur = await conn.execute("select 1 from schema_migrations where name = %s", (path.name,))
+                    if await cur.fetchone():
+                        continue
+                    async with conn.transaction():
+                        await conn.execute(path.read_text())
+                        await conn.execute("insert into schema_migrations (name) values (%s)", (path.name,))
+                    applied.append(path.name)
+            finally:
+                await conn.execute("select pg_advisory_unlock(%s)", (_MIGRATION_LOCK,))
+        finally:
+            await conn.set_autocommit(False)
     return applied
