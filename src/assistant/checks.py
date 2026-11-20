@@ -29,7 +29,7 @@ _UNITS = {
     "nine": 9,
 }
 _WORDS = {
-    **_UNITS,
+    **{k: v for k, v in _UNITS.items() if k != "one"},  # a lone "one" is a pronoun, not a count
     "ten": 10,
     "eleven": 11,
     "twelve": 12,
@@ -65,7 +65,7 @@ _YEAR_SAFE_AFTER = re.compile(r"[%kKmMxX×hH]|\s+(?:hours?|hrs?)\b", re.IGNORECA
 
 def _word_value(word: str) -> float:
     parts = re.split(r"[-\s]+", word.lower())
-    return float(sum(_TENS.get(p) or _WORDS.get(p) or 0 for p in parts))
+    return float(sum(_TENS.get(p) or _WORDS.get(p) or _UNITS.get(p) or 0 for p in parts))
 
 
 def numbers_in(text: str) -> list[float]:
@@ -120,7 +120,7 @@ def unsupported_numbers(text: str, facts: list[Fact]) -> list[float]:
 
 
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[a-z]{3,}", text.lower()))
+    return set(re.findall(r"[^\W\d_]{3,}", text.lower()))
 
 
 def repeats(text: str, recent: list[str], threshold: float = 0.6) -> str | None:
@@ -144,7 +144,8 @@ _TLDS = (
 _END = r"[^\s.,;:!?)\"']"
 _URL_RE = re.compile(
     rf"https?://{_END}(?:\S*{_END})?"
-    rf"|\b(?:[A-Za-z0-9-]+\.)+(?:{_TLDS})\b(?![A-Za-z0-9-])(?:/(?:\S*{_END})?)?"
+    rf"|\b(?:[A-Za-z0-9-]+\.)+(?:{_TLDS})\b(?![A-Za-z0-9-])(?:/(?:\S*{_END})?)?",
+    re.IGNORECASE,
 )
 _URL_LENGTH = 23
 

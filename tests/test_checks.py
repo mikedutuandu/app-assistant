@@ -27,7 +27,9 @@ def test_number_words():
     assert numbers_in("Forty-Two and forty two and twelve") == [42, 42, 12]
     assert numbers_in("two hundred and 3 thousand") == [200, 3000]
     assert numbers_in("someone, honest, bone") == []
-    assert numbers_in("One win") == [1]
+    assert numbers_in("One thing I learned, no one cares, one of them") == []
+    assert numbers_in("1 customer") == [1]
+    assert numbers_in("twenty-one and thirty one") == [21, 31]
 
 
 def test_unsupported_numbers():
@@ -77,3 +79,19 @@ def test_rule_problems_links_and_dashes():
         "has_dash",
     ]
     assert rule_problems("example.com — x", spec()) == []
+
+
+def test_repeats_unicode():
+    vi = ["Hôm nay chúng tôi ra mắt tính năng mới"]
+    assert repeats("Chúng tôi ra mắt tính năng mới hôm nay", vi) == vi[0]
+    ar = ["أطلقنا اليوم ميزة جديدة في التطبيق"]
+    assert repeats("اليوم أطلقنا ميزة جديدة في التطبيق", ar) == ar[0]
+    assert repeats("Hôm nay trời đẹp quá", vi) is None
+
+
+def test_rule_problems_uppercase_urls():
+    s = spec(no_links=True)
+    assert rule_problems("see EXAMPLE.COM", s) == ["has_link"]
+    assert rule_problems("see HTTPS://a.b/c", s) == ["has_link"]
+    assert rule_problems("a" * 258 + " EXAMPLE.COM/" + "P" * 50, spec(max_chars=280)) == ["too_long"]
+    assert rule_problems("well that was the end.Then more", s) == []
