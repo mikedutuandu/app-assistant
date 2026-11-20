@@ -185,7 +185,8 @@ _CLAIM = f"""
 insert into actions (id, app, workspace, thread_id, kind, result)
 values (%s, %s, %s, %s, %s, 'null'::jsonb)
 on conflict (id) do update set created_at = now()
-where actions.result = 'null'::jsonb and actions.created_at < now() - interval '{PENDING_STALE}'
+where actions.app = excluded.app and actions.workspace = excluded.workspace
+  and actions.result = 'null'::jsonb and actions.created_at < now() - interval '{PENDING_STALE}'
 returning 1
 """
 
@@ -229,7 +230,11 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     async with state.pool.connection() as conn:
         claim = await conn.execute(_CLAIM, (key, session.app, session.workspace, thread_id, body.kind))
         if await claim.fetchone() is None:
-            cur = await conn.execute("select result from actions where id = %s", (key,))
+            # Scoped by the columns too: a composed key with colons in it could match another workspace's row.
+            cur = await conn.execute(
+                "select result from actions where id = %s and app = %s and workspace = %s",
+                (key, session.app, session.workspace),
+            )
             row = await cur.fetchone()
             if row is None or row[0] is None:
                 raise ApiError(409, "pending", "Still saving that. Try again in a moment.")
@@ -256,13 +261,19 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
             result = {"kept": len(facts)}
     except Exception as e:
         async with state.pool.connection() as conn:  # free the action so the user can tap again
-            await conn.execute("delete from actions where id = %s", (key,))
+            await conn.execute(
+                "delete from actions where id = %s and app = %s and workspace = %s",
+                (key, session.app, session.workspace),
+            )
         if isinstance(e, ToolError):
             log.warning("action failed app=%s action=%s kind=%s", pack.id, body.kind, e.kind)
             raise ApiError(402 if e.kind == "out_of_credits" else 502, **tool_failure(e)) from None
         raise
     async with state.pool.connection() as conn:
-        await conn.execute("update actions set result = %s where id = %s", (Jsonb(result), key))
+        await conn.execute(
+            "update actions set result = %s where id = %s and app = %s and workspace = %s",
+            (Jsonb(result), key, session.app, session.workspace),
+        )
     log.info("action app=%s thread=%s action=%s", pack.id, thread_id, body.kind)
     return result
 

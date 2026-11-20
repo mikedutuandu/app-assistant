@@ -680,6 +680,27 @@ async def test_action_ids_are_per_workspace(api: Api):
     assert len(api.tools.materials) == 2
 
 
+async def test_colon_ids_cannot_read_or_take_over_another_workspaces_action(api: Api):
+    # "real" + "ws1:x" + "a" and "real" + "ws1" + "x:a" compose the same key "real:ws1:x:a".
+    body = {"action_id": "a", "kind": "keep_facts", "facts": [{"text": FACT}]}
+    assert (await api.act(await api.thread_row("ws1:x"), body, workspace="ws1:x")).json() == {"kept": 1}
+    other = {"action_id": "x:a", "kind": "keep_facts", "facts": [{"text": "a"}, {"text": "b"}]}
+    r = await api.act(await api.thread_row("ws1"), other, workspace="ws1")
+    assert r.status_code == 409
+    assert "kept" not in r.json()
+    async with api.pool.connection() as conn:  # a stale pending row of the other workspace is not re-claimed
+        await conn.execute(
+            "update actions set result = 'null'::jsonb, created_at = now() - interval '3 minutes'"
+            " where id = 'real:ws1:x:a'"
+        )
+    r = await api.act(await api.thread_row("ws1"), other, workspace="ws1")
+    assert r.status_code == 409
+    assert len(api.tools.materials) == 1
+    async with api.pool.connection() as conn:
+        cur = await conn.execute("select workspace from actions where id = 'real:ws1:x:a'")
+        assert (await cur.fetchone())[0] == "ws1:x"
+
+
 # ---- review round 1 ----
 
 
