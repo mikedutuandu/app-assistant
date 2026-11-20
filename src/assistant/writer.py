@@ -48,6 +48,13 @@ TOO_FEW = "a thread needs at least two posts"
 UNCHECKED = "it couldn't be checked"
 SAME = "it is the same as the draft it changes"
 
+# For a revision: what "another angle" means (a different hook from the same facts, never a reshuffle).
+ANGLE = (
+    "If they ask for another angle, change the hook: open with a different fact or framing than the draft's first "
+    "line (the result, the problem it solves, who it helps, or what was learned, as far as the facts say it) and "
+    "build the post around it. Never keep the same first line, and never just reorder the same sentences."
+)
+
 # Notes for the conversation model.
 NO_FACTS = (
     "no facts saved yet: save what the user told you (save_facts), then write; ask only if they told you nothing real"
@@ -202,7 +209,8 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: 
         f'Revise this draft of kind "{spec.kind}" as the user asks, and reply with exactly 1 draft.\n'
         f"The draft:\n{_posts_blocks(draft.posts)}\n"
         + _image_line(w, draft)
-        + f"What the user asks:\n{data('instruction', nfc(instruction))}"
+        + f"What the user asks:\n{data('instruction', nfc(instruction))}\n"
+        + ANGLE
     )
     # The draft being revised isn't a repeat of itself.
     own = {_key(p) for p in draft.posts}

@@ -386,3 +386,14 @@ async def test_three_drafts_of_the_same_news_are_all_kept_unless_near_copies():
     w, _ = deps(llm, recent=[])
     result = await write_drafts(w, "launch", "x_post", 3)
     assert [d.posts[0] for d in result.drafts] == [a, b, c]
+
+
+async def test_a_revision_is_told_what_another_angle_means():
+    draft = Draft(id="01ABC", kind="x_post", posts=[POST], image_file_id=None, fact_ids=[FACTS[0].id])
+    llm = FakeLlm(
+        {"DRAFT_WRITER": [drafts(["Solo founders keep up now: replies take 2 minutes."])], "CLAIM_CHECK": [OK]}
+    )
+    w, _ = deps(llm)
+    await revise_draft(w, draft, "another angle")
+    ask = prompt(llm.calls[0])
+    assert "open with a different fact or framing" in ask and "never just reorder the same sentences" in ask

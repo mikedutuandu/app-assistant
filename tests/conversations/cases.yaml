@@ -148,7 +148,7 @@ cases:
       - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day. write a post about it"
       - {text: "another angle", draft: last}
     expect:
-      - The last draft tells the same news as the draft before it but opens with a different first line and a different angle.
+      - The last draft opens differently from the draft before it and puts a different fact or framing first, using only the given facts. The same first line, or the same sentences in a new order, fails.
       - The last draft uses only what Mike gave (auto-reply shipped, 2 minutes instead of 2 hours, 40 beta founders use it every day) and invents nothing.
       - The last reply does not repeat the draft's text.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1}
