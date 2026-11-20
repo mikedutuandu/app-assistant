@@ -8,8 +8,6 @@ import re
 import time
 import unicodedata
 from collections import Counter
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel, ConfigDict
@@ -17,15 +15,13 @@ from pydantic import BaseModel, ConfigDict
 from assistant.checks import Fact, numbers_in, repeats, rule_problems, unsupported_numbers
 from assistant.db import new_id
 from assistant.files.intake import UploadError
-from assistant.files.read import FileReading
 from assistant.graph import prompts
 from assistant.graph.prompts import data
 from assistant.graph.state import ChatState, Piece
-from assistant.llm import Llm, LlmError
+from assistant.graph.turn import CAP_TEXT, Capped, Turn
+from assistant.llm import LlmError
 from assistant.packs import AppPack, WriteSpec
-from assistant.tools import AppTools
 
-CAP_TEXT = "That's as far as I can go on this message. Send another to continue."
 CONTEXT_TTL = 300  # seconds the app's context is reused within a thread
 MAX_ROUNDS = 2  # ask-back rounds before writing with what there is
 MAX_LINKS = 2  # links read from one message
@@ -43,6 +39,9 @@ READ_NOTES = {
 }
 
 _LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
+_LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*")
+INTRO = "Here's what I wrote from what you told me:"
+NOTHING_WRITTEN = "I couldn't write anything from that yet. Tell me a bit more?"
 _now = time.time
 
 
@@ -84,95 +83,6 @@ class ClaimOut(_Strict):
     unsupported: list[str]
 
 
-# ---- the turn: dependencies, spending and events ----
-
-
-class Capped(Exception):
-    """The message's cost cap was reached before a model call."""
-
-
-@dataclass
-class Deps:
-    pack: AppPack
-    llm: Llm
-    tools_factory: Callable[[], AppTools]
-    on_event: Callable[[str, dict], Awaitable[None]]
-    read_files: Callable[[list[str]], Awaitable[list[FileReading]]]
-    read_link: Callable[[str], Awaitable[FileReading]]
-
-
-class Turn:
-    """A node's view of the turn: its dependencies and everything the turn has spent so far."""
-
-    def __init__(self, deps: Deps, state: ChatState):
-        self.deps = deps
-        self.pack = deps.pack
-        self.cost: float = state.get("cost_usd", 0.0)
-
-    async def emit(self, kind: str, payload: dict) -> None:
-        await self.deps.on_event(kind, payload)
-
-    async def note(self, text: str) -> None:
-        await self.emit("note", {"text": text})
-
-    def gate(self) -> None:
-        if self.cost >= self.pack.message_usd_cap:
-            raise Capped
-
-    async def json[T: BaseModel](self, system: str, user: str, schema: type[T], max_tokens: int, cheap=False) -> T:
-        self.gate()
-        models = self.pack.models
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        try:
-            out, cost = await self.deps.llm.chat_json(
-                messages, models.cheap if cheap else models.main, models.fallbacks, schema, max_tokens
-            )
-        except LlmError as e:
-            self.cost += e.cost_usd
-            raise
-        self.cost += cost
-        assert isinstance(out, schema)
-        return out
-
-    async def stream(self, system: str, user: str, max_tokens: int) -> str:
-        self.gate()
-        models = self.pack.models
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-
-        async def forward(delta: str) -> None:
-            await self.emit("text", {"delta": delta})
-
-        try:
-            result = await self.deps.llm.chat(messages, models.main, models.fallbacks, max_tokens, on_text=forward)
-        except LlmError as e:
-            self.cost += e.cost_usd
-            raise
-        self.cost += result.cost_usd
-        return result.text
-
-
-def bind(node: Callable[[ChatState, Turn], Awaitable[dict]], deps: Deps) -> Callable[[ChatState], Awaitable[dict]]:
-    """A LangGraph node: runs `node`, keeps the turn's cost in state, and ends the turn at the cost cap.
-
-    An error leaving the graph carries `cost_usd`: everything this turn spent, so the caller can still charge it.
-    """
-
-    async def run(state: ChatState) -> dict:
-        turn = Turn(deps, state)
-        try:
-            update = await node(state, turn)
-        except Capped:
-            await turn.emit("text", {"delta": CAP_TEXT})
-            return {"capped": True, "cost_usd": turn.cost}
-        except Exception as e:
-            e.cost_usd = turn.cost  # type: ignore[attr-defined]
-            raise
-        return {**update, "cost_usd": turn.cost}
-
-    run.__name__ = node.__name__
-    return run
-
-
 # ---- helpers ----
 
 
@@ -197,6 +107,12 @@ def _latest_user_text(state: ChatState) -> str:
     return ""
 
 
+def _source_texts(state: ChatState) -> list[str]:
+    """What the user said and showed in this thread: their messages and the readings' text (not `unsure`)."""
+    said = [nfc(_content(m)) for m in state.get("messages", []) if isinstance(m, HumanMessage)]
+    return said + [r.text for r in state.get("readings", [])]
+
+
 def _links(text: str) -> list[str]:
     found: list[str] = []
     for m in _LINK.finditer(text):
@@ -210,13 +126,18 @@ def _fmt(n: float) -> str:
     return format(n, "f").rstrip("0").rstrip(".")
 
 
+def _language(tag: str) -> str:
+    """The app's language tag (en, vi, pt-BR), or "en" for anything else: it goes into a system prompt."""
+    return tag if _LANGUAGE_TAG.fullmatch(tag) else "en"
+
+
 def _system(prompt: str, pack: AppPack, state: ChatState, *, guide=False, language=False) -> str:
     parts = [prompt, f"App: {pack.name}"]
     if guide:
         parts.append(f"The app's guide:\n{pack.interview_guide.strip()}")
     if language:
         ctx = state.get("context")
-        parts.append(f"Language: {(ctx.language if ctx else 'en')[:20]}")
+        parts.append(f"Language: {_language(ctx.language if ctx else '')}")
     return "\n\n".join(parts)
 
 
@@ -352,7 +273,7 @@ async def ask_back(state: ChatState, t: Turn) -> dict:
     """Streams one short question and ends the turn."""
     system = _system(prompts.ASK_BACK, t.pack, state, guide=True, language=True)
     hint = state.get("ask_hint")
-    user = _material(state, facts=True) + (f"\n\nAsk about: {hint}" if hint else "")
+    user = _material(state, facts=True) + (f"\n\nAsk about: {data('assistant', hint)}" if hint else "")
     question = nfc(await t.stream(system, user, max_tokens=200)).strip()
     await t.note("Asked back for details")
     return {"messages": [AIMessage(content=question)], "rounds_asked": state.get("rounds_asked", 0) + 1}
@@ -363,6 +284,7 @@ async def extract_facts(state: ChatState, t: Turn) -> dict:
     system = _system(prompts.EXTRACT_FACTS, t.pack, state)
     out = await t.json(system, _material(state, facts=True), ExtractOut, max_tokens=1500)
     readings = {r.file_id: r for r in state.get("readings", [])}
+    said = [Fact(numbers=numbers_in(text)) for text in _source_texts(state)]
     known = list(state.get("facts", []))
     keys = {_key(f.text) for f in known}
     for item in out.facts:
@@ -370,6 +292,8 @@ async def extract_facts(state: ChatState, t: Turn) -> dict:
         if not text or _key(text) in keys:
             continue
         keys.add(_key(text))
+        if unsupported_numbers(text, said):
+            continue  # a number the user never said or showed: the extractor made it up
         reading = readings.get(item.file_id) if item.file_id else None
         source = reading.kind if reading else "typed"
         file_id = reading.file_id if reading else None
@@ -398,13 +322,16 @@ async def write(state: ChatState, t: Turn) -> dict:
         counts: Counter[str] = Counter()
         for p in out.pieces:
             spec = specs.get(p.spec_kind)
-            if spec is None or counts[spec.kind] >= spec.count:
+            text = nfc(p.text).strip()
+            if spec is None or not text or counts[spec.kind] >= spec.count:
                 continue
             counts[spec.kind] += 1
-            text = nfc(p.text).strip()
             pieces.append(
                 Piece(id=new_id(), spec_kind=spec.kind, text=text, fact_ids=fact_ids(p), image_file_id=p.image_file_id)
             )
+        if not pieces:
+            await t.emit("text", {"delta": NOTHING_WRITTEN})
+            return {"pieces": [], "rounds_asked": 0, "just_write": False}
         return {"pieces": pieces}
 
     asks = [f"Rewrite these {len(failing)} piece(s), in this order, fixing the problems listed:"]
@@ -413,15 +340,19 @@ async def write(state: ChatState, t: Turn) -> dict:
     kinds = Counter(p.spec_kind for p in failing)
     spec_system = system + "\n\n" + _spec_lines([(specs[k], c) for k, c in kinds.items()])
     out = await t.json(spec_system, material + "\n\n" + "\n".join(asks), WriterOut, 3000)
-    redone = {p.id: o for p, o in zip(failing, out.pieces, strict=False)}
+    by_kind: dict[str, list[PieceOut]] = {}
+    for o in out.pieces:
+        if nfc(o.text).strip():
+            by_kind.setdefault(o.spec_kind, []).append(o)
     for i, p in enumerate(pieces):
-        if p.id in redone:
-            o = redone[p.id]
+        # Rewrites pair with failing pieces of the same kind, in order. One with no match keeps its old text,
+        # so it fails again and is dropped.
+        if p.id in problems and by_kind.get(p.spec_kind):
+            o = by_kind[p.spec_kind].pop(0)
             pieces[i] = p.model_copy(
                 update={"text": nfc(o.text).strip(), "fact_ids": fact_ids(o), "image_file_id": o.image_file_id}
             )
-    for _ in failing:
-        await t.note("Rewrote a post that had a problem")
+            await t.note("Rewrote a post that had a problem")
     return {"pieces": pieces, "rewrites": 1}
 
 
@@ -481,6 +412,7 @@ async def present(state: ChatState, t: Turn) -> dict:
     if kept:
         await t.note("Checked: every number is from you")
     card = {"pieces": [p.model_dump() for p in shown], "facts": [f.model_dump() for f in state.get("facts", [])]}
+    await t.emit("text", {"delta": INTRO})
     await t.emit("card", card)
     return {
         "pieces": shown,

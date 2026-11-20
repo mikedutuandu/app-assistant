@@ -15,6 +15,7 @@ from langgraph.graph.state import CompiledStateGraph
 from assistant.files.read import FileReading
 from assistant.graph import nodes
 from assistant.graph.state import STATE_TYPES, ChatState
+from assistant.graph.turn import Deps, bind
 from assistant.llm import Llm
 from assistant.packs import AppPack
 from assistant.tools import AppTools
@@ -42,13 +43,14 @@ def _after_interview(state: ChatState) -> str:
 def _after_extract(state: ChatState) -> str:
     if state.get("capped"):
         return END
-    return "write" if state.get("facts") else "ask_back"  # never write from nothing
+    # Never write from nothing: with no facts this asks again, even past the 2 rounds (deliberate).
+    return "write" if state.get("facts") else "ask_back"
 
 
 def _after_write(state: ChatState) -> str:
-    if state.get("capped"):
-        return "present" if state.get("pieces") else END
-    return "check"
+    if not state.get("pieces"):
+        return END  # capped before writing, or the writer gave nothing usable (it said so)
+    return "present" if state.get("capped") else "check"
 
 
 def _after_check(state: ChatState) -> str:
@@ -68,7 +70,7 @@ def build_graph(
 ) -> CompiledStateGraph:
     """One graph per request (compiling is cheap). Invoke it with `{"messages": [HumanMessage(text)], "file_ids":
     [...]}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`."""
-    deps = nodes.Deps(pack, llm, tools_factory, on_event, read_files, read_link)
+    deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link)
     graph = StateGraph(ChatState)
     for node in (
         nodes.read_files,
@@ -80,7 +82,7 @@ def build_graph(
         nodes.check,
         nodes.present,
     ):
-        graph.add_node(node.__name__, nodes.bind(node, deps))
+        graph.add_node(node.__name__, bind(node, deps))
     graph.add_edge(START, "read_files")
     graph.add_conditional_edges("read_files", _after_read, ["load_context", END])
     graph.add_edge("load_context", "interview")
