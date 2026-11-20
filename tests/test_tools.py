@@ -20,7 +20,7 @@ def make_pack() -> AppPack:
         mcp_url=URL,
         secret_env="X",
         allowed_origins=["https://app.test"],
-        interview_guide="",
+        guide="",
         writes=[],
         tools={
             "context": "assistant_context",
@@ -28,7 +28,7 @@ def make_pack() -> AppPack:
             "save_material": "save_material",
             "charge": "assistant_charge",
         },
-        models=Models(main="m", cheap="c", vision="v"),
+        models=Models(chat="chat/model", writer="writer/model", main="m", cheap="c", vision="v"),
         message_usd_cap=1.0,
     )
 

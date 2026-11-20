@@ -6,18 +6,15 @@ allowed_origins: ["{base}"]
 demo: true
 message_usd_cap: 0.05
 
-interview_guide: |
-  Shipnote turns what a small team shipped into a launch post and a changelog entry.
-  Ask about these, one question at a time, in plain words:
-  - what was shipped
-  - who it is for
-  - one number or result (how many, how fast, what changed)
-  - what is coming next
-  Only use what the person tells you or shows you. If they have not given a number or a result, ask for one.
+guide: |
+  Shipnote turns what a small team shipped into a launch post for X, or a short thread when there is more to tell.
+  A good story has what was shipped, who it is for or why it matters to them, and one number or result
+  (how many, how fast, what changed) when there is one. What is coming next is a nice extra.
+  Only use what the person tells you or shows you. Never invent a number or a result.
 
 writes:
-  - kind: launch_post
-    count: 2
+  - kind: x_post
+    count: 1
     max_chars: 280
     no_links: true
     no_dashes: true
@@ -25,12 +22,16 @@ writes:
     instructions: |
       Write a launch post for X in the voice of a small team talking to its users.
       Short, plain and warm. Say what shipped and why it matters, using one fact from the list.
-  - kind: changelog
+  - kind: x_thread
     count: 1
-    max_chars: 600
+    max_chars: 280
+    max_posts: 8
+    no_links: true
+    no_dashes: true
+    may_carry_image: true
     instructions: |
-      Write a short changelog entry. First line is a title. Then 2 to 4 bullet points,
-      one fact each, in plain words.
+      Write a thread for X in the same voice: a hook in the first post, then one point per post,
+      each in plain words and each a fact from the list. The first post may carry the image.
 
 tools:
   context: assistant_context
@@ -39,10 +40,13 @@ tools:
   charge: assistant_charge
 
 models:
+  chat: anthropic/claude-haiku-5.5
+  writer: anthropic/claude-sonnet-5.5
+  writer_reasoning: low
   main: openai/gpt-6-luna
   cheap: openai/gpt-6-luna
   vision: openai/gpt-6-luna
-  fallbacks: [deepseek/deepseek-v4.1-flash]
+  fallbacks: [anthropic/claude-haiku-5.5, openai/gpt-6-luna]
 
 files:
   per_message: 2

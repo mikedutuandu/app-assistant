@@ -64,8 +64,10 @@ def test_pack_values():
         "save_material": "save_material",
         "charge": "assistant_charge",
     }
-    [post] = p.writes  # no x_thread in Phase 2
-    assert (post.kind, post.count, post.max_chars) == ("x_post", 2, 280)
+    post, thread = p.writes
+    assert (post.kind, post.count, post.max_chars) == ("x_post", 1, 280)
+    assert (thread.kind, thread.count, thread.max_chars, thread.max_posts) == ("x_thread", 1, 280, 8)
+    assert thread.no_links and thread.no_dashes and thread.may_carry_image
     assert post.no_links and post.no_dashes and post.may_carry_image
     for words in ["voice", "hook", "one point", "plain words"]:
         assert words in post.instructions, words
@@ -81,8 +83,8 @@ def test_pack_values():
     assert p.demo is False
     demo = load_packs(APPS, base_url="http://testserver")["demo"]
     assert p.models == demo.models
-    for topic in ["what happened", "who it helps", "a number or result", "what they learned", "screenshot"]:
-        assert topic in p.interview_guide, topic
+    for topic in ["what happened", "who it helps", "number or result", "learned", "screenshot", "Never invent"]:
+        assert topic in p.guide, topic
 
 
 def test_pack_never_names_create_draft():

@@ -18,7 +18,7 @@ def _pack(pack_id: str = "demo", secret_env: str = "TEST_AUTH_SECRET") -> AppPac
             "mcp_url": "http://x/mcp",
             "secret_env": secret_env,
             "allowed_origins": ["http://x"],
-            "interview_guide": "Ask.",
+            "guide": "Ask.",
             "writes": [{"kind": "changelog", "count": 1, "instructions": "Write."}],
             "tools": {
                 "context": "assistant_context",
@@ -26,7 +26,7 @@ def _pack(pack_id: str = "demo", secret_env: str = "TEST_AUTH_SECRET") -> AppPac
                 "save_material": "save_material",
                 "charge": "assistant_charge",
             },
-            "models": {"main": "a/m", "cheap": "a/c", "vision": "a/v"},
+            "models": {"chat": "a", "writer": "b", "main": "a/m", "cheap": "a/c", "vision": "a/v"},
             "message_usd_cap": 0.1,
         }
     )

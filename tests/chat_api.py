@@ -34,7 +34,7 @@ def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
         mcp_url="https://app.example/mcp",
         secret_env="TEST_CHAT_SECRET",
         allowed_origins=[ORIGIN],
-        interview_guide="Ask what shipped and for one number.",
+        guide="Ask what shipped and for one number.",
         writes=[
             WriteSpec(
                 kind="launch_post",
@@ -48,7 +48,9 @@ def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
             WriteSpec(kind="changelog", count=1, max_chars=600, instructions="A short changelog entry."),
         ],
         tools={"context": "c", "save_draft": "s", "save_material": "m", "charge": "ch"},
-        models=Models(main="main/model", cheap="cheap/model", vision="vis/model"),
+        models=Models(
+            chat="chat/model", writer="writer/model", main="main/model", cheap="cheap/model", vision="vis/model"
+        ),
         files={"per_message": 2, "kinds": ["image", "voice"]} if demo else {},
         message_usd_cap=0.05,
         demo=demo,

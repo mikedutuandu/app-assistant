@@ -12,7 +12,7 @@ name: Test App
 mcp_url: "{{base}}/{pack_id}/mcp"
 secret_env: TEST_PACK_SECRET
 allowed_origins: ["{{base}}/"]
-interview_guide: Ask what shipped.
+guide: A launch app. A good story says what shipped.
 writes:
   - kind: changelog
     count: 1
@@ -23,6 +23,8 @@ tools:
   save_material: save_material
   charge: assistant_charge
 models:
+  chat: a/chat
+  writer: a/writer
   main: a/main
   cheap: a/cheap
   vision: a/vision
@@ -39,7 +41,7 @@ def test_loads_demo_pack():
     assert pack.files.kinds == ["image", "voice"]
     assert pack.files.voice_seconds == 60
     assert pack.demo is True
-    assert [w.kind for w in pack.writes] == ["launch_post", "changelog"]
+    assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
     assert pack.tools["charge"] == "assistant_charge"
 
 
@@ -107,3 +109,30 @@ def test_tool_names_must_not_be_empty(tmp_path: Path):
     (tmp_path / "a.yaml").write_text(text)
     with pytest.raises(PackError, match="missing: save_draft"):
         load_packs(tmp_path, "http://testserver")
+
+
+def test_pack_models_have_chat_and_writer():
+    packs = load_packs(Path("apps"), base_url="http://testserver")
+    for pack_id in ("hookplaybook", "demo"):
+        m = packs[pack_id].models
+        assert m.chat == "anthropic/claude-haiku-5.5"
+        assert m.writer == "anthropic/claude-sonnet-5.5"
+        assert m.writer_reasoning == "low"
+        assert m.fallbacks == ["anthropic/claude-haiku-5.5", "openai/gpt-6-luna"]
+        assert (m.main, m.cheap, m.vision) == ("openai/gpt-6-luna",) * 3
+
+
+def test_x_thread_spec_loads():
+    for pack_id in ("hookplaybook", "demo"):
+        pack = load_packs(Path("apps"), base_url="http://testserver")[pack_id]
+        assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
+        post, thread = pack.writes
+        assert (post.count, post.max_chars, post.max_posts) == (1, 280, None)
+        assert (thread.count, thread.max_chars, thread.max_posts) == (1, 280, 8)
+        assert thread.no_links and thread.no_dashes and thread.may_carry_image
+
+
+def test_guide_replaces_interview_guide(tmp_path):
+    (tmp_path / "old.yaml").write_text(_pack_yaml("old").replace("\nguide:", "\ninterview_guide:"))
+    with pytest.raises(PackError, match="rename it to `guide`"):
+        load_packs(tmp_path, base_url="http://testserver")

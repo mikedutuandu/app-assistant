@@ -23,7 +23,7 @@ def make_pack(launch_count: int = 1, cap: float = 0.05) -> AppPack:
         mcp_url="http://testserver/demo/mcp",
         secret_env="DEMO_SESSION_SECRET",
         allowed_origins=["http://testserver"],
-        interview_guide="Ask what shipped and for one number.",
+        guide="Ask what shipped and for one number.",
         writes=[
             WriteSpec(
                 kind="launch_post",
@@ -37,7 +37,9 @@ def make_pack(launch_count: int = 1, cap: float = 0.05) -> AppPack:
             WriteSpec(kind="changelog", count=1, max_chars=600, instructions="A short changelog entry."),
         ],
         tools={"context": "c", "save_draft": "s", "save_material": "m", "charge": "ch"},
-        models=Models(main="main/model", cheap="cheap/model", vision="vis/model"),
+        models=Models(
+            chat="chat/model", writer="writer/model", main="main/model", cheap="cheap/model", vision="vis/model"
+        ),
         message_usd_cap=cap,
         demo=True,
     )

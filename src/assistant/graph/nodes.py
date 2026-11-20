@@ -148,7 +148,7 @@ def _language(tag: str) -> str:
 def _system(prompt: str, pack: AppPack, state: ChatState, *, guide=False, language=False) -> str:
     parts = [prompt, f"App: {pack.name}"]
     if guide:
-        parts.append(f"The app's guide:\n{pack.interview_guide.strip()}")
+        parts.append(f"The app's guide:\n{pack.guide.strip()}")
     if language:
         ctx = state.get("context")
         parts.append(f"Language: {_language(ctx.language if ctx else '')}")
@@ -337,7 +337,8 @@ async def extract_facts(state: ChatState, t: Turn) -> dict:
 async def write(state: ChatState, t: Turn) -> dict:
     """Writes every piece the pack asks for; on the second pass, rewrites only the failing ones."""
     await t.emit("status", {"step": "writing"})
-    specs = {w.kind: w for w in t.pack.writes}
+    # The old pipeline writes single posts only; threads arrive with the conversation-first bot.
+    specs = {w.kind: w for w in t.pack.writes if w.kind != "x_thread"}
     facts = state.get("facts", [])
     labels = {f"F{i}": f.id for i, f in enumerate(facts, 1)} | {f.id: f.id for f in facts}
     system = _system(prompts.WRITER, t.pack, state, language=True)
@@ -351,7 +352,10 @@ async def write(state: ChatState, t: Turn) -> dict:
 
     if not failing:
         out = await t.json(
-            system + "\n\n" + _spec_lines([(w, w.count) for w in t.pack.writes]), material, WriterOut, 3000
+            system + "\n\n" + _spec_lines([(w, w.count) for w in t.pack.writes if w.kind != "x_thread"]),
+            material,
+            WriterOut,
+            3000,
         )
         counts: Counter[str] = Counter()
         for p in out.pieces:
@@ -393,7 +397,8 @@ async def write(state: ChatState, t: Turn) -> dict:
 async def check(state: ChatState, t: Turn) -> dict:
     """Numbers, the app's rules, repeats, then a cheap claim check. Failing pieces go to `problems`."""
     await t.emit("status", {"step": "checking"})
-    specs = {w.kind: w for w in t.pack.writes}
+    # The old pipeline writes single posts only; threads arrive with the conversation-first bot.
+    specs = {w.kind: w for w in t.pack.writes if w.kind != "x_thread"}
     facts = state.get("facts", [])
     second = state.get("rewrites", 0) > 0
     old = state.get("problems", {})

@@ -29,7 +29,7 @@ def _pack(pdf_pages: int = 30, voice_seconds: int = 300) -> AppPack:
             "mcp_url": "http://x/mcp",
             "secret_env": "X",
             "allowed_origins": [],
-            "interview_guide": "g",
+            "guide": "g",
             "writes": [{"kind": "post", "count": 1, "instructions": "i"}],
             "tools": {
                 "context": "assistant_context",
@@ -37,7 +37,14 @@ def _pack(pdf_pages: int = 30, voice_seconds: int = 300) -> AppPack:
                 "save_material": "save_material",
                 "charge": "assistant_charge",
             },
-            "models": {"main": "a", "cheap": "b", "vision": "vis/model", "fallbacks": ["fb/model"]},
+            "models": {
+                "chat": "a",
+                "writer": "b",
+                "main": "a",
+                "cheap": "b",
+                "vision": "vis/model",
+                "fallbacks": ["fb/model"],
+            },
             "files": {"kinds": ["image", "pdf", "voice"], "pdf_pages": pdf_pages, "voice_seconds": voice_seconds},
             "message_usd_cap": 1.0,
         }

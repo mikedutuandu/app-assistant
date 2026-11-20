@@ -24,8 +24,9 @@ class FileCaps(BaseModel):
 
 
 class WriteSpec(BaseModel):
-    kind: str
-    count: int
+    kind: str  # "x_post" or "x_thread"
+    count: int = 1  # the default number of drafts
+    max_posts: int | None = None  # threads: the most posts in one thread
     max_chars: int | None = None
     no_links: bool = False
     no_dashes: bool = False
@@ -34,6 +35,9 @@ class WriteSpec(BaseModel):
 
 
 class Models(BaseModel):
+    chat: str
+    writer: str
+    writer_reasoning: Literal["none", "low"] = "low"
     main: str
     cheap: str
     vision: str
@@ -46,7 +50,7 @@ class AppPack(BaseModel):
     mcp_url: str
     secret_env: str
     allowed_origins: list[str]
-    interview_guide: str
+    guide: str
     writes: list[WriteSpec]
     tools: dict[Literal["context", "save_draft", "save_material", "charge"], str]
     models: Models
@@ -80,6 +84,8 @@ def load_packs(dir: Path, base_url: str = "") -> dict[str, AppPack]:
             raise PackError(f"{path}: invalid YAML: {exc}") from exc
         if not isinstance(raw, dict):
             raise PackError(f"{path}: expected a mapping at the top level")
+        if "interview_guide" in raw:
+            raise PackError(f"{path}: `interview_guide` is gone: rename it to `guide`")
         try:
             pack = AppPack.model_validate(raw)
         except ValidationError as exc:
