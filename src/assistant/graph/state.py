@@ -25,6 +25,8 @@ class ChatState(TypedDict, total=False):
     file_ids: list[str]
     draft_id: str | None  # the draft this message is about (its Shorter or Another angle), if any
 
+    ask: list[tuple[str, str]]  # the chat's other turns (role, text) from the host, for this turn only
+
     # This turn's work (reset by read_files)
     cost_usd: float
     capped: bool  # the message's cost cap stopped the turn

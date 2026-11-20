@@ -113,15 +113,34 @@ class Api:
         workspace: str = "ws1",
         app: str = "real",
         draft_id: str | None = None,
+        new_thread: bool = False,
         **headers: str,
     ) -> list[tuple[str, dict]]:
-        body = {"thread_id": thread, "text": text, "file_ids": file_ids or [], "draft_id": draft_id}
-        r = await self.client.post(
-            f"/v1/chat/{app}/messages", json=body, headers=self.headers(workspace, app, **headers)
-        )
+        r = await self.post_message(text, thread, file_ids, workspace, app, draft_id, new_thread, **headers)
         assert r.status_code == 200, r.text
         assert r.headers["content-type"].startswith("text/event-stream")
         return parse_sse(r.text)
+
+    async def post_message(
+        self,
+        text: str,
+        thread: str | None = None,
+        file_ids: list[str] | None = None,
+        workspace: str = "ws1",
+        app: str = "real",
+        draft_id: str | None = None,
+        new_thread: bool = False,
+        context: list[dict] | None = None,
+        **headers: str,
+    ) -> httpx.Response:
+        body: dict = {"thread_id": thread, "text": text, "file_ids": file_ids or [], "draft_id": draft_id}
+        if new_thread:
+            body["new_thread"] = True
+        if context is not None:
+            body["context"] = context
+        return await self.client.post(
+            f"/v1/chat/{app}/messages", json=body, headers=self.headers(workspace, app, **headers)
+        )
 
     async def start_upload(
         self,
@@ -131,8 +150,11 @@ class Api:
         app: str = "real",
         mime: str = "image/png",
         name: str = "shot.png",
+        new_thread: bool = False,
     ) -> httpx.Response:
-        body = {"thread_id": thread, "name": name, "mime": mime, "size": size}
+        body: dict = {"thread_id": thread, "name": name, "mime": mime, "size": size}
+        if new_thread:
+            body["new_thread"] = True
         return await self.client.post(f"/v1/chat/{app}/uploads", json=body, headers=self.headers(workspace, app))
 
     async def finish(self, upload_id: str, thread: str, workspace: str = "ws1", app: str = "real") -> httpx.Response:
