@@ -264,6 +264,23 @@ async def test_nothing_at_all_is_none(test_settings: Settings, db, caplog):
     assert "shop" in caplog.text and "404" in caplog.text
 
 
+async def test_a_deeply_nested_pack_is_invalid_never_an_error(test_settings: Settings, db, caplog, monkeypatch):
+    nested = "[" * 100_000 + "]" * 100_000
+    with caplog.at_level(logging.WARNING, logger="assistant"):
+        assert await store(test_settings, db, App(body=nested)).get("shop") is None  # no copy, no YAML: unavailable
+    assert "RecursionError" in caplog.text
+    # with a good stored copy, the broken body falls back to it; a stored copy that blows up is unavailable, not a 500
+    assert await store(test_settings, db, App()).get("shop") is not None
+    assert await store(test_settings, db, App(body=nested)).get("shop") is not None
+
+    def boom(*_a):
+        raise RecursionError
+
+    stored = store(test_settings, db, App(status=500))
+    monkeypatch.setattr(stored, "_accept", boom)
+    assert await stored.get("shop") is None
+
+
 async def test_a_served_pack_with_another_id_is_refused(test_settings: Settings, db):
     assert await store(test_settings, db, App(served(id="other"))).get("shop") is None
 

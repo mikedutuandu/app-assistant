@@ -173,7 +173,13 @@ export function createHandler(opts: HostOptions): (req: Request) => Promise<Resp
 
 function report(opts: HostOptions, error: unknown, where: string): void {
   try {
-    if (opts.onError) return opts.onError(error, where);
+    if (opts.onError) {
+      const out: unknown = opts.onError(error, where);
+      // An async onError that rejects must not become an unhandled rejection.
+      if (out && typeof (out as PromiseLike<unknown>).then === "function")
+        Promise.resolve(out).catch((e) => console.error(`app-assistant: onError failed for ${where}`, e));
+      return;
+    }
   } catch {
     // An onError that throws falls back to the log.
   }

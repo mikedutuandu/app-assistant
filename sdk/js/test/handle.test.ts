@@ -295,6 +295,21 @@ describe("handle", () => {
     error.mockRestore();
   });
 
+  it("an async onError that rejects is swallowed, not an unhandled rejection", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onError = vi.fn(async () => Promise.reject(new Error("sink is down")));
+    const host = createAssistantHost({ ...fakeApp().opts, onError, context: async () => Promise.reject(new Error("x")) });
+    expect((await host.handle(post("/context", {})))!.status).toBe(500);
+    await new Promise((r) => setTimeout(r, 20));
+    process.off("unhandledRejection", unhandled);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
+
   it("works without once", async () => {
     const host = createAssistantHost({ ...fakeApp().opts, once: undefined });
     const res = (await host.handle(post("/charge", { cost_usd: 0.01, ref: "r1" }, { "idempotency-key": "r1" })))!;

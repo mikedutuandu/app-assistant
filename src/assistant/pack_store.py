@@ -106,6 +106,11 @@ def clamp_pack(pack: AppPack, settings: Settings) -> AppPack:
     return pack
 
 
+def _why(error: Exception) -> str:
+    """A PackError says why in its own words; anything else is told by kind only (never a body or a secret)."""
+    return str(error) if isinstance(error, PackError) else f"unexpected {type(error).__name__}"
+
+
 def _origin(url: str) -> str:
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}".lower()
@@ -176,8 +181,8 @@ class PackStore:
         try:
             raw = await self._fetch(entry)
             pack = self._accept(entry, raw)
-        except PackError as e:
-            log.warning("pack app=%s not used from %s%s: %s", entry.id, entry.site, WELL_KNOWN, e)
+        except Exception as e:  # noqa: BLE001 - any failure (even a RecursionError from a deeply nested body) is an invalid pack
+            log.warning("pack app=%s not used from %s%s: %s", entry.id, entry.site, WELL_KNOWN, _why(e))
         else:
             await self._keep(entry.id, raw)
             return pack, CACHE_SECONDS
@@ -185,8 +190,8 @@ class PackStore:
         if stored is not None:
             try:
                 return self._accept(entry, stored), RETRY_SECONDS
-            except PackError as e:  # e.g. ALLOWED_MODELS changed since it was kept
-                log.warning("pack app=%s stored copy not used: %s", entry.id, e)
+            except Exception as e:  # noqa: BLE001 - e.g. ALLOWED_MODELS changed since it was kept; never an error
+                log.warning("pack app=%s stored copy not used: %s", entry.id, _why(e))
                 return None, RETRY_SECONDS
         local = self._local.get(entry.id)  # only while no copy was ever fetched
         if local is None:
