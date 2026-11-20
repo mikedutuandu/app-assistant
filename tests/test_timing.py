@@ -5,13 +5,15 @@ import logging
 
 import pytest
 from chat_api import FACT, Api, ask_script, happy_script
-from fakes import FakeLlm
+from fakes import FakeLlm, FakeTools, default_context
 from graph_harness import Harness
 from test_api_chat import of
 
+from assistant.api import turn
 from assistant.graph import nodes
 from assistant.llm import LlmError
 from assistant.timing import TurnTimer, log_turn
+from assistant.tools import ToolError
 
 pytestmark = pytest.mark.db
 
@@ -94,6 +96,33 @@ async def test_turn_logs_one_timing_line(api: Api, timing_log):
 
 async def test_timing_is_logged_once_when_the_turn_fails(api: Api, timing_log):
     api.llm.script = {"CONVERSE": [LlmError("unavailable", "down", cost_usd=0.002)]}
+    events = await api.send("shipped auto-reply")
+    assert events[-1][0] == "failed"
+    [rec] = records(timing_log)
+    assert line(rec)["outcome"] == "failed"
+
+
+async def test_timing_is_logged_once_when_the_gate_refuses(api: Api, timing_log):
+    api.tools = FakeTools(context=default_context(credits_left=0))
+    events = await api.send("shipped auto-reply")
+    assert events[-1][0] == "failed"
+    [rec] = records(timing_log)
+    assert line(rec)["outcome"] == "refused"
+
+
+async def test_timing_is_logged_once_when_the_gate_context_call_fails(api: Api, timing_log):
+    api.tools = FakeTools(errors={"context": ToolError("unavailable")})
+    events = await api.send("shipped auto-reply")
+    assert events[-1][0] == "failed"
+    [rec] = records(timing_log)
+    assert line(rec)["outcome"] == "failed"
+
+
+async def test_timing_is_logged_once_when_the_thread_cannot_be_opened(api: Api, timing_log, monkeypatch):
+    async def broken(pool, t):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(turn, "_open_thread", broken)
     events = await api.send("shipped auto-reply")
     assert events[-1][0] == "failed"
     [rec] = records(timing_log)

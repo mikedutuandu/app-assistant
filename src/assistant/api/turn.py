@@ -253,14 +253,17 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         await _gate(state, t, tools)
     except _Refused as r:
         log.info("turn refused app=%s message=%s reason=%s", t.pack.id, message_id, r.body["error"])
+        log_turn(timer, t.pack.id, "refused")
         await emit("failed", r.body)
         return
     except ToolError as e:
         log.warning("turn context failed app=%s message=%s kind=%s", t.pack.id, message_id, e.kind)
+        log_turn(timer, t.pack.id, "failed")
         await emit("failed", tool_failure(e))
         return
     except Exception as e:  # noqa: BLE001 - told to the user as our fault; logged by kind only
         log.error("turn gate failed app=%s message=%s error=%s", t.pack.id, message_id, type(e).__name__)
+        log_turn(timer, t.pack.id, "failed")
         await emit("failed", {"error": "server", "message": OUR_FAULT})
         return
 
@@ -268,6 +271,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         chat_id, created = await _open_thread(state.pool, t)
     except Exception as e:  # noqa: BLE001 - told to the user as our fault; logged by kind only
         log.error("turn thread failed app=%s message=%s error=%s", t.pack.id, message_id, type(e).__name__)
+        log_turn(timer, t.pack.id, "failed")
         await emit("failed", {"error": "server", "message": OUR_FAULT})
         return
     if created:

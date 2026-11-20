@@ -15,7 +15,7 @@ from typing import Any, Literal
 log = logging.getLogger("assistant.timing")
 
 SpanKind = Literal["model", "tool", "step"]
-Outcome = Literal["done", "failed", "capped", "cancelled"]
+Outcome = Literal["done", "failed", "capped", "cancelled", "refused"]
 
 
 class TurnTimer:
