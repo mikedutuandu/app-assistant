@@ -235,6 +235,7 @@ class Llm:
         response_format: dict | None = None,
         tools: list[dict] | None = None,
         reasoning: str | None = None,
+        temperature: float | None = None,
     ) -> ToolTurn:
         spent = 0.0
         last = "no model"
@@ -246,6 +247,8 @@ class Llm:
                 body["tools"] = tools
             if reasoning:
                 body["reasoning"] = {"effort": reasoning}
+            if temperature is not None:
+                body["temperature"] = temperature
             try:
                 text, calls, cost = await self._once(body, on_text, stream=True if tools else None)
             except _Retryable as e:
@@ -282,8 +285,11 @@ class Llm:
         max_tokens: int,
         on_text: Callable[[str], Awaitable[None]] | None = None,
         reasoning: str | None = None,
+        temperature: float | None = None,
     ) -> ToolTurn:
-        return await self._complete(messages, model, fallbacks, max_tokens, on_text, tools=tools, reasoning=reasoning)
+        return await self._complete(
+            messages, model, fallbacks, max_tokens, on_text, tools=tools, reasoning=reasoning, temperature=temperature
+        )
 
     async def chat_json(
         self,

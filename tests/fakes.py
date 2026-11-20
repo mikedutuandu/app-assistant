@@ -90,8 +90,10 @@ class FakeLlm:
         value, cost = self._next(marker(messages), messages, model)
         return schema.model_validate(value), cost
 
-    async def chat_tools(self, messages, model, fallbacks, tools, max_tokens, on_text=None, reasoning=None) -> ToolTurn:
-        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning, "tools": tools}
+    async def chat_tools(
+        self, messages, model, fallbacks, tools, max_tokens, on_text=None, reasoning=None, temperature=None
+    ) -> ToolTurn:
+        self._pending = {"max_tokens": max_tokens, "reasoning": reasoning, "tools": tools, "temperature": temperature}
         value, cost = self._next(marker(messages), list(messages), model)  # a copy: the agent appends to its list
         reply = value if isinstance(value, Reply) else Reply(text=value)
         calls = []

@@ -349,6 +349,15 @@ async def test_reasoning_is_sent():
 
 
 @respx.mock
+async def test_temperature_is_sent_by_chat_tools_only_when_given():
+    route = respx.post(CHAT).mock(return_value=ok("x"))
+    await Llm("k").chat_tools(MSGS, "a/m", [], TOOLS, 10, temperature=0.4)
+    await Llm("k").chat_tools(MSGS, "a/m", [], TOOLS, 10)
+    assert json.loads(route.calls[0].request.content)["temperature"] == 0.4
+    assert "temperature" not in json.loads(route.calls[1].request.content)
+
+
+@respx.mock
 async def test_reasoning_is_sent_by_chat_json():
     class Out(BaseModel):
         a: int

@@ -37,10 +37,16 @@ CLAIM_TOKENS = 400
 NUMBER = "a number you didn't give ({})"
 RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
 REPEAT = "it repeats a recent post"
+REPEAT_DRAFT = "it is too close to a draft already shown"
+# How much word overlap makes a repeat: of the user's published posts (and of a thread's own posts), or of a draft
+# this chat already showed. Drafts of the same news share most words, so only near-copies count among them.
+REPEAT_AT = 0.6
+REPEAT_DRAFT_AT = 0.8
 CLAIM = "it says something you didn't tell me"
 TOO_MANY = "too many posts for one thread (at most {})"
 TOO_FEW = "a thread needs at least two posts"
 UNCHECKED = "it couldn't be checked"
+SAME = "it is the same as the draft it changes"
 
 # Notes for the conversation model.
 NO_FACTS = (
@@ -61,6 +67,7 @@ class Draft(BaseModel):
     posts: list[str]  # one item for a post
     image_file_id: str | None = None
     fact_ids: list[str] = []
+    language: str | None = None  # the language it was written in (None: from before drafts kept one)
 
 
 class DraftResult(BaseModel):
@@ -76,9 +83,10 @@ class WriterDeps:
     facts: list[Fact]
     readings: list[FileReading]
     context: AppContext | None
-    recent: list[str]  # this thread's earlier drafts' posts and the context's recent posts
+    recent: list[str]  # the user's recent posts, from their app
     spend: Callable[[float], Awaitable[None]]  # charges one finished model call
     status: Callable[[str], Awaitable[None]]  # "writing", "checking"
+    drafts: list[str] = field(default_factory=list)  # posts of the drafts this chat already showed
 
 
 class _Strict(BaseModel):
@@ -124,15 +132,20 @@ def fact_blocks(facts: list[Fact]) -> str:
     return "Known facts:\n" + "\n".join(lines)
 
 
-def post_problems(text: str, spec: WriteSpec, facts: list[Fact], recent: list[str]) -> list[str]:
-    """Numbers, the pack's rules and repeats for one post: no model call."""
+def post_problems(
+    text: str, spec: WriteSpec, facts: list[Fact], recent: list[str], shown: list[str] | None = None
+) -> list[str]:
+    """Numbers, the pack's rules and repeats for one post (of `recent` posts, or near-copies of drafts already
+    `shown`): no model call."""
     reasons = []
     missing = unsupported_numbers(text, facts)
     if missing:
         reasons.append(NUMBER.format(fmt(missing[0])))
     reasons += [RULES[code] for code in rule_problems(text, spec)]
-    if repeats(text, recent):
+    if repeats(text, recent, REPEAT_AT):
         reasons.append(REPEAT)
+    elif shown and repeats(text, shown, REPEAT_DRAFT_AT):
+        reasons.append(REPEAT_DRAFT)
     return reasons
 
 
@@ -174,7 +187,7 @@ async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, languag
         f'Write exactly {count} draft(s) of kind "{spec.kind}" about what this brief describes, '
         f"from the known facts only:\n{data('brief', nfc(brief))}"
     )
-    return await _Run(w, spec, w.recent, clean_language(language)).draft(ask, count)
+    return await _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts)).draft(ask, count)
 
 
 async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: str | None = None) -> DraftResult:
@@ -194,7 +207,8 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: 
     # The draft being revised isn't a repeat of itself.
     own = {_key(p) for p in draft.posts}
     recent = [r for r in w.recent if _key(r) not in own]
-    return await _Run(w, spec, recent, clean_language(language)).draft(ask, 1)
+    mine = [r for r in w.drafts if _key(r) not in own]
+    return await _Run(w, spec, recent, clean_language(language), before=draft.posts, mine=mine).draft(ask, 1)
 
 
 # ---- how a call runs ----
@@ -260,6 +274,8 @@ class _Run:
     spec: WriteSpec
     recent: list[str]
     language: str | None = None  # the conversation's language; None: the app's
+    before: list[str] | None = None  # a revision's draft: the new version must differ from it
+    mine: list[str] = field(default_factory=list)  # posts of drafts this chat already showed
     cost: float = 0.0
     labels: dict[str, str] = field(default_factory=dict)
 
@@ -292,10 +308,14 @@ class _Run:
 
     # -- writing --
 
-    def _system(self) -> str:
+    @property
+    def written_in(self) -> str:
+        """The conversation's language as the conversation model named it, else the app's."""
         ctx = self.w.context
-        language = self.language or language_tag(ctx.language if ctx else "")
-        return "\n\n".join([prompts.DRAFT_WRITER, f"App: {self.w.pack.name}", f"Language: {language}"])
+        return self.language or language_tag(ctx.language if ctx else "")
+
+    def _system(self) -> str:
+        return "\n\n".join([prompts.DRAFT_WRITER, f"App: {self.w.pack.name}", f"Language: {self.written_in}"])
 
     def _material(self) -> str:
         parts = []
@@ -309,6 +329,9 @@ class _Run:
         else:
             about = f"Recent posts (do not repeat):\n{recent}"
         parts.append("About the app's user:\n" + data("context", about))
+        if self.mine:
+            shown = "\n".join(data("draft", p) for p in self.mine)
+            parts.append(f"Drafts already shown in this chat (write something new, not a copy):\n{shown}")
         if self.w.readings:
             blocks = []
             for r in self.w.readings:
@@ -348,11 +371,18 @@ class _Run:
         image = out.image_file_id
         if image is not None and not image_allowed(image, fact_ids, self.spec, self.w.readings, self.w.facts):
             image = None
-        return Draft(id=id or new_id(), kind=self.spec.kind, posts=posts, image_file_id=image, fact_ids=fact_ids)
+        return Draft(
+            id=id or new_id(),
+            kind=self.spec.kind,
+            posts=posts,
+            image_file_id=image,
+            fact_ids=fact_ids,
+            language=self.written_in,
+        )
 
     # -- checking --
 
-    def _local(self, d: Draft, seen: list[str]) -> list[_Problem]:
+    def _local(self, d: Draft, seen: list[str], shown: list[str]) -> list[_Problem]:
         """Every check that needs no model, on every post, and the thread as a whole for repeats."""
         problems: list[_Problem] = []
         thread = d.kind == "x_thread"
@@ -362,11 +392,17 @@ class _Run:
             problems.append(_Problem(TOO_FEW))
         earlier: list[str] = []
         for i, post in enumerate(d.posts, 1):
-            reasons = post_problems(post, self.spec, self.w.facts, seen + earlier)
+            reasons = post_problems(post, self.spec, self.w.facts, seen + earlier, shown)
             problems += [_Problem(r, i if thread else None) for r in reasons]
             earlier.append(post)
-        if thread and not any(p.reason == REPEAT for p in problems) and repeats(" ".join(d.posts), seen):
-            problems.append(_Problem(REPEAT))
+        if thread and not any(p.reason in (REPEAT, REPEAT_DRAFT) for p in problems):
+            whole = " ".join(d.posts)
+            if repeats(whole, seen, REPEAT_AT):
+                problems.append(_Problem(REPEAT))
+            elif repeats(whole, shown, REPEAT_DRAFT_AT):
+                problems.append(_Problem(REPEAT_DRAFT))
+        if self.before is not None and _key(" ".join(d.posts)) == _key(" ".join(self.before)):
+            problems.append(_Problem(SAME))  # "shorter" that changed nothing
         return problems
 
     async def _claims(self, d: Draft) -> list[_Problem]:
@@ -379,16 +415,16 @@ class _Run:
             return [_Problem(CLAIM, details=[nfc(u).strip()[:300] for u in out.unsupported[:5]])]
         return []
 
-    async def _check(self, drafts: list[Draft], seen: list[str]) -> dict[str, list[_Problem]]:
-        """Checks each draft; a passing one joins `seen`, so later drafts can't repeat it. Returns the failures."""
+    async def _check(self, drafts: list[Draft], seen: list[str], shown: list[str]) -> dict[str, list[_Problem]]:
+        """Checks each draft; a passing one joins `shown`, so later drafts can't copy it. Returns the failures."""
         await self.w.status("checking")
         failed: dict[str, list[_Problem]] = {}
         for d in drafts:
-            problems = self._local(d, seen) or await self._claims(d)
+            problems = self._local(d, seen, shown) or await self._claims(d)
             if problems:
                 failed[d.id] = problems
             else:
-                seen.extend(d.posts)
+                shown.extend(d.posts)
         return failed
 
     # -- the whole run --
@@ -400,8 +436,8 @@ class _Run:
         drafts = [d for d in (self._draft(o) for o in outs) if d is not None][:count]
         if not drafts:
             return self._result([], NOTHING)
-        seen = list(self.recent)
-        failed = await self._check(drafts, seen)
+        seen, shown = list(self.recent), list(self.mine)
+        failed = await self._check(drafts, seen, shown)
         if failed:
             failing = [d for d in drafts if d.id in failed]
             lines = [f"Rewrite these {len(failing)} draft(s), in this order, fixing the problems listed:"]
@@ -415,7 +451,7 @@ class _Run:
                 new = self._draft(o, id=d.id)
                 if new is not None:
                     rewritten.append(new)
-            again = await self._check(rewritten, seen) if rewritten else {}
+            again = await self._check(rewritten, seen, shown) if rewritten else {}
             fixed = {d.id: d for d in rewritten if d.id not in again}
             failed = {i: again.get(i, failed[i]) for i in failed if i not in fixed}
             drafts = [fixed.get(d.id, d) for d in drafts]

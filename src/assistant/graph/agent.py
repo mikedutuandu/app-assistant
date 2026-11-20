@@ -45,6 +45,8 @@ MAX_FACTS = 10  # facts in one save_facts call
 FACT_CHARS = 300
 MAX_RECENT = 5  # the user's recent posts shown to the chat model (the writer sees them all)
 MAX_DRAFTS_SHOWN = 10  # this thread's latest drafts in the system prompt
+# After the user's latest message, the rule the chat model most often slips on (live tests, 20 Nov 2026).
+REPLY_RULE = "(Your reply: at most one question, and it asks one thing.)"
 BUBBLE_ENDS = ("status", "draft", "saved")  # events the widget shows outside a text bubble: the next text starts anew
 
 TOOLS = ("write_drafts", "revise_draft", "save_facts")
@@ -298,12 +300,15 @@ class _Agent:
                 content = "(No message: the user tapped an action on the draft.)"
             else:
                 content = "(No message: the user sent a file.)"
+            if i == last:
+                content = f"{content}\n{REPLY_RULE}"
             if about is not None:
                 # Only a draft's buttons send a message about a draft. Their words are the app's (English), not the
                 # user's: the reply stays in the conversation's language.
+                written = f", written in {about.language}" if about.language else ""
                 content = (
-                    f"(The user tapped a button on draft {about.id}. The button's words are the app's, not the "
-                    f"user's: keep replying in the language of the conversation.)\n{content}"
+                    f"(The user tapped a button on draft {about.id}{written}. The button's words are the app's, not "
+                    f"the user's: keep replying in the language of the conversation.)\n{content}"
                 )
             out.append({"role": "user", "content": content})
         return out
@@ -471,9 +476,11 @@ class _Agent:
             result += "; not saved: " + "; ".join(refused)
         return result
 
-    def _writer(self, exclude: set[str]) -> WriterDeps:
+    def _writer(self, kind: str, exclude: set[str]) -> WriterDeps:
+        """The writer's inputs. A draft must not repeat the user's published posts, nor this chat's drafts of the same
+        kind: a thread retelling a post's news may reuse its sentences."""
         ctx = self.context
-        recent = [*(ctx.recent_posts if ctx else []), *(p for d in self.drafts if d.id not in exclude for p in d.posts)]
+        mine = [p for d in self.drafts if d.kind == kind and d.id not in exclude for p in d.posts]
 
         async def status(step: str) -> None:
             await self._emit("status", {"step": step})
@@ -484,14 +491,15 @@ class _Agent:
             facts=list(self.facts),
             readings=list(self.state.get("readings", [])),
             context=ctx,
-            recent=recent,
+            recent=list(ctx.recent_posts if ctx else []),
+            drafts=mine,
             spend=self.t.spend,
             status=status,
         )
 
     async def _write(self, args: _WriteArgs) -> str:
         self.t.gate()
-        result = await write_drafts(self._writer(set()), args.brief, args.kind, args.count, args.language)
+        result = await write_drafts(self._writer(args.kind, set()), args.brief, args.kind, args.count, args.language)
         return await self._shown(result, root=None)
 
     async def _revise(self, args: _ReviseArgs) -> str:
@@ -503,7 +511,10 @@ class _Agent:
         # Earlier versions of the same draft aren't repeats of it: "shorter" twice must not drop the second version.
         root = self.family.get(draft.id, draft.id)
         line = {d.id for d in self.drafts if self.family.get(d.id, d.id) == root}
-        result = await revise_draft(self._writer(line), draft, args.instruction, args.language)
+        # A tap on the draft's own buttons sends the app's (English) words: the new version keeps the draft's language.
+        tapped = self._about() is not None and self._about().id == draft.id
+        language = draft.language if tapped and draft.language else (args.language or draft.language)
+        result = await revise_draft(self._writer(draft.kind, line), draft, args.instruction, language)
         return await self._shown(result, root=root)
 
     async def _shown(self, result: DraftResult, root: str | None) -> str:
@@ -520,9 +531,11 @@ class _Agent:
         if not result.drafts:
             return f"nothing written: {result.note or 'the writer returned nothing usable'}"
         n = len(result.drafts)
+        language = result.drafts[0].language or "the conversation's language"
         out = (
-            f"wrote {_plural(n, 'draft')}; the user already sees {'it' if n == 1 else 'them'} under your reply, "
-            "so don't repeat the text:\n" + "\n".join(_draft_block(d) for d in result.drafts)
+            f"wrote {_plural(n, 'draft')} in {language}; the user already sees {'it' if n == 1 else 'them'} under "
+            f"your reply. Answer in one short sentence in {language}; don't repeat or describe the "
+            f"draft{'' if n == 1 else 's'}:\n" + "\n".join(_draft_block(d) for d in result.drafts)
         )
         return out + (f"\nnote: {result.note}" if result.note else "")
 

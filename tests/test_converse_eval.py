@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 
+import converse_eval
 import pytest
 from converse_eval import (
     JUDGE,
@@ -27,6 +28,8 @@ from converse_eval import (
     main,
     questions,
     recording_problems,
+    reply_text,
+    request_summary,
     run_case,
     run_one,
     save_recording,
@@ -116,8 +119,12 @@ def test_every_reply_is_held_to_the_question_limit():
         ("Tell me what it does for them.", 1),
         ("Let me know if you want another angle.", 1),
         ("Who is it for, and whether you have a number?", 2),
+        ("Who is it for, and do you have a number yet?", 2),
+        ("Want it shorter, or should I try another angle?", 1),
+        ("Want me to try a different angle, like the time saved or what the beta founders say?", 1),
         ("Bạn ra mắt tính năng tự động lên lịch đăng bài cho X tuần này đúng không?", 1),
         ("Cho mình biết ai dùng nó nhé.", 1),
+        ("Tính năng này giúp ai, và bạn đã có con số nào chưa?", 2),
     ],
 )
 def test_asks_that_are_not_question_marks_count(reply: str, asks: int):
@@ -485,3 +492,21 @@ async def test_the_command_needs_a_key_for_live_and_live_for_record(monkeypatch,
     assert "--live --record" in capsys.readouterr().err
     assert await main(["--case", "nope", "--database-url", "postgresql://x@localhost/none"]) == 2
     assert "No such case: nope" in capsys.readouterr().err
+
+
+def test_a_turns_reply_reads_as_the_widget_shows_it():
+    events = [
+        ("status", {"step": "thinking"}),
+        ("text", {"delta": "Love it."}),
+        ("saved", {"kind": "facts", "items": ["x"]}),
+        ("draft", {"id": "d"}),
+        ("text", {"delta": "\n\n"}),
+        ("text", {"delta": "Here's a first go."}),
+        ("text", {"delta": "\n\nMore?"}),
+    ]
+    assert reply_text(events) == "Love it.\n\nHere's a first go.\n\nMore?"
+
+
+def test_a_replay_pins_the_chat_temperature():
+    asked = request_summary("chat_tools", [{"role": "user", "content": "hi"}], "chat/model", tools=[], temperature=0.4)
+    assert asked["temperature"] == 0.4 and "temperature" in converse_eval._PINNED

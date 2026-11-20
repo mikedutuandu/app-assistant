@@ -97,19 +97,21 @@ cases:
   - name: typos_come_back_clean
     turns: ["finaly fixd the onbording. new users get to there first post in 3 min insted of 15"]
     expect:
-      - The reply restates the news in clean, correctly spelled words, that onboarding was fixed and new users now reach their first post in 3 minutes instead of 15.
+      - The reply or the draft restates the news in clean, correctly spelled words, that onboarding was fixed and new users now reach their first post in 3 minutes instead of 15.
       - The numbers 3 and 15 (minutes) are kept exactly as Mike gave them, and no other number appears in any reply or draft.
       - No reply or draft repeats any of Mike's typos ("finaly", "fixd", "onbording", "insted").
     hard: {drafts: any, saved: any, max_questions_per_reply: 1, never_said: ["finaly", "fixd", "onbording", "insted"]}
 
   - name: story_over_turns
+    # The story is complete after the second message, so the bot may write then; "write it" afterwards may then get
+    # a new version, or a pointer to the draft above with an offer of another take (never the same post again).
     turns: ["we launched dark mode today", "it was the most requested feature, 52 people asked for it", "write it"]
     expect:
       - The second reply builds on dark mode; it does not ask again what launched.
-      - The last turn's draft says dark mode launched and that 52 people asked for it, with 52 exactly.
-      - The draft invents no other number, result or quote.
-      - The last reply does not repeat the draft's text.
-    hard: {drafts: 1, saved: any, max_questions_per_reply: 1}
+      - By the end of the chat, a draft says dark mode launched and that 52 people asked for it, with 52 exactly.
+      - No draft invents another number, result or quote.
+      - The last reply does not repeat a draft's text, and if the last turn shows no new draft, the last reply points to the draft already shown or offers another take, without asking Mike for more details first.
+    hard: {drafts: any, saved: any, max_questions_per_reply: 1}
 
   # ---- writing ----
 
@@ -117,7 +119,7 @@ cases:
     turns: ["i deployed chat bot help user plan weet", "just write it"]
     expect:
       - After "just write it", the assistant writes exactly one draft instead of asking more questions first.
-      - The draft says only what Mike gave, that he shipped a chatbot that helps users plan their week (of posts); it invents no number, user count, result, quote or feature beyond that.
+      - The draft says only what Mike gave, that he shipped a chatbot that helps users plan their week (saying "plan their week of posts" is fine too); it invents no number, user count, result, quote or feature beyond that.
       - The draft does not reuse numbers from Mike's earlier posts (such as 31 paying users).
       - The last reply is one or two short sentences, does not repeat the draft's text, and does not lecture about missing details.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, never_said: ["weet"]}
@@ -128,7 +130,7 @@ cases:
       - The assistant writes exactly one draft.
       - The draft uses Mike's numbers exactly (2 minutes instead of 2 hours, 40 founders) and contains no other number or result.
       - The reply is one or two short sentences and does not repeat the draft's text.
-      - Nothing the assistant says mentions checks, rules, facts it used, or anything "not added".
+      - Nothing in the assistant's replies (its own words) mentions checks, rules, facts it used, or anything "not added". The quiet saved line under a turn is the app's, by design, and is fine.
     hard: {drafts: 1, saved: ">=1", max_questions_per_reply: 1, never_said: ["What I used", "Not added"]}
 
   - name: shorter_after_draft
@@ -156,7 +158,7 @@ cases:
       - "we shipped auto reply last week. replies go out in 2 min now instead of 2 hours. 40 founders on the beta use it every day"
       - "give me 3"
     expect:
-      - The last turn shows three drafts, and each opens differently with its own angle.
+      - The last turn shows three drafts, each with a different first line that leads with a different point (such as the speed, the 40 founders, or the launch itself). Sharing facts in their bodies is fine, as there are only three facts.
       - Every draft uses only what Mike gave (auto-reply, 2 minutes instead of 2 hours, 40 beta founders every day) and invents nothing.
       - The last reply is short and does not repeat any draft's text.
     hard: {drafts: 3, saved: any, max_questions_per_reply: 1}
@@ -243,10 +245,10 @@ cases:
 
   - name: vietnamese_button_tap
     turns:
-      - "tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X. viết bài đi"
+      - "tuần này mình ra mắt tính năng tự động lên lịch đăng bài cho X. 30 người dùng beta đã lên lịch 500 bài trong 3 ngày đầu. viết bài đi"
       - {text: "Make it shorter", draft: last}
     expect:
       - Every reply and both drafts are in Vietnamese, including after the English button text "Make it shorter".
-      - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week), and invents no number or result.
+      - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week; 30 beta users scheduled 500 posts in the first 3 days), and adds no number or result Mike didn't give.
       - The last reply is one short line and does not paste the draft's text again.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi, shorter_than_previous_draft: true}

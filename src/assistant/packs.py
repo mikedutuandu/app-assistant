@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 TOOL_KEYS = ("context", "save_draft", "save_material", "charge")
 
@@ -42,6 +42,8 @@ class Models(BaseModel):
     cheap: str
     vision: str
     fallbacks: list[str] = []
+    # The chat model's sampling temperature: lower keeps it to its rules (one ask per message) from run to run.
+    chat_temperature: float | None = Field(0.4, ge=0, le=1)
 
 
 class AppPack(BaseModel):

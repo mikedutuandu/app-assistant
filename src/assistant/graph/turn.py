@@ -73,7 +73,13 @@ class Turn:
         models = self.pack.models
         try:
             out = await self.deps.llm.chat_tools(
-                list(messages), models.chat, models.fallbacks, tools, max_tokens, on_text=on_text
+                list(messages),
+                models.chat,
+                models.fallbacks,
+                tools,
+                max_tokens,
+                on_text=on_text,
+                temperature=models.chat_temperature,
             )
         except LlmError as e:
             await self.spend(e.cost_usd)
