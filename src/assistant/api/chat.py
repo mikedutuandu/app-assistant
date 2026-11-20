@@ -32,6 +32,9 @@ MAX_UPLOAD_BYTES = 26 * 1024 * 1024  # the largest cap (voice, 25 MB) plus room 
 THREADS_LISTED = 30
 MAX_TEXT_CHARS = 4000
 UPLOADS_PER_HOUR = 30
+ACTIONS_PER_HOUR = 60
+MAX_FACT_CHARS = 500
+MAX_FACTS_KEPT = 30
 UPLOAD_THREAD_TITLE = "Files"
 PENDING_STALE = "2 minutes"  # a tap whose run died mid-way may be tried again after this
 
@@ -173,10 +176,16 @@ class AddDraftIn(BaseModel):
     piece_id: str
 
 
+class FactIn(Fact):
+    """A fact the user edited in the widget: the same shape, with a cap on its text."""
+
+    text: Annotated[str, StringConstraints(max_length=MAX_FACT_CHARS)] = ""
+
+
 class KeepFactsIn(BaseModel):
     action_id: ActionId
     kind: Literal["keep_facts"]
-    facts: list[Fact] = Field(min_length=1, max_length=100)
+    facts: list[FactIn] = Field(min_length=1, max_length=MAX_FACTS_KEPT)
 
 
 ActionIn = Annotated[AddDraftIn | KeepFactsIn, Field(discriminator="kind")]
@@ -223,6 +232,8 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     """A tap on "Add to Schedule" or "Keep for next week": runs once per action_id; a repeat gets the same result."""
     pack, session = auth
     state = request.app.state
+    if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):
+        raise ApiError(429, "limit", "You've done that a lot this hour. Try again a bit later.")
     await owned_thread(state.pool, session, thread_id)
     piece = await _piece(state.pool, session, thread_id, body.piece_id) if isinstance(body, AddDraftIn) else None
 

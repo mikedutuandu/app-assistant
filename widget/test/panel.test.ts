@@ -109,6 +109,7 @@ describe("panel", () => {
     ]);
     await say("hi");
     const field = $(".fact") as HTMLInputElement;
+    expect(field.maxLength).toBe(500); // the server refuses a longer fact
     field.value = "Shipped dark mode on Monday";
     const keep = $$(".facts .btn")[0] as HTMLButtonElement;
     keep.click();

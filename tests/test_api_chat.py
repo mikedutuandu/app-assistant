@@ -701,6 +701,35 @@ async def test_colon_ids_cannot_read_or_take_over_another_workspaces_action(api:
         assert (await cur.fetchone())[0] == "ws1:x"
 
 
+async def test_actions_limited_to_60_an_hour_per_workspace(api: Api):
+    tid = await api.thread_row()
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "insert into counters (key, value, window_ends) values ('action:real:ws1', 59, now() + interval '1 hour')"
+        )
+    body = {"action_id": "k1", "kind": "keep_facts", "facts": [{"text": FACT}]}
+    assert (await api.act(tid, body)).status_code == 200
+    r = await api.act(tid, {**body, "action_id": "k2"})
+    assert r.status_code == 429
+    assert r.json() == {"error": "limit", "message": "You've done that a lot this hour. Try again a bit later."}
+    assert len(api.tools.materials) == 1
+    other = await api.thread_row("ws2")
+    assert (await api.act(other, {**body, "action_id": "k3"}, workspace="ws2")).status_code == 200
+
+
+async def test_keep_facts_caps_fact_length_and_count(api: Api):
+    tid = await api.thread_row()
+    ok = await api.act(tid, {"action_id": "c1", "kind": "keep_facts", "facts": [{"text": "x" * 500}]})
+    assert ok.status_code == 200
+    long = await api.act(tid, {"action_id": "c2", "kind": "keep_facts", "facts": [{"text": "x" * 501}]})
+    assert long.status_code == 422
+    thirty = [{"text": f"fact {i}"} for i in range(30)]
+    assert (await api.act(tid, {"action_id": "c3", "kind": "keep_facts", "facts": thirty})).status_code == 200
+    many = await api.act(tid, {"action_id": "c4", "kind": "keep_facts", "facts": [*thirty, {"text": "one more"}]})
+    assert many.status_code == 422
+    assert len(api.tools.materials) == 2
+
+
 # ---- review round 1 ----
 
 

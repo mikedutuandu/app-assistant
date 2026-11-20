@@ -246,7 +246,7 @@ export function createPanel(opts: PanelOptions) {
       h("p", { class: "hint", text: "Fix anything that's wrong, then keep it for next week." }),
     );
     const fields = facts.map((f) => {
-      const t = h("input", { class: "fact", type: "text", value: f.text, "aria-label": "Fact" });
+      const t = h("input", { class: "fact", type: "text", value: f.text, "aria-label": "Fact", maxlength: 500 });
       box.append(t);
       return { fact: f, input: t };
     });
