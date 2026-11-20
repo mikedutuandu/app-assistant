@@ -11,10 +11,12 @@ from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from assistant.api import chat, deps, internal, turn
+from assistant.api import files as files_api
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, direct_url, migrate, open_pool, open_saver_pool
 from assistant.demo import routes as demo_routes
 from assistant.demo import tools as demo_tools
+from assistant.files.signing import load_signing_key
 from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
@@ -105,7 +107,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.http = http
             app.state.pool = pool
             app.state.checkpointer = checkpointer
-            app.state.storage = Storage(settings)
+            signing_key = None
+            if settings.storage_backend == "local" and not settings.files_signing_key:
+                signing_key = await load_signing_key(pool)  # made once, kept in the database
+            if settings.storage_backend == "local":
+                settings.data_dir.mkdir(parents=True, exist_ok=True)
+            app.state.storage = Storage(settings, signing_key)
             log.info("uploads: %s", app.state.storage.upload_backend)  # a missing SUPABASE_* shows here
             if app.state.storage.upload_backend == "s3":
                 await set_bucket_cors(app.state.storage, packs, settings)
@@ -125,6 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     deps.install(app)
     app.include_router(internal.router)
+    app.include_router(files_api.router)
     app.include_router(chat.router)
     app.include_router(chat.workspaces)
     app.include_router(demo_routes.router)

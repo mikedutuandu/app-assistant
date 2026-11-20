@@ -18,11 +18,11 @@ A host app can choose its own chat's id: `POST /v1/chat/{app}/messages` and `POS
 
 One action: `POST /v1/chat/{app}/threads/{id}/actions` with `{action_id, kind: "add_draft", draft_id}` saves that draft to the app through `save_draft` (`posts[0]` as `text`, `posts[1:]` as `thread`, the picture on the first post) and its facts through `save_material`. It runs once per `action_id`; a repeat gets the same result. (The old `keep_facts` action is gone: facts are kept by the bot as the chat goes.)
 
-FastAPI and LangGraph, Postgres for state (in its own schema), an S3-compatible bucket for files, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
+FastAPI and LangGraph, Postgres for state (in its own schema), files in an S3-compatible bucket or on local disk, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
 
 ## Run locally
 
-You need Python 3.12 with [uv](https://docs.astral.sh/uv/), a Postgres, and any S3 endpoint (MinIO works).
+You need Python 3.12 with [uv](https://docs.astral.sh/uv/) and a Postgres. Files go on local disk (`DATA_DIR`) unless you set `S3_*` (any S3 endpoint works, MinIO included).
 
 ```bash
 docker compose -f docker-compose.test.yml up -d        # Postgres on localhost:54329 (user, password and db: test)
@@ -32,6 +32,33 @@ uv run uvicorn assistant.main:create_app --factory --reload
 ```
 
 Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` to use that Postgres. Every variable is explained in `.env.example`. Open `http://localhost:8000/demo` for the Shipnote demo. Set `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` in `.env` first (any long random strings, for example from `openssl rand -hex 32`): the server will not start without them.
+
+## Run with Docker
+
+No cloud account needed: the bot, Postgres 16 and the files on local disk (a Docker volume).
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...    # needed for real replies; without it the bot starts but every turn fails
+docker compose up --build
+```
+
+Open `http://localhost:8000/demo` for the Shipnote demo, and `http://localhost:8000/health` answers `{"ok": true}`. Migrations run at start. Your data stays in the `assistant-data` (files) and `postgres-data` volumes until you remove them (`docker compose down -v`).
+
+- **Files.** With no `S3_*` and no `SUPABASE_*` the bot keeps files under `DATA_DIR` (`/data` in the container) and serves them itself: the browser uploads with a short-lived signed `PUT /v1/files/...` link and an app reads a picture from a 5-minute signed `GET` link, both on `PUBLIC_BASE_URL` (HMAC-SHA256 over `method:key:expiry`). The signing key is `FILES_SIGNING_KEY`; unset, one is generated once and kept in the database (the `settings` table). Set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT`) to use a bucket instead.
+- **`PUBLIC_BASE_URL`** must be an address the browser and your app can reach (`http://localhost:8000` on your machine; your domain when it is online): upload and picture links are built from it.
+- **Secrets.** The compose file gives `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` throwaway defaults so the demo starts. Set your own (`openssl rand -hex 32`) in the shell or a `.env` next to `docker-compose.yml` before the bot is reachable by anyone else.
+- **Your own app.** Add a pack under `apps/` (rebuild the image) or list the app in `APPS`, as in [docs/integration.md](docs/integration.md).
+- **One instance, or a shared volume.** Local files live on one machine's disk: run one bot container (or mount the same volume in each). Use a bucket when the bot runs on several machines.
+
+## Deploy with Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant&project-name=app-assistant&repository-name=app-assistant&env=OPENROUTER_API_KEY,PUBLIC_BASE_URL,DEMO_SESSION_SECRET,HOOKPLAYBOOK_SESSION_SECRET,CRON_SECRET,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY,S3_SECRET_KEY&envDescription=OpenRouter%20key,%20the%20bot%27s%20public%20URL,%20two%20secrets%20%28openssl%20rand%20-hex%2032%29,%20and%20a%20bucket%20for%20files&envLink=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant%23deploy-with-vercel)
+
+The button clones this repository into your Vercel account and asks for the variables below. **It works once the repository is public** (Vercel cannot clone a private one for someone else). For the full walk-through, with Supabase and the Function Region, see [Deploy on Vercel](#deploy-on-vercel) and [docs/DEPLOY.md](docs/DEPLOY.md).
+
+- **Database: Neon.** Add the Neon integration from the Vercel Marketplace (Storage tab, **Create database**) before the first deploy; the button's link can require it for you by adding `integration-ids=<Neon's integration id>` from your [Integrations Console](https://vercel.com/dashboard/integrations/console) ([how](https://vercel.com/docs/deploy-button/integrations)). Neon sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), or the same names with a `NEON_` prefix when you choose a custom prefix; the bot reads both spellings and uses the direct one for everything.
+- **Variables to fill in:** `OPENROUTER_API_KEY`; `PUBLIC_BASE_URL` (the project's domain, no trailing slash; set it after the first deploy, then redeploy); `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` (`openssl rand -hex 32` each); `CRON_SECRET` (the same, so the daily cleanup is on).
+- **Files need a bucket on Vercel.** A function's disk is temporary, so the local backend is for Docker and your own server. Set `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (Neon Object Storage, Cloudflare R2, S3, or Supabase as described below). Left empty, uploads would be lost between requests.
 
 ## Test
 
