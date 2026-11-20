@@ -180,7 +180,7 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str) -> DraftRe
     ask = (
         f'Revise this draft of kind "{spec.kind}" as the user asks, and reply with exactly 1 draft.\n'
         f"The draft:\n{_posts_blocks(draft.posts)}\n"
-        + (f"It carries the image with file_id {draft.image_file_id}: keep it.\n" if draft.image_file_id else "")
+        + _image_line(w, draft)
         + f"What the user asks:\n{data('instruction', nfc(instruction))}"
     )
     # The draft being revised isn't a repeat of itself.
@@ -190,6 +190,14 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str) -> DraftRe
 
 
 # ---- how a call runs ----
+
+
+def _image_line(w: WriterDeps, draft: Draft) -> str:
+    """Names the draft's image to the writer only if the user shared it, and only as an attribute of a data block."""
+    shared = {r.file_id for r in w.readings if r.kind == "image"}
+    if draft.image_file_id is None or draft.image_file_id not in shared:
+        return ""
+    return f"It carries this image, keep it:\n{data('image', '', file_id=draft.image_file_id)}\n"
 
 
 def _key(text: str) -> str:
@@ -230,10 +238,11 @@ def _plural(n: int) -> str:
 class _Problem:
     reason: str
     post: int | None = None  # 1-based, for a thread's post
-    detail: str = ""  # for the writer only: the unsupported text a claim check found
+    details: list[str] = field(default_factory=list)  # for the writer only: what a claim check found unsupported
 
     def for_writer(self) -> str:
-        text = f"{self.reason} ({self.detail})" if self.detail else self.reason
+        # The fragments quote the draft (the user's words, files, links): each goes in its own data block.
+        text = f"{self.reason}: " + " ".join(data("claim", d) for d in self.details) if self.details else self.reason
         return f"post {self.post}: {text}" if self.post else text
 
 
@@ -359,7 +368,7 @@ class _Run:
         except LlmError:
             return [_Problem(UNCHECKED)]  # never shown unchecked
         if out.unsupported:
-            return [_Problem(CLAIM, detail="; ".join(f'"{nfc(u).strip()}"' for u in out.unsupported)[:300])]
+            return [_Problem(CLAIM, details=[nfc(u).strip()[:300] for u in out.unsupported[:5]])]
         return []
 
     async def _check(self, drafts: list[Draft], seen: list[str]) -> dict[str, list[_Problem]]:
