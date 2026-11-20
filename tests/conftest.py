@@ -2,13 +2,22 @@ import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import httpx
 import pytest
+from chat_api import SECRET, Api, make_pack
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from moto import mock_aws
 from psycopg import AsyncConnection, sql
 from psycopg.conninfo import make_conninfo
+from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from ulid import ULID
 
 from assistant.config import Settings
+from assistant.db import migrate
+from assistant.files.storage import Storage
+from assistant.graph.build import serializer
+from assistant.main import create_app
 
 
 @pytest.fixture
@@ -44,3 +53,41 @@ async def pool() -> AsyncIterator[AsyncConnectionPool]:
         await pool.close()
         async with await AsyncConnection.connect(url, autocommit=True) as admin:
             await admin.execute(sql.SQL("drop schema {} cascade").format(sql.Identifier(schema)))
+
+
+@pytest.fixture
+async def api(  # the chat API on a fresh schema, moto S3, FakeLlm and FakeTools (tests/chat_api.py)
+    pool: AsyncConnectionPool, test_settings: Settings, monkeypatch
+) -> AsyncIterator[Api]:
+    monkeypatch.setenv("TEST_CHAT_SECRET", SECRET)
+    await migrate(pool)
+    saver_pool = AsyncConnectionPool(
+        pool.conninfo,
+        min_size=1,
+        max_size=2,
+        open=False,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+    )
+    await saver_pool.open()
+    try:
+        checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
+        await checkpointer.setup()
+        with mock_aws():
+            storage = Storage(test_settings)
+            storage._client.create_bucket(
+                Bucket=test_settings.s3_bucket,
+                CreateBucketConfiguration={"LocationConstraint": test_settings.s3_region},
+            )
+            app = create_app(test_settings)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as c:
+                api = Api(app, c, pool, storage, checkpointer)
+                app.state.pool = pool
+                app.state.checkpointer = checkpointer
+                app.state.storage = storage
+                app.state.http = c
+                app.state.packs = {"real": make_pack(), "demo": make_pack("demo", demo=True)}
+                app.state.llm = api.llm
+                app.state.tools_for = lambda pack, session: api.tools
+                yield api
+    finally:
+        await saver_pool.close()

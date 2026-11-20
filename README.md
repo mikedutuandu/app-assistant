@@ -69,7 +69,7 @@ The values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co
 
 **4. Connection budget.** Each Cloud Run instance opens up to `DB_POOL_MAX` (default 5) connections for its own queries plus `SAVER_POOL_MAX` (default 2) for LangGraph's checkpoints. Keep `instances × (DB_POOL_MAX + SAVER_POOL_MAX)` under the Session pooler's pool size (Database settings → Connection pooling; 15 by default on every compute size up to Medium). Start with `--max-instances 2`: 2 × 7 = 14. To run more instances, raise the pool size (a larger compute) or lower `DB_POOL_MAX` first.
 
-**5. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
+**5. Secrets in Secret Manager.** Create one per secret (`OPENROUTER_API_KEY`, `DEMO_SESSION_SECRET`, `HOOKPLAYBOOK_SESSION_SECRET`, `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`); the value comes from stdin so it never lands in your shell history:
 
 ```bash
 openssl rand -hex 32 | gcloud secrets create DEMO_SESSION_SECRET --data-file=-
@@ -88,7 +88,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 ```bash
 gcloud run deploy app-assistant --source . --region REGION --allow-unauthenticated \
   --no-cpu-throttling --min-instances 0 --max-instances 2 --timeout 3600 --concurrency 40 --memory 1Gi \
-  --set-secrets OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,DEMO_SESSION_SECRET=DEMO_SESSION_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,S3_ACCESS_KEY=S3_ACCESS_KEY:latest,S3_SECRET_KEY=S3_SECRET_KEY:latest \
+  --set-secrets OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest,DEMO_SESSION_SECRET=DEMO_SESSION_SECRET:latest,HOOKPLAYBOOK_SESSION_SECRET=HOOKPLAYBOOK_SESSION_SECRET:latest,DATABASE_URL=DATABASE_URL:latest,S3_ACCESS_KEY=S3_ACCESS_KEY:latest,S3_SECRET_KEY=S3_SECRET_KEY:latest \
   --set-env-vars S3_ENDPOINT=https://REF.supabase.co/storage/v1/s3,S3_REGION=SUPABASE_REGION,S3_BUCKET=BUCKET,PUBLIC_BASE_URL=https://TEMP
 ```
 
@@ -176,9 +176,14 @@ The service refuses to start while any pack's secret variable is unset.
 HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools on its MCP (`https://hookplaybook.com/api/v1/mcp`), the session route `/api/assistant/session`, and the call that deletes a workspace's data here when the workspace is deleted there.
 
 - **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
+  Until the bot moves to Vercel, it runs on Cloud Run: put the value in Secret Manager as `HOOKPLAYBOOK_SESSION_SECRET` (step 5 of the deploy) and, on a service deployed before HookPlaybook's pack, map it once (the service will not start without it):
+
+  ```bash
+  gcloud run services update app-assistant --region REGION --update-secrets HOOKPLAYBOOK_SESSION_SECRET=HOOKPLAYBOOK_SESSION_SECRET:latest
+  ```
 - **Origin.** Only `https://hookplaybook.com` (the dashboard is at `/dashboard` on it) may use the widget.
 - **Posts.** Two X posts per card (280 characters, no links, no long dashes, may carry one of the user's pictures). Saving goes through `save_draft`, which copies the picture into the draft.
-- **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact.
+- **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.
 - **Charge.** `assistant_charge` charges once per `ref` (the message id). The browser first sees that id in the `done` event, after the charge.
 
 ## Add an app

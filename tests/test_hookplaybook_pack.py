@@ -10,8 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from chat_api import PNG, Api, parse_sse
 from fakes import default_context
-from test_api_chat import PNG, Api, api, parse_sse  # noqa: F401 - `api` is the fixture
 
 from assistant import auth
 from assistant.auth import AuthError, verify_delete_token, verify_session
@@ -145,7 +145,7 @@ SECRET = "h" * 64
 
 
 @pytest.fixture
-def hp(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:  # noqa: F811 - `api` is the imported fixture
+def hp(api: Api, monkeypatch: pytest.MonkeyPatch) -> Api:
     monkeypatch.setenv(SECRET_ENV, SECRET)
     api.app.state.packs["hookplaybook"] = pack()
     return api

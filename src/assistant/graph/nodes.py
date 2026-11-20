@@ -98,6 +98,11 @@ def _key(text: str) -> str:
     return " ".join(nfc(text).casefold().split())
 
 
+def _kept_key(text: str) -> str:
+    """How an extracted fact is matched to a kept one: case, spacing and end punctuation aside."""
+    return _key(text).strip(" .!?;:,")
+
+
 def _content(message: BaseMessage) -> str:
     if isinstance(message.content, str):
         return message.content
@@ -308,15 +313,23 @@ async def extract_facts(state: ChatState, t: Turn) -> dict:
     out = await t.json(system, _material(state, facts=True, kept=True), ExtractOut, max_tokens=1500)
     readings = {r.file_id: r for r in state.get("readings", [])}
     said = [Fact(numbers=numbers_in(text)) for text in _source_texts(state)]
+    # A kept fact is stored word for word with its own id: the app marks it used by that text when a post tells it.
+    kept = {_kept_key(k.text): k for k in _kept(state)}
     known = list(state.get("facts", []))
-    keys = {_key(f.text) for f in known}
+    keys = {_kept_key(f.text) for f in known}
     for item in out.facts:
         text = nfc(item.text).strip()
-        if not text or _key(text) in keys:
+        was_kept = kept.get(_kept_key(text))
+        if was_kept is not None:
+            text = was_kept.text
+        if not text or _kept_key(text) in keys:
             continue
-        keys.add(_key(text))
+        keys.add(_kept_key(text))
         if unsupported_numbers(text, said):
             continue  # a number the user never said or showed: the extractor made it up
+        if was_kept is not None:
+            known.append(Fact(id=was_kept.id, text=text, numbers=numbers_in(text)))
+            continue
         reading = readings.get(item.file_id) if item.file_id else None
         source = reading.kind if reading else "typed"
         file_id = reading.file_id if reading else None

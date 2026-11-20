@@ -737,3 +737,45 @@ async def test_kept_facts_survive_the_checkpoint():
     await h.send("hi")
     state = await h.send("hm")
     assert [k.text for k in state["context"].kept_facts] == [k["text"] for k in KEPT]
+
+
+async def test_a_kept_fact_the_model_rewords_slightly_is_stored_as_kept():
+    # HookPlaybook marks a kept fact used by its text: the stored fact must be the kept one, word for word, with its id.
+    llm = FakeLlm(
+        {
+            "INTERVIEW": [interview(question="x"), interview(enough=True)],
+            "EXTRACT_FACTS": [facts(("we hit 120  paying users in March.", None), ("It took 6 months", None))],
+            "WRITER": [written(piece("launch_post", "120 paying users in March.", ["F1"]))],
+            "CLAIM_CHECK": [OK],
+        }
+    )
+    h = kept_harness(llm)
+    await h.send("hi")
+    state = await h.send("the first one, it took 6 months")
+    kept, told = state["facts"]
+    assert (kept.id, kept.text) == ("k1", "We hit 120 paying users in March")
+    assert told.text == "It took 6 months" and told.id != "k1"
+    [card] = h.of("card")
+    assert card["facts"][0] == {**card["facts"][0], "id": "k1", "text": "We hit 120 paying users in March"}
+
+
+async def test_a_kept_fact_is_stored_once_even_if_extracted_twice():
+    llm = FakeLlm(
+        {
+            "INTERVIEW": [interview(question="x"), interview(enough=True), interview(enough=True)],
+            "EXTRACT_FACTS": [
+                facts(("We hit 120 paying users in March", None)),
+                facts(("We hit 120 paying users in march!", None)),
+            ],
+            "WRITER": [
+                written(piece("launch_post", "120 paying users in March.", ["F1"])),
+                written(piece("launch_post", "Paying customers reached 120 this spring.", ["F1"])),
+            ],
+            "CLAIM_CHECK": [OK, OK],
+        }
+    )
+    h = kept_harness(llm)
+    await h.send("hi")
+    await h.send("the first one")
+    state = await h.send("again please")
+    assert [f.id for f in state["facts"]] == ["k1"]

@@ -4,212 +4,36 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
 from datetime import timedelta
-from pathlib import Path
 
-import httpx
-import jwt
 import pytest
-from fakes import FakeLlm, FakeTools, Out, default_context
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from moto import mock_aws
-from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb
-from psycopg_pool import AsyncConnectionPool
+from chat_api import (
+    APP_DOWN,
+    CHANGELOG,
+    FACT,
+    LAUNCH,
+    ORIGIN,
+    OUR_FAULT,
+    PNG,
+    Api,
+    ask_script,
+    happy_script,
+    raw_token,
+)
+from fakes import FakeTools, Out, default_context
 from starlette.requests import Request
 
 from assistant.api import chat, turn
 from assistant.api.deps import client_ip
 from assistant.auth import mint_session, verify_session
 from assistant.config import Settings
-from assistant.db import migrate, new_id
-from assistant.files.storage import Storage
-from assistant.graph.build import serializer, thread_id
+from assistant.db import new_id
+from assistant.graph.build import thread_id
 from assistant.limits import DEMO_MESSAGES_PER_IP_DAY, DEMO_USD_KEY, USER_MESSAGES_PER_HOUR, hit, remaining, user_key
 from assistant.llm import LlmError
-from assistant.main import create_app
-from assistant.packs import AppPack, Models, WriteSpec
 from assistant.tools import ToolError
 
 pytestmark = pytest.mark.db
-
-SECRET = "k" * 64
-ORIGIN = "https://app.example"
-PNG = (Path(__file__).parent / "fixtures" / "shot.png").read_bytes()
-FACT = "Replies go out in 2 minutes instead of 2 hours"
-LAUNCH = "Auto-reply now answers in 2 minutes instead of 2 hours."
-CHANGELOG = "Auto-reply\n- Replies go out in 2 minutes, not 2 hours."
-APP_DOWN = "The app couldn't be reached. Try again in a minute."
-OUR_FAULT = "Something went wrong on our side. Nothing was saved."
-OK = {"unsupported": []}
-
-
-def make_pack(pack_id: str = "real", demo: bool = False) -> AppPack:
-    return AppPack(
-        id=pack_id,
-        name="Test app",
-        mcp_url="https://app.example/mcp",
-        secret_env="TEST_CHAT_SECRET",
-        allowed_origins=[ORIGIN],
-        interview_guide="Ask what shipped and for one number.",
-        writes=[
-            WriteSpec(
-                kind="launch_post",
-                count=1,
-                max_chars=280,
-                no_links=True,
-                no_dashes=True,
-                may_carry_image=True,
-                instructions="A short launch post.",
-            ),
-            WriteSpec(kind="changelog", count=1, max_chars=600, instructions="A short changelog entry."),
-        ],
-        tools={"context": "c", "save_draft": "s", "save_material": "m", "charge": "ch"},
-        models=Models(main="main/model", cheap="cheap/model", vision="vis/model"),
-        files={"per_message": 2, "kinds": ["image", "voice"]} if demo else {},
-        message_usd_cap=0.05,
-        demo=demo,
-    )
-
-
-def happy_script() -> dict:
-    piece = lambda kind, text: {"spec_kind": kind, "text": text, "fact_ids": ["F1"], "image_file_id": None}
-    return {
-        "INTERVIEW": [{"enough": True, "just_write": False, "question": None}],
-        "EXTRACT_FACTS": [{"facts": [{"text": FACT, "source": "typed", "file_id": None}]}],
-        "WRITER": [{"pieces": [piece("launch_post", LAUNCH), piece("changelog", CHANGELOG)]}],
-        "CLAIM_CHECK": [OK, OK],
-    }
-
-
-def ask_script() -> dict:
-    return {
-        "INTERVIEW": [{"enough": False, "just_write": False, "question": "a number"}],
-        "ASK_BACK": ["What changed for users?"],
-    }
-
-
-def raw_token(app: str, workspace: str, access: str, ttl: int = 600) -> str:
-    now = int(time.time())
-    claims = {"iss": app, "sub": workspace, "access": access, "iat": now, "exp": now + ttl}
-    return jwt.encode(claims, SECRET, algorithm="HS256")
-
-
-def parse_sse(text: str) -> list[tuple[str, dict]]:
-    events = []
-    for block in text.replace("\r\n", "\n").split("\n\n"):
-        kind, data = None, []
-        for line in block.split("\n"):
-            if line.startswith("event:"):
-                kind = line[6:].strip()
-            elif line.startswith("data:"):
-                data.append(line[5:].strip())
-        if kind:
-            events.append((kind, json.loads("\n".join(data))))
-    return events
-
-
-class Api:
-    def __init__(self, app, client: httpx.AsyncClient, pool: AsyncConnectionPool, storage: Storage, checkpointer):
-        self.app = app
-        self.client = client
-        self.pool = pool
-        self.storage = storage
-        self.checkpointer = checkpointer
-        self.llm = FakeLlm()
-        self.tools = FakeTools()
-
-    def headers(self, workspace: str = "ws1", app: str = "real", **extra: str) -> dict:
-        token = mint_session(self.app.state.packs[app], workspace)
-        return {"Authorization": f"Bearer {token}", "Origin": ORIGIN, **extra}
-
-    async def send(
-        self,
-        text: str,
-        thread: str | None = None,
-        file_ids: list[str] | None = None,
-        workspace: str = "ws1",
-        app: str = "real",
-        **headers: str,
-    ) -> list[tuple[str, dict]]:
-        body = {"thread_id": thread, "text": text, "file_ids": file_ids or []}
-        r = await self.client.post(
-            f"/v1/chat/{app}/messages", json=body, headers=self.headers(workspace, app, **headers)
-        )
-        assert r.status_code == 200, r.text
-        assert r.headers["content-type"].startswith("text/event-stream")
-        return parse_sse(r.text)
-
-    async def upload(self, data: bytes, thread: str | None = None, workspace: str = "ws1") -> httpx.Response:
-        form = {"thread_id": thread} if thread else {}
-        files = {"file": ("shot.png", data, "image/png")}
-        return await self.client.post("/v1/chat/real/files", data=form, files=files, headers=self.headers(workspace))
-
-    async def act(self, thread: str, body: dict, workspace: str = "ws1") -> httpx.Response:
-        return await self.client.post(
-            f"/v1/chat/real/threads/{thread}/actions", json=body, headers=self.headers(workspace)
-        )
-
-    async def count(self, table: str, workspace: str = "ws1") -> int:
-        async with self.pool.connection() as conn:
-            cur = await conn.execute(f"select count(*) from {table} where workspace = %s", (workspace,))
-            return (await cur.fetchone())[0]
-
-    async def thread_row(self, workspace: str = "ws1", app: str = "real", title: str = "t") -> str:
-        tid = new_id()
-        async with self.pool.connection() as conn:
-            await conn.execute(
-                "insert into threads (id, app, workspace, title) values (%s, %s, %s, %s)", (tid, app, workspace, title)
-            )
-        return tid
-
-    async def piece_row(self, thread: str, dropped: str | None = None, image_file_id: str | None = None) -> str:
-        pid = new_id()
-        facts = [{"id": "f1", "text": FACT, "numbers": [2.0, 2.0], "source": "typed", "file_id": None}]
-        async with self.pool.connection() as conn:
-            await conn.execute(
-                "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-                " fact_ids, facts, dropped) values (%s, 'real', 'ws1', %s, 'm1', 'launch_post', %s, %s, %s, %s, %s)",
-                (pid, thread, LAUNCH, image_file_id, Jsonb(["f1"]), Jsonb(facts), dropped),
-            )
-        return pid
-
-
-@pytest.fixture
-async def api(pool: AsyncConnectionPool, test_settings: Settings, monkeypatch) -> AsyncIterator[Api]:
-    monkeypatch.setenv("TEST_CHAT_SECRET", SECRET)
-    await migrate(pool)
-    saver_pool = AsyncConnectionPool(
-        pool.conninfo,
-        min_size=1,
-        max_size=2,
-        open=False,
-        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-    )
-    await saver_pool.open()
-    try:
-        checkpointer = AsyncPostgresSaver(saver_pool, serde=serializer())  # type: ignore[arg-type]
-        await checkpointer.setup()
-        with mock_aws():
-            storage = Storage(test_settings)
-            storage._client.create_bucket(
-                Bucket=test_settings.s3_bucket,
-                CreateBucketConfiguration={"LocationConstraint": test_settings.s3_region},
-            )
-            app = create_app(test_settings)
-            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as c:
-                api = Api(app, c, pool, storage, checkpointer)
-                app.state.pool = pool
-                app.state.checkpointer = checkpointer
-                app.state.storage = storage
-                app.state.http = c
-                app.state.packs = {"real": make_pack(), "demo": make_pack("demo", demo=True)}
-                app.state.llm = api.llm
-                app.state.tools_for = lambda pack, session: api.tools
-                yield api
-    finally:
-        await saver_pool.close()
 
 
 def of(events: list[tuple[str, dict]], kind: str) -> list[dict]:
