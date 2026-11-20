@@ -7,7 +7,8 @@ and every check, in `assistant.writer`; each passing draft is a `draft` event). 
 answer in text. A bad call (no id, no name, an unknown tool, arguments that aren't JSON or don't fit) never raises:
 its result tells the model what was wrong. Everything the user, their files, their app or the writer supplied
 reaches the model inside `<data>` blocks. The message's cost cap is checked before every chat call and before a
-drafting tool runs; reaching it ends the turn with the cap text, keeping what the turn already did.
+drafting tool runs; reaching it ends the turn with the cap text, keeping what the turn already did. A model call
+that fails after tools ran ends the turn as `failed` (state), likewise keeping what they did.
 """
 
 import json
@@ -24,7 +25,7 @@ from assistant.graph import prompts
 from assistant.graph.prompts import data
 from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
-from assistant.llm import ToolCall, ToolTurn
+from assistant.llm import LlmError, ToolCall, ToolTurn
 from assistant.tools import AppContext, ToolError
 from assistant.writer import Draft, DraftResult, WriterDeps, fmt, language_tag, revise_draft, write_drafts
 
@@ -481,12 +482,14 @@ class _Agent:
             await self.t.emit("text", {"delta": "\n\n"})
         await self.t.emit("text", {"delta": CAP_TEXT})
 
-    def update(self, capped: bool = False) -> dict:
+    def update(self, capped: bool = False, failed: bool = False) -> dict:
         out: dict = {"facts": self.facts, "drafts": self.drafts, "draft_family": self.family, "draft_id": None}
         if self.parts:
             out["messages"] = [AIMessage(content="\n\n".join(self.parts))]
         if capped:
             out["capped"] = True
+        if failed:
+            out["failed"] = True
         return out
 
 
@@ -499,4 +502,11 @@ async def converse(state: ChatState, t: Turn) -> dict:
     except Capped:
         await agent.capped()
         return agent.update(capped=True)
+    except LlmError:
+        if not agent.results:
+            raise  # nothing happened yet: the turn fails as any failed call does (bind carries its cost)
+        # Tools already ran (drafts shown, facts saved in the app): keep their work in the thread, so a later
+        # "shorter" finds the draft and the facts aren't saved again, and let the turn end as failed.
+        agent.said = ""  # what the failed call had started to say is not kept
+        return agent.update(failed=True)
     return agent.update()

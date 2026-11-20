@@ -54,6 +54,12 @@ OUR_FAULT = "Something went wrong on our side. Nothing was saved."
 FILE_GONE = "That file can't be found anymore."
 
 Emit = Callable[[str, dict], Awaitable[None]]
+
+
+class ModelFailed(Exception):
+    """A model call failed after the turn's tools had already shown drafts or saved facts (kept in the thread)."""
+
+
 _RUNNING: set[asyncio.Task] = set()  # strong references, so a running turn is never garbage-collected
 
 
@@ -276,9 +282,11 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
     try:
-        state = {"messages": [HumanMessage(t.text)], "file_ids": t.file_ids, "draft_id": None}
-        final = await graph.ainvoke(state, config)
+        inputs = {"messages": [HumanMessage(t.text)], "file_ids": t.file_ids, "draft_id": None}
+        final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
+        if final.get("failed"):  # a model call failed after the turn's tools had run: their work is kept
+            failure = ModelFailed()
     except asyncio.CancelledError:
         await asyncio.shield(settle_charges())  # the client left: what was spent is still charged
         raise

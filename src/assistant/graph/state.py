@@ -28,6 +28,7 @@ class ChatState(TypedDict, total=False):
     # This turn's work (reset by read_files)
     cost_usd: float
     capped: bool  # the message's cost cap stopped the turn
+    failed: bool  # a model call failed after tools had run: the turn fails, keeping what they did
 
 
 # Types stored in checkpoints, for the checkpointer's msgpack allowlist.

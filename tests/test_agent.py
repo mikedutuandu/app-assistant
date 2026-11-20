@@ -352,12 +352,35 @@ async def test_every_model_call_is_charged():
 
 
 async def test_a_failed_chat_call_is_charged_and_carries_the_turns_cost():
-    llm = FakeLlm({"CONVERSE": [Reply(calls=[save(FACT1)]), LlmError("unavailable", "down", cost_usd=0.004)]})
+    llm = FakeLlm({"CONVERSE": [LlmError("unavailable", "down", cost_usd=0.004)]})
     h = Harness(llm)
+    h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on", cost_usd=0.001)
     with pytest.raises(LlmError) as exc:
-        await h.send(SAID)
+        await h.send(SAID, file_ids=["img1"])
     assert h.costs == [(0.001, 1), (0.004, 2)]
     assert exc.value.cost_usd == pytest.approx(0.005)
+
+
+async def test_a_failed_chat_call_after_tools_keeps_their_work_and_fails_the_turn():
+    llm = writing_llm()
+    llm.script["CONVERSE"][1] = LlmError("unavailable", "stream failed after output", cost_usd=0.004)
+    h = Harness(llm)
+    state = await h.send(SAID)  # no exception: the turn ends as failed, with what the tools did kept
+    assert state["failed"] is True
+    [draft] = h.of("draft")
+    assert [d.id for d in state["drafts"]] == [draft["id"]]
+    assert [f.text for f in state["facts"]] == [FACT1, FACT2]
+    assert h.costs == [(0.001, 1), (0.001, 2), (0.001, 3), (0.004, 4)]
+    assert state["cost_usd"] == pytest.approx(0.007)
+    assert not isinstance(state["messages"][-1], AIMessage)  # nothing was said this turn
+    # The next message finds the draft and the facts: no "no draft", no saving them again.
+    llm.add("CONVERSE", Reply(calls=[call("revise_draft", draft_id=draft["id"], instruction="shorter")]), "Shorter.")
+    llm.add("DRAFT_WRITER", drafts([SHORT]))
+    llm.add("CLAIM_CHECK", OK)
+    after = await h.send("shorter", draft_id=draft["id"])
+    assert after["failed"] is False
+    assert [d["posts"] for d in h.of("draft")] == [[SHORT]]
+    assert FACT1 in system_of(llm.calls[4]) and len(h.tools.materials) == 1
 
 
 async def test_the_cap_is_checked_before_a_drafting_tool():

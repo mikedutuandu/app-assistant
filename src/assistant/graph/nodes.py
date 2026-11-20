@@ -57,7 +57,7 @@ def _links(text: str) -> list[str]:
 async def read_files(state: ChatState, t: Turn) -> dict:
     """Starts the turn: resets its work, reads this message's files and up to 2 links in its text."""
     t.cost = 0.0
-    update: dict = {"file_ids": [], "capped": False}
+    update: dict = {"file_ids": [], "capped": False, "failed": False}
     readings = list(state.get("readings", []))
     seen = {r.file_id for r in readings}
     jobs = [(f, False) for f in state.get("file_ids", [])] + [(u, True) for u in _links(_latest_user_text(state))]

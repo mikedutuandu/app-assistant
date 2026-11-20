@@ -197,12 +197,11 @@ async def test_reading_a_link_says_reading_before_any_text():
 
 
 async def test_llm_error_carries_the_turns_cost():
-    llm = writes_once()
-    llm.script["CLAIM_CHECK"] = [OK]
-    llm.script["CONVERSE"][1] = LlmError("unavailable", "down", cost_usd=0.004)
+    llm = FakeLlm({"CONVERSE": [LlmError("unavailable", "down", cost_usd=0.004)]})
     h = Harness(llm)
+    h.files["img1"] = FileReading(file_id="img1", kind="image", text="x", cost_usd=0.003)
     with pytest.raises(LlmError) as exc:
-        await h.send("replies go out in 2 min instead of 2 hours")
+        await h.send("look", file_ids=["img1"])
     assert exc.value.cost_usd == pytest.approx(0.007)
 
 

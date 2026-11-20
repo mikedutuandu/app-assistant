@@ -8,6 +8,7 @@ from collections import Counter
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from chat_api import (
     APP_DOWN,
@@ -366,6 +367,40 @@ async def test_model_failure_fails_with_our_words_and_charges_its_cost(api: Api)
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.002)]
     assert api.tools.charges[0]["ref"].endswith(":1")
+
+
+async def test_a_message_with_a_link_reads_the_page(api: Api):
+    """The turn's real link reader, with the page served by a stub at the HTTP level."""
+    fetched: list[str] = []
+
+    def page(request: httpx.Request) -> httpx.Response:
+        fetched.append(str(request.url))
+        return httpx.Response(200, html="<html><body><p>Auto-reply launched for 40 teams</p></body></html>")
+
+    api.app.state.http = httpx.AsyncClient(transport=httpx.MockTransport(page))
+    api.llm.script = ask_script()
+    events = await api.send("we shipped it, see https://93.184.216.34/launch")
+    assert events[-1][0] == "done", events
+    assert fetched == ["https://93.184.216.34/launch"]
+    assert ("status", {"step": "reading"}) in events
+    [converse] = api.llm.calls
+    assert (
+        '<data source="link" file_id="https://93.184.216.34/launch">Auto-reply launched for 40 teams</data>'
+        in (converse["messages"][0]["content"])
+    )
+
+
+async def test_a_model_failure_after_a_draft_fails_the_turn_and_keeps_the_draft(api: Api):
+    api.llm.script = happy_script()
+    api.llm.script["CONVERSE"][1] = LlmError("unavailable", "stream failed after output", cost_usd=0.002)
+    events = await api.send(FACT)
+    assert len(of(events, "draft")) == 1 and of(events, "done") == []
+    assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
+    assert sorted(c["cost_usd"] for c in api.tools.charges) == [pytest.approx(x) for x in (0.001, 0.001, 0.001, 0.002)]
+    tid = of(events, "thread")[0]["thread_id"]
+    saved = await api.checkpointer.aget_tuple({"configurable": {"thread_id": thread_id("real", "ws1", tid)}})
+    values = saved.checkpoint["channel_values"]
+    assert [d.posts for d in values["drafts"]] == [[LAUNCH]] and [f.text for f in values["facts"]] == [FACT]
 
 
 async def test_charge_failure_still_ends_done(api: Api):
