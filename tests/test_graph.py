@@ -53,6 +53,10 @@ class Harness:
         self.files: dict[str, FileReading | Exception] = {}
         self.links: dict[str, FileReading | Exception] = {}
         self.link_calls: list[str] = []
+        self.costs: list[tuple[float, int]] = []
+
+    async def on_cost(self, cost_usd: float, n: int) -> None:
+        self.costs.append((cost_usd, n))
 
     async def on_event(self, kind: str, payload: dict) -> None:
         self.events.append((kind, payload))
@@ -83,6 +87,7 @@ class Harness:
             self.on_event,
             self.read_files,
             self.read_link,
+            self.on_cost,
         )
         config = {"configurable": {"thread_id": thread_id(self.pack.id, "ws1", chat)}}
         return await graph.ainvoke({"messages": [HumanMessage(text)], "file_ids": file_ids or []}, config)
@@ -779,3 +784,33 @@ async def test_a_kept_fact_is_stored_once_even_if_extracted_twice():
     await h.send("the first one")
     state = await h.send("again please")
     assert [f.id for f in state["facts"]] == ["k1"]
+
+
+# ---- cost is recorded after every model call ----
+
+
+async def test_each_model_call_reports_its_own_cost_in_order():
+    llm = happy_llm()
+    h = Harness(llm)
+    state = await h.send("replies go out in 2 min instead of 2 hours")
+    assert [n for _, n in h.costs] == list(range(1, len(llm.calls) + 1))
+    assert [c for c, _ in h.costs] == [pytest.approx(0.001)] * len(llm.calls)
+    assert sum(c for c, _ in h.costs) == pytest.approx(state["cost_usd"])
+
+
+async def test_a_failed_model_call_still_reports_its_cost():
+    llm = happy_llm()
+    llm.script["WRITER"] = [LlmError("unavailable", "down", cost_usd=0.004)]
+    h = Harness(llm)
+    with pytest.raises(LlmError):
+        await h.send("replies go out in 2 min instead of 2 hours")
+    assert h.costs == [(0.001, 1), (0.001, 2), (0.004, 3)]
+
+
+async def test_file_reads_report_their_cost_with_their_own_numbers():
+    h = Harness(FakeLlm({"INTERVIEW": [interview(question="x")], "ASK_BACK": ["What changed?"]}))
+    h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on", cost_usd=0.003)
+    h.files["v1"] = UploadError("too_long", "Voice notes can be up to 1 minute.", cost_usd=0.002)
+    await h.send("here are my files", file_ids=["img1", "v1"])
+    assert h.costs[:2] == [(0.003, 1), (0.002, 2)]
+    assert [n for _, n in h.costs] == list(range(1, len(h.costs) + 1))

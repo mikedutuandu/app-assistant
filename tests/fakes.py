@@ -124,4 +124,6 @@ class FakeTools:
 
     async def charge(self, cost_usd: float, ref: str) -> None:
         self._record("charge")
+        if any(c["ref"] == ref for c in self.charges):  # the app charges once per ref, as HookPlaybook does
+            return
         self.charges.append({"cost_usd": cost_usd, "ref": ref})

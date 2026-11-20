@@ -248,14 +248,14 @@ async def read_files(state: ChatState, t: Turn) -> dict:
             try:
                 got = [await t.deps.read_link(ref)] if is_link else await t.deps.read_files([ref])
             except UploadError as e:
-                t.cost += e.cost_usd
+                await t.spend(e.cost_usd)
                 await t.emit("text", {"delta": e.message + "\n"})
                 continue
             except LlmError as e:
-                t.cost += e.cost_usd
+                await t.spend(e.cost_usd)
                 raise
             for r in got:
-                t.cost += r.cost_usd
+                await t.spend(r.cost_usd)
                 r = r.model_copy(update={"text": nfc(r.text), "unsure": [nfc(u) for u in r.unsure]})
                 if r.kind == "voice":
                     await t.emit("transcript", {"file_id": r.file_id, "text": r.text})

@@ -21,7 +21,7 @@ from chat_api import (
     happy_script,
     raw_token,
 )
-from fakes import FakeTools, Out, default_context
+from fakes import FakeLlm, FakeTools, Out, default_context, marker
 from starlette.requests import Request
 
 from assistant.api import chat, turn
@@ -125,8 +125,11 @@ async def test_message_streams_thread_card_done_and_charges_once(api: Api):
     assert thread["title"] == FACT[:60]
     [done] = of(events, "done")
     assert done["cost_usd"] == pytest.approx(0.005)  # five scripted model calls at 0.001
-    assert api.tools.charges == [{"cost_usd": pytest.approx(0.005), "ref": done["message_id"]}]
-    assert api.tools.calls == ["context", "context", "charge"]  # credits check, the graph's context, the charge
+    assert api.tools.charges == [
+        {"cost_usd": pytest.approx(0.001), "ref": f"{done['message_id']}:{n}"} for n in range(1, 6)
+    ]
+    # the credits check, the graph's context, then one charge after each of the five model calls
+    assert api.tools.calls == ["context", "context", *["charge"] * 5]
 
     [card] = of(events, "card")
     async with api.pool.connection() as conn:
@@ -152,14 +155,14 @@ async def test_message_streams_thread_card_done_and_charges_once(api: Api):
     assert [(t["id"], t["title"]) for t in r.json()] == [(thread["thread_id"], FACT[:60])]
 
 
-async def test_charge_ref_reaches_the_browser_only_after_the_charge(api: Api):
-    """The app charges once per ref: a browser that learned the ref first could spend it with a 0 charge."""
+async def test_charge_refs_reach_the_browser_only_after_their_charges(api: Api):
+    """The app charges once per ref: a browser that learned a ref first could spend it with a 0 charge."""
     timeline: list[tuple[str, str]] = []
     seen_at_charge: list[str] = []
 
     class Recording(FakeTools):
         async def charge(self, cost_usd: float, ref: str) -> None:
-            # What the browser could read right now: the thread, while the card is already stored.
+            # What the browser could read right now: the thread.
             [tid] = [json.loads(p)["thread_id"] for k, p in timeline if k == "thread"]
             r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
             seen_at_charge.append(r.text)
@@ -176,13 +179,72 @@ async def test_charge_ref_reaches_the_browser_only_after_the_charge(api: Api):
 
     await turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), emit)
     kinds = [k for k, _ in timeline]
-    assert kinds.index("charge") < kinds.index("done") == len(kinds) - 1
-    ref = dict(timeline)["charge"]
-    assert json.loads(dict(timeline)["done"])["message_id"] == ref
-    before = [p for k, p in timeline[: kinds.index("charge")]]
-    assert all(ref not in p for p in before)
-    [read] = seen_at_charge
-    assert '"pieces":[{' in read.replace(" ", "") and ref not in read
+    assert kinds.count("charge") == 5
+    assert kinds.index("done") == len(kinds) - 1  # every charge came before `done`
+    message_id = json.loads(dict(timeline)["done"])["message_id"]
+    refs = [p for k, p in timeline if k == "charge"]
+    assert refs == [f"{message_id}:{n}" for n in range(1, 6)]
+    # Nothing the browser was sent or could read before `done` carries the message id, so no ref.
+    before = [p for k, p in timeline if k not in ("charge", "done")]
+    assert all(message_id not in p for p in before)
+    assert len(seen_at_charge) == 5 and all(message_id not in r for r in seen_at_charge)
+
+
+class BlocksAtWriter(FakeLlm):
+    """Answers every call until the writer's, which waits to be let go: a turn caught in the middle of a call."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.at_writer = asyncio.Event()
+        self.go = asyncio.Event()
+
+    async def chat_json(self, messages, model, fallbacks, schema, max_tokens):
+        if marker(messages) == "WRITER":
+            self.at_writer.set()
+            await self.go.wait()
+        return await super().chat_json(messages, model, fallbacks, schema, max_tokens)
+
+
+async def test_a_turn_cut_off_after_two_calls_has_charged_both(api: Api):
+    llm = BlocksAtWriter(happy_script())
+    api.app.state.llm = llm
+    pack = api.app.state.packs["real"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+    task = asyncio.create_task(
+        turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "1.2.3.4"), _ignore)
+    )
+    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    task.cancel()  # the function is cut off in the middle of the third call
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    [first, second] = api.tools.charges
+    assert first["ref"].endswith(":1") and second["ref"].endswith(":2")
+    assert first["ref"].split(":")[0] == second["ref"].split(":")[0]
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)] * 2
+
+
+async def _ignore(kind: str, payload: dict) -> None:
+    return None
+
+
+async def test_retry_of_the_same_ref_charges_once():
+    tools = FakeTools()
+    await tools.charge(0.001, ref="m1:1")
+    await tools.charge(0.001, ref="m1:1")
+    await tools.charge(0.002, ref="m1:2")
+    assert [c["ref"] for c in tools.charges] == ["m1:1", "m1:2"]
+
+
+async def test_a_charge_that_raises_anything_never_stops_the_turn(api: Api):
+    class Boom(FakeTools):
+        async def charge(self, cost_usd: float, ref: str) -> None:
+            raise RuntimeError("connection reset")
+
+    api.tools = Boom()
+    api.llm.script = happy_script()
+    events = await api.send(FACT)
+    assert [k for k, _ in events][-1] == "done"
+    assert len(of(events, "card")) == 1
 
 
 async def test_second_message_in_thread_has_no_thread_event(api: Api):
@@ -230,10 +292,11 @@ async def test_tool_down_mid_turn_fails_and_charges_partial_once(api: Api):
     events = await api.send("here is the screenshot", thread=tid, file_ids=[fid])
     assert events[-1] == ("failed", {"error": "unavailable", "message": APP_DOWN})
     assert of(events, "done") == []
-    assert api.tools.calls == ["context", "context", "charge"]
+    assert api.tools.calls == ["context", "charge", "context"]  # the image was read (and charged) before the failure
     [charge] = api.tools.charges
     assert charge["cost_usd"] == pytest.approx(0.01)
-    assert len(charge["ref"]) == 26
+    message_id, n = charge["ref"].split(":")
+    assert len(message_id) == 26 and n == "1"
 
 
 async def test_client_going_away_does_not_stop_the_turn_or_its_charge(api: Api):
@@ -246,7 +309,7 @@ async def test_client_going_away_does_not_stop_the_turn_or_its_charge(api: Api):
     assert first.event == "thread"
     await events.aclose()  # what the SSE response does when the client disconnects
     await asyncio.wait_for(asyncio.gather(*turn._RUNNING), timeout=10)
-    assert len(api.tools.charges) == 1
+    assert len(api.tools.charges) == 5
     assert await api.count("pieces") == 2
 
 
@@ -255,6 +318,7 @@ async def test_model_failure_fails_with_our_words_and_charges_its_cost(api: Api)
     events = await api.send("shipped auto-reply")
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
     assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.002)]
+    assert api.tools.charges[0]["ref"].endswith(":1")
 
 
 async def test_charge_failure_still_ends_done(api: Api):
@@ -262,7 +326,7 @@ async def test_charge_failure_still_ends_done(api: Api):
     api.llm.script = ask_script()
     events = await api.send("shipped auto-reply")
     assert [k for k, _ in events][-1] == "done"
-    assert api.tools.calls.count("charge") == 1
+    assert api.tools.calls.count("charge") == 2  # both model calls tried to charge; the failures were only logged
 
 
 async def test_user_cap_fails_before_anything(api: Api):
@@ -336,6 +400,24 @@ async def test_demo_records_spend_instead_of_charging(api: Api, test_settings: S
     assert "charge" not in api.tools.calls
     left = await remaining(api.pool, DEMO_USD_KEY, test_settings.demo_daily_usd_cap)
     assert left == pytest.approx(test_settings.demo_daily_usd_cap - done["cost_usd"])
+
+
+async def test_demo_spend_recorded_per_call(api: Api, test_settings: Settings):
+    """Each call adds to the day's spend as it ends: a turn cut off after two calls has already counted both."""
+    llm = BlocksAtWriter(happy_script())
+    api.app.state.llm = llm
+    pack = api.app.state.packs["demo"]
+    session = verify_session(mint_session(pack, "ws1"), pack)
+    task = asyncio.create_task(
+        turn.run_turn(api.app.state, turn.TurnInput(pack, session, None, FACT, [], "203.0.113.9"), _ignore)
+    )
+    await asyncio.wait_for(llm.at_writer.wait(), timeout=10)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    left = await remaining(api.pool, DEMO_USD_KEY, test_settings.demo_daily_usd_cap)
+    assert left == pytest.approx(test_settings.demo_daily_usd_cap - 0.002)
+    assert api.tools.charges == []
 
 
 async def test_demo_ip_cap_and_dollar_cap(api: Api, test_settings: Settings):
@@ -673,7 +755,7 @@ async def test_pieces_not_saved_shows_card_fails_turn_and_charges_once(api: Api,
     assert len(of(events, "card")) == 1  # what was written is still shown
     assert of(events, "done") == []
     assert events[-1] == ("failed", {"error": "server", "message": OUR_FAULT})
-    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.005)]
+    assert [c["cost_usd"] for c in api.tools.charges] == [pytest.approx(0.001)] * 5
 
 
 async def test_message_over_4000_chars_400(api: Api):
