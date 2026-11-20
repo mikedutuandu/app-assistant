@@ -47,6 +47,8 @@ The service runs on Vercel as one Python Function (Fluid compute), built from th
 
 *20 Nov 2026: hosting moved from Cloud Run to Vercel.*
 
+Cold start: `import assistant.asgi` takes about 1.1 s on this machine, from about 1.15 s before the PDF and image libraries (`pypdf`, `pypdfium2`, Pillow) moved to load only when a file arrives (best of 3 fresh interpreters, noisy by about 0.05 s). Re-measure with `uv run python scripts/cold_start.py`.
+
 **1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
 
 - Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.

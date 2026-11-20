@@ -14,8 +14,6 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-import pypdf
-import pypdfium2
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 from selectolax.lexbor import LexborHTMLParser
@@ -77,12 +75,16 @@ async def _read_image(data: bytes, mime: str, pack: AppPack, llm: Llm) -> tuple[
 
 
 def _extract_pdf_text(data: bytes) -> tuple[str, int]:
+    import pypdf  # imported here: most messages carry no file, and a cold start should not pay for it
+
     reader = pypdf.PdfReader(io.BytesIO(data))
     text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
     return text, len(reader.pages)
 
 
 def _render_pages(data: bytes, limit: int) -> list[bytes]:
+    import pypdfium2  # imported here for the same reason (it loads PIL too)
+
     pdf = pypdfium2.PdfDocument(data)
     try:
         pages: list[bytes] = []
