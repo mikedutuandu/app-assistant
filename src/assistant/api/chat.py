@@ -277,6 +277,9 @@ async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[l
     return (row[0] if row[0] else [row[1]]), row[2], [Fact.model_validate(f) for f in row[3]]
 
 
+FILE_LINK_SECONDS = 300  # a file link for the host app (`file_link`): long enough to load, short enough to not leak
+
+
 async def _image_url(state, session: Session, chat_id: str, file_id: str) -> list[dict]:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
@@ -449,6 +452,26 @@ def _draft_out(r) -> dict:
     if r[5] is not None:
         draft["image_file_id"] = r[5]
     return draft
+
+
+@router.get("/threads/{thread_id}/files/{file_id}")
+async def file_link(thread_id: str, file_id: str, request: Request, auth: Auth) -> dict:
+    """A file the user sent in this thread, for the host app to show it back: a link that lives 5 minutes. Only a
+    finished file of this workspace's own thread; anything else is a 404."""
+    _, session = auth
+    state = request.app.state
+    await owned_thread(state.pool, session, thread_id)
+    async with state.pool.connection() as conn:
+        cur = await conn.execute(
+            "select storage_key, mime, kind from files where id = %s and app = %s and workspace = %s"
+            " and thread_id = %s and kind <> %s",
+            (file_id, session.app, session.workspace, thread_id, PENDING),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise ApiError(404, "file")
+    url = await asyncio.to_thread(state.storage.signed_url, row[0], FILE_LINK_SECONDS)
+    return {"url": url, "mime": row[1], "kind": row[2]}
 
 
 @router.delete("/threads/{thread_id}")
