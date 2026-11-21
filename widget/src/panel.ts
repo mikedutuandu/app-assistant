@@ -258,9 +258,10 @@ export function createPanel(opts: PanelOptions) {
           });
           continue;
         }
-        if (m.text) addMsg("msg bot", m.text);
-        for (const d of m.drafts ?? []) renderDraft(d);
+        // In the order a turn shows them live: what it kept, its drafts, then its words.
         if (m.saved?.length) renderSaved(m.saved);
+        for (const d of m.drafts ?? []) renderDraft(d);
+        if (m.text) addMsg("msg bot", m.text);
       }
     } catch (e) {
       if (e instanceof AuthLost) stop(SIGN_IN);
