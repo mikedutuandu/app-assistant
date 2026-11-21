@@ -39,4 +39,10 @@ describe("mount", () => {
     expect(document.getElementById("assistant-widget")).toBeNull();
     warn.mockRestore();
   });
+  it("the open button says what it is by default: Write with AI", () => {
+    mount(script({ "data-app": "demo" }));
+    const launcher = document.getElementById("assistant-widget")!.shadowRoot!.querySelector(".launcher")!;
+    expect(launcher.textContent).toBe("Write with AI");
+  });
 });
+

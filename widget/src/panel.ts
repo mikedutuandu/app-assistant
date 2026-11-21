@@ -3,7 +3,7 @@ import { ApiError, AuthLost, type BotApi, type BotEvent, type Draft } from "./ap
 import { startRecording, type Recording } from "./recorder";
 import { CSS } from "./styles";
 
-export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread">;
+export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread" | "fileLink">;
 export interface PanelOptions {
   api: PanelApi;
   app: string;
@@ -13,6 +13,11 @@ export interface PanelOptions {
 }
 
 const SIGN_IN = "Please sign in again.";
+/** What a reloaded message calls a file it sent (the thread keeps no file names). */
+const FILE_NAMES: Record<string, string> = { image: "Picture", voice: "Voice note", pdf: "PDF" };
+/** A picked file's kind, as the bot names it. */
+const kindOf = (f: File) =>
+  f.type.startsWith("image/") ? "image" : f.type.startsWith("audio/") ? "voice" : f.type === "application/pdf" ? "pdf" : "file";
 /** What the bot says it is doing, by the server's `status` step. A step not listed here changes nothing. */
 const STEP_LABELS: Record<string, string> = {
   reading: "Reading your files…",
@@ -146,6 +151,33 @@ export function createPanel(opts: PanelOptions) {
   };
   const showError = (text: string) => addMsg("err", text);
 
+  // A user's message with what it sent (21 Nov 2026: a picture showed only until a reload, a voice note never played):
+  // a picture as a small image, a voice note as a player, anything else as a link that opens it; then the words.
+  function addUserMsg(text: string, files: { name: string; kind: string; src?: string }[]): HTMLElement {
+    const m = h("div", { class: "msg user" });
+    files.forEach((f, i) => {
+      const box = h("div", { class: "sent", "data-i": String(i), "data-kind": f.kind });
+      box.append(fileView(f.kind, f.name, f.src));
+      m.append(box);
+    });
+    if (text) m.append(h("div", { text }));
+    list.append(m);
+    scroll();
+    return m;
+  }
+  function fileView(kind: string, name: string, src?: string): HTMLElement {
+    if (kind === "image") return h("img", { alt: name, ...(src ? { src } : {}) });
+    if (kind === "voice") return h("audio", { controls: "", preload: "metadata", "aria-label": name, ...(src ? { src } : {}) });
+    return h("a", { class: "file", target: "_blank", rel: "noreferrer", text: `📎 ${name}`, ...(src ? { href: src } : {}) });
+  }
+  function setFileSrc(msg: HTMLElement, i: number, url: string) {
+    const box = msg.querySelector(`.sent[data-i="${i}"]`);
+    const el = box?.firstElementChild;
+    if (!el) return;
+    if (el.tagName === "A") el.setAttribute("href", url);
+    else el.setAttribute("src", url);
+  }
+
   // The "bot is working" line: one element at the end of the list while the bot has said nothing yet.
   let working: HTMLElement | null = null;
   const workingLabel = h("span", { class: "label", text: STEP_LABELS.thinking });
@@ -213,7 +245,17 @@ export function createPanel(opts: PanelOptions) {
       setThread(id);
       for (const m of t.messages) {
         if (m.role === "user") {
-          addMsg("msg user", m.text);
+          const shown = addUserMsg(
+            m.text,
+            (m.files ?? []).map((f) => ({ name: FILE_NAMES[f.kind] ?? "File", kind: f.kind })),
+          );
+          // Each file's short link, asked for once the message is on screen; one that can't be had stays a name.
+          (m.files ?? []).forEach((f, i) => {
+            api.fileLink(id, f.id).then(
+              (link) => setFileSrc(shown, i, link.url),
+              () => undefined,
+            );
+          });
           continue;
         }
         if (m.text) addMsg("msg bot", m.text);
@@ -242,12 +284,13 @@ export function createPanel(opts: PanelOptions) {
     const actionId = `add:${d.id}`; // the same for every render of this draft: a repeat tap, or after a reload
     const row = h("div", { class: "row" });
     const add = h("button", { class: "btn", type: "button" });
-    // The spoken name starts with the visible text (WCAG 2.5.3) and follows it: Add, Adding, Added.
+    // The spoken name starts with the visible text (WCAG 2.5.3) and follows it: Save draft, Saving, Saved. Plain words
+    // any app fits (the draft goes wherever the app keeps drafts).
     const setAdd = (text: string, label: string) => {
       add.textContent = text;
       add.setAttribute("aria-label", label);
     };
-    setAdd("Add to Schedule", "Add to Schedule: this draft");
+    setAdd("Save draft", "Save draft: this draft");
     const shorter = h("button", { class: "btn ghost", type: "button", text: "Shorter", "aria-label": "Make this draft shorter" });
     const angle = h("button", { class: "btn ghost", type: "button", text: "Another angle", "aria-label": "Try another angle for this draft" });
     const err = h("div", { class: "small", role: "alert" });
@@ -259,16 +302,16 @@ export function createPanel(opts: PanelOptions) {
     };
     syncers.add(sync);
     const markAdded = (editUrl: string | null | undefined) => {
-      setAdd("Added to your Schedule", "Added to your Schedule: this draft");
+      setAdd("Saved", "Saved: this draft");
       add.classList.add("done");
       add.disabled = true;
       const href = editUrl ? safeHref(editUrl) : null;
-      if (href) row.append(h("a", { class: "btn ghost", href, "aria-label": "Edit this draft in your Schedule", text: "Edit" }));
+      if (href) row.append(h("a", { class: "btn ghost", href, "aria-label": "Edit this draft in the app", text: "Edit" }));
     };
     add.addEventListener("click", async () => {
       pending = true;
       add.disabled = true;
-      setAdd("Adding…", "Adding to Schedule: this draft");
+      setAdd("Saving…", "Saving: this draft");
       err.textContent = "";
       try {
         const r = await api.act(threadId!, { action_id: actionId, kind: "add_draft", draft_id: d.id });
@@ -277,7 +320,7 @@ export function createPanel(opts: PanelOptions) {
         window.dispatchEvent(new CustomEvent("assistant:saved", { detail: { draft_id: r.draft_id } }));
       } catch (e) {
         pending = false;
-        setAdd("Add to Schedule", "Add to Schedule: this draft");
+        setAdd("Save draft", "Save draft: this draft");
         sync();
         if (e instanceof AuthLost) stop(SIGN_IN);
         else err.textContent = errorText(e);
@@ -295,7 +338,11 @@ export function createPanel(opts: PanelOptions) {
 
   /** The quiet line under a turn: what the bot remembered. Not a message, nothing to press. */
   function renderSaved(items: string[]) {
-    const text = items.join("; ");
+    // Each item without its own end punctuation, so the joins read "a; b", never "a.; b".
+    const text = items
+      .map((i) => i.trim().replace(/[\s.;,]+$/, ""))
+      .filter(Boolean)
+      .join("; ");
     const el = h("div", { class: "saved" });
     el.insertAdjacentHTML("afterbegin", CHECK_ICON);
     el.append(h("span", { text }));
@@ -408,7 +455,10 @@ export function createPanel(opts: PanelOptions) {
     const fromComposer = draftId === undefined;
     busy = true;
     refresh();
-    const mine = addMsg("msg user", [text, ...sent.map((c) => `📎 ${c.file.name}`)].filter(Boolean).join("\n"));
+    const mine = addUserMsg(
+      text,
+      sent.map((c) => ({ name: c.file.name, kind: kindOf(c.file), src: URL.createObjectURL(c.file) })),
+    );
     if (fromComposer) {
       input.value = "";
       for (const c of chips.splice(0)) c.el.remove();

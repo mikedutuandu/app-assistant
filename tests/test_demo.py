@@ -264,7 +264,7 @@ async def test_demo_page_has_the_widget_tag(api: Api):
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     assert (
         '<script src="/widget.js" data-app="demo" data-session-url="/demo/api/assistant/session"'
-        ' data-label="Write with me"></script>'
+        ' data-label="Write with AI"></script>'
     ) in r.text
     assert "assistant:note" in r.text and "assistant:saved" in r.text
 

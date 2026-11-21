@@ -264,9 +264,22 @@ export class BotApi {
     return this.request("GET", "/threads");
   }
 
-  thread(id: string): Promise<{ messages: { role: "user" | "assistant"; text: string; drafts?: Draft[]; saved?: string[] }[] }> {
+  thread(id: string): Promise<{
+    messages: { role: "user" | "assistant"; text: string; drafts?: Draft[]; saved?: string[]; files?: SentFileRef[] }[];
+  }> {
     return this.request("GET", `/threads/${encodeURIComponent(id)}`);
   }
+
+  /** A file the user sent in this thread: a link that lives 5 minutes, to show it again after a reload. */
+  fileLink(threadId: string, fileId: string): Promise<{ url: string; mime: string; kind: string }> {
+    return this.request("GET", `/threads/${encodeURIComponent(threadId)}/files/${encodeURIComponent(fileId)}`);
+  }
+}
+
+/** A file a user message sent, as a reloaded thread lists it. */
+export interface SentFileRef {
+  id: string;
+  kind: string; // "image" | "pdf" | "voice"
 }
 
 /** The bytes to storage with XHR (fetch has no upload progress). Only the target's headers go: no bearer token. */

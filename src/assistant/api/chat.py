@@ -295,7 +295,7 @@ async def _image_url(state, session: Session, chat_id: str, file_id: str) -> lis
 
 @router.post("/threads/{thread_id}/actions")
 async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> dict:
-    """A tap on "Add to Schedule": runs once per action_id; a repeat gets the same result."""
+    """A tap on the draft's save button: runs once per action_id; a repeat gets the same result."""
     pack, session = auth
     state = request.app.state
     if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):

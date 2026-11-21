@@ -15,7 +15,7 @@ export function mount(script: HTMLScriptElement) {
   const panel = createPanel({
     api,
     app,
-    label: script.dataset.label || "Write with me",
+    label: script.dataset.label || "Write with AI",
     position: script.dataset.position === "left" ? "left" : "right",
   });
   window.addEventListener("assistant:open", () => panel.open());
