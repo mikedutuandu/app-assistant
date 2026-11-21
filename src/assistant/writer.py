@@ -1,8 +1,9 @@
 """The drafting tools the conversation model calls: `write_drafts` and `revise_draft`, with quiet checks.
 
-The writer model (the pack's `writer`, with thinking when `writer_reasoning` is "low") writes posts and threads
-from the user's facts. Every post of every draft is then checked: numbers only from the facts, the pack's rules,
-repeats (each post, and a thread as a whole), then a claim check on the cheap model. A failing draft is rewritten
+The writer model (the pack's `writer`, with thinking when `writer_reasoning` is "low") writes the kinds the app's pack
+declares (`WriteSpec`: one piece, or several parts such as a thread) from the user's facts. Every part of every draft
+is then checked: numbers only from the facts, the kind's rules, repeats (each part, and several parts as a whole),
+then a claim check on the cheap model. A failing draft is rewritten
 once with its problems; one that still fails is dropped, and the result's `note` says why in one short line for the
 conversation model (the user never sees check reasons). Every model call is charged through `WriterDeps.spend`,
 failed ones included. Everything the user, their files, their app or the conversation model supplied reaches the
@@ -12,7 +13,6 @@ writer inside `<data>` blocks.
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,27 +25,26 @@ from assistant.llm import Llm, LlmError
 from assistant.packs import AppPack, WriteSpec
 from assistant.tools import AppContext
 
-KINDS = ("x_post", "x_thread")
 MAX_DRAFTS = 3  # drafts in one call
 MAX_DRAFTS_SHOWN = 10  # the chat's latest drafts the writer is shown (as the chat's own prompt)
-THREAD_POSTS = 8  # a thread's most posts when its spec doesn't say
+THREAD_POSTS = 8  # a several-part kind's most parts when its spec doesn't say
 WRITER_TOKENS = 3000
-THREAD_TOKENS = 5000  # up to 3 threads of 8 posts of 280 characters
+THREAD_TOKENS = 5000  # several parts: up to 3 drafts of 8 parts of 280 characters
 THINKING_TOKENS = 1024  # added to the writer's max_tokens when it thinks
 CLAIM_TOKENS = 400
 
 # Reasons a draft fails, in plain words: the tools pass them to the conversation model, never to the user.
 NUMBER = "a number you didn't give ({})"
 RULES = {"too_long": "too long for this app", "has_link": "it had a link", "has_dash": "it had a long dash"}
-REPEAT = "it repeats a recent post"
+REPEAT = "it repeats something they published recently"
 REPEAT_DRAFT = "it is too close to a draft already shown"
 # How much word overlap makes a repeat: of the user's published posts (and of a thread's own posts), or of a draft
 # this chat already showed. Drafts of the same news share most words, so only near-copies count among them.
 REPEAT_AT = 0.6
 REPEAT_DRAFT_AT = 0.8
 CLAIM = "it says something you didn't tell me"
-TOO_MANY = "too many posts for one thread (at most {})"
-TOO_FEW = "a thread needs at least two posts"
+TOO_MANY = "too many parts (at most {})"
+TOO_FEW = "it needs at least two parts"
 UNCHECKED = "it couldn't be checked"
 SAME = "it is the same as the draft it changes"
 
@@ -53,7 +52,7 @@ SAME = "it is the same as the draft it changes"
 ANGLE = (
     "If they ask for another angle, change the hook: open with a different fact or framing than the draft's first "
     "line (the result, the problem it solves, who it helps, or what was learned, as far as the facts say it) and "
-    "build the post around it. Never keep the same first line, and never just reorder the same sentences."
+    "build the draft around it. Never keep the same first line, and never just reorder the same sentences."
 )
 
 # Notes for the conversation model.
@@ -71,8 +70,8 @@ _LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*")
 
 class Draft(BaseModel):
     id: str
-    kind: Literal["x_post", "x_thread"]
-    posts: list[str]  # one item for a post
+    kind: str  # the WriteSpec's kind
+    posts: list[str]  # its parts in order: one item for a kind of one piece
     image_file_id: str | None = None
     fact_ids: list[str] = []
     language: str | None = None  # the language it was written in (None: from before drafts kept one)
@@ -175,7 +174,7 @@ def _posts_blocks(posts: list[str], source: str = "draft") -> str:
 def claim_request(pack: AppPack, facts: list[Fact], posts: list[str]) -> tuple[str, str]:
     """The claim check's system and user prompts for one piece: a post, or a thread's posts in order."""
     system = f"{prompts.CLAIM_CHECK}\n\nApp: {pack.name}"
-    what = "The piece to check:" if len(posts) == 1 else "The thread to check, post by post:"
+    what = "The piece to check:" if len(posts) == 1 else "The piece to check, part by part:"
     return system, f"{fact_blocks(facts)}\n\n{what}\n{_posts_blocks(posts)}"
 
 
@@ -241,13 +240,11 @@ def _key(text: str) -> str:
 
 
 def _spec(pack: AppPack, kind: str) -> WriteSpec | None:
-    if kind not in KINDS:
-        return None
     return next((s for s in pack.writes if s.kind == kind), None)
 
 
 def _unknown(pack: AppPack, kind: str) -> str:
-    kinds = ", ".join(s.kind for s in pack.writes if s.kind in KINDS) or "none"
+    kinds = ", ".join(s.kind for s in pack.writes) or "none"
     return f"can't write {kind!r} here; kinds: {kinds}"
 
 
@@ -256,14 +253,18 @@ def _max_posts(spec: WriteSpec) -> int:
 
 
 def _spec_rules(spec: WriteSpec) -> str:
-    thread = spec.kind == "x_thread"
-    rules = [f"2 to {_max_posts(spec)} posts"] if thread else ["one post"]
+    several = spec.parts == "several"
+    rules = [f"2 to {_max_posts(spec)} parts"] if several else ["one piece"]
     if spec.max_chars:
-        rules.append(f"at most {spec.max_chars} characters" + (" per post" if thread else ""))
+        rules.append(f"at most {spec.max_chars} characters" + (" per part" if several else ""))
     rules += ["no links"] if spec.no_links else []
     rules += ["no long dashes (— or –)"] if spec.no_dashes else []
     rules += ["may carry an image"] if spec.may_carry_image else ["no image"]
-    return f'Kind "{spec.kind}". Rules: {"; ".join(rules)}.\nInstructions: {spec.instructions.strip()}'
+    about = f": {spec.about}" if spec.about else ""
+    return (
+        f'Kind "{spec.kind}" ({spec.name}{about}). Rules: {"; ".join(rules)}.\n'
+        f"Instructions: {spec.instructions.strip()}"
+    )
 
 
 def _plural(n: int) -> str:
@@ -273,13 +274,13 @@ def _plural(n: int) -> str:
 @dataclass
 class _Problem:
     reason: str
-    post: int | None = None  # 1-based, for a thread's post
+    post: int | None = None  # 1-based, for one of several parts
     details: list[str] = field(default_factory=list)  # for the writer only: what a claim check found unsupported
 
     def for_writer(self) -> str:
         # The fragments quote the draft (the user's words, files, links): each goes in its own data block.
         text = f"{self.reason}: " + " ".join(data("claim", d) for d in self.details) if self.details else self.reason
-        return f"post {self.post}: {text}" if self.post else text
+        return f"part {self.post}: {text}" if self.post else text
 
 
 @dataclass
@@ -338,10 +339,10 @@ class _Run:
         if ctx is not None:
             about = (
                 f"Voice: {ctx.voice}\nTopics: {', '.join(ctx.topics)}\nPatterns that work: {'; '.join(ctx.patterns)}\n"
-                f"Recent posts (do not repeat):\n{recent}"
+                f"Recently published (do not repeat):\n{recent}"
             )
         else:
-            about = f"Recent posts (do not repeat):\n{recent}"
+            about = f"Recently published (do not repeat):\n{recent}"
         parts.append("About the app's user:\n" + data("context", about))
         if self.mine:
             shown = "\n".join(data("draft", p) for p in self.mine[-MAX_DRAFTS_SHOWN:])
@@ -367,7 +368,7 @@ class _Run:
                 f"{self._material()}\n\n{ask}",
                 DraftsOut,
                 models.writer,
-                (THREAD_TOKENS if self.spec.kind == "x_thread" else WRITER_TOKENS)
+                (THREAD_TOKENS if self.spec.parts == "several" else WRITER_TOKENS)
                 + (THINKING_TOKENS if thinking else 0),
                 "low" if thinking else None,
             )
@@ -379,8 +380,8 @@ class _Run:
         posts = [p for p in (nfc(x).strip() for x in out.posts) if p]
         if not posts:
             return None
-        if self.spec.kind == "x_post" and len(posts) > 1:
-            posts = ["\n\n".join(posts)]  # a post is one text: the length rule judges it whole
+        if self.spec.parts == "one" and len(posts) > 1:
+            posts = ["\n\n".join(posts)]  # one piece is one text: the length rule judges it whole
         fact_ids = list(dict.fromkeys(self.labels[x] for x in out.fact_ids if x in self.labels))
         image = out.image_file_id
         if image is not None and not image_allowed(image, fact_ids, self.spec, self.w.readings, self.w.facts):
@@ -397,9 +398,9 @@ class _Run:
     # -- checking --
 
     def _local(self, d: Draft, seen: list[str], shown: list[str]) -> list[_Problem]:
-        """Every check that needs no model, on every post, and the thread as a whole for repeats."""
+        """Every check that needs no model, on every part, and several parts as a whole for repeats."""
         problems: list[_Problem] = []
-        thread = d.kind == "x_thread"
+        thread = self.spec.parts == "several"
         if thread and len(d.posts) > _max_posts(self.spec):
             problems.append(_Problem(TOO_MANY.format(_max_posts(self.spec))))
         if thread and len(d.posts) < 2:

@@ -123,14 +123,55 @@
       "type": "object"
     },
     "WriteSpec": {
+      "description": "One kind of writing the app wants: a changelog entry, a LinkedIn post, a product description, an X thread.\nThe chat model chooses among them by `name` and `about`; the writer follows `instructions` and the rules.",
       "properties": {
         "kind": {
-          "enum": [
-            "x_post",
-            "x_thread"
-          ],
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
           "title": "Kind",
           "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "about": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "About"
+        },
+        "parts": {
+          "anyOf": [
+            {
+              "enum": [
+                "one",
+                "several"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parts"
         },
         "count": {
           "default": 1,

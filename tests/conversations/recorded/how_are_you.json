@@ -1,6 +1,6 @@
 {
   "case": "how_are_you",
-  "recorded_at": "2026-11-20T13:54:37+00:00",
+  "recorded_at": "2026-11-21T04:54:50+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -35,35 +35,35 @@
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.007244
+      "cost_usd": 0.007344
     },
     {
       "user": "how are you",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "I'm doing well, thanks for asking! How about you?",
+      "reply": "Doing well, thanks for asking! How about you?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.007336
+      "cost_usd": 0.007416
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The last reply says \"I'm doing well, thanks for asking!\", which answers the question the way a person would.",
+      "why": "The last reply says \"Doing well, thanks for asking!\", which answers \"how are you\" the way a person would.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The last reply's only question is \"How about you?\", a reciprocal question about how Mike is, and it does not repeat the first reply's \"What are you working on these days?\".",
+      "why": "The last reply's only question is \"How about you?\", a reciprocal question about how Mike is, and it does not repeat the first reply's question about his work.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither reply contains a post: the first is a greeting plus a question, and the second is a short answer plus \"How about you?\".",
+      "why": "Both replies are plain greetings (\"Hi Mike! What are you working on these days?\" and \"Doing well, thanks for asking!\") and no post or draft appears anywhere in the chat.",
       "holds": true
     }
   ],
@@ -80,8 +80,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "267354da5def49a7",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "3c59cb80b2400bd4",
         "messages_sha256": "634d376787d62b03",
         "messages": [
           {
@@ -93,7 +93,7 @@
       "response": {
         "text": "Hi Mike! What are you working on these days?",
         "calls": [],
-        "cost_usd": 0.007244,
+        "cost_usd": 0.007344,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -109,8 +109,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "267354da5def49a7",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "3c59cb80b2400bd4",
         "messages_sha256": "c15239b33efb20c9",
         "messages": [
           {
@@ -128,9 +128,9 @@
         ]
       },
       "response": {
-        "text": "I'm doing well, thanks for asking! How about you?",
+        "text": "Doing well, thanks for asking! How about you?",
         "calls": [],
-        "cost_usd": 0.007336,
+        "cost_usd": 0.007416,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

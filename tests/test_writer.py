@@ -173,7 +173,7 @@ async def test_thread_number_check_runs_on_every_post():
     assert [d.posts for d in result.drafts] == [fixed]
     assert result.drafts[0].kind == "x_thread" and result.note is None
     rewrite = prompt(llm.calls[1])
-    assert "post 3" in rewrite and "40" in rewrite
+    assert "part 3" in rewrite and "40" in rewrite
     assert "Saves 40 hours a month." in prompt(llm.calls[1])
     claim = prompt(llm.calls[2])
     assert all(p in claim for p in fixed)  # the claim check sees every post
@@ -184,7 +184,7 @@ async def test_thread_too_many_posts_is_rewritten():
     llm = FakeLlm({"DRAFT_WRITER": [drafts(long), drafts(long)]})
     w, _ = deps(llm)
     result = await write_drafts(w, "launch", "x_thread", 1)
-    assert result.drafts == [] and "posts" in result.note
+    assert result.drafts == [] and "too many parts" in result.note
 
 
 async def test_repeat_of_a_recent_post_is_rewritten():
@@ -193,7 +193,7 @@ async def test_repeat_of_a_recent_post_is_rewritten():
     w, _ = deps(llm)
     result = await write_drafts(w, "launch", "x_post", 1)
     assert [d.posts for d in result.drafts] == [[POST]]
-    assert "repeats a recent post" in prompt(llm.calls[1])
+    assert "repeats something they published recently" in prompt(llm.calls[1])
 
 
 async def test_a_thread_is_checked_as_a_whole_for_repeats():
@@ -204,7 +204,7 @@ async def test_a_thread_is_checked_as_a_whole_for_repeats():
     w, _ = deps(llm, recent=[old])
     result = await write_drafts(w, "launch", "x_thread", 1)
     assert [d.posts for d in result.drafts] == [other]
-    assert "repeats a recent post" in prompt(llm.calls[1])
+    assert "repeats something they published recently" in prompt(llm.calls[1])
 
 
 async def test_claim_check_failure_is_rewritten_then_dropped_quietly():
@@ -404,7 +404,7 @@ async def test_a_draft_may_share_words_with_a_shown_draft_but_not_copy_it():
     llm = FakeLlm({"DRAFT_WRITER": [drafts([other]), drafts([POST])], "CLAIM_CHECK": [OK]})
     w, _ = deps(llm, recent=[shown])
     result = await write_drafts(w, "launch", "x_post", 1)
-    assert "repeats a recent post" in prompt(llm.calls[1])
+    assert "repeats something they published recently" in prompt(llm.calls[1])
 
 
 async def test_three_drafts_of_the_same_news_are_all_kept_unless_near_copies():

@@ -1,16 +1,17 @@
-"""The chat model's tools are written twice: as JSON for the model (`TOOL_SPECS`) and as Pydantic models that check a
+"""The chat model's tools are written twice: as JSON for the model (`tool_specs`) and as Pydantic models that check a
 call's arguments. These tests keep the two in step."""
 
+from graph_harness import make_pack
 from pydantic import BaseModel
 
 from assistant.graph.agent_tools import (
-    TOOL_SPECS,
     TOOLS,
     FactArg,
     ReviseDraftArgs,
     SaveFactsArgs,
     WriteDraftsArgs,
     prepare_calls,
+    tool_specs,
 )
 from assistant.llm import ToolCall
 
@@ -22,7 +23,7 @@ CHECKS: dict[str, type[BaseModel]] = {
 
 
 def _spec(name: str) -> dict:
-    [spec] = [s["function"]["parameters"] for s in TOOL_SPECS if s["function"]["name"] == name]
+    [spec] = [s["function"]["parameters"] for s in tool_specs(make_pack()) if s["function"]["name"] == name]
     return spec
 
 
@@ -31,7 +32,7 @@ def _required(model: type[BaseModel]) -> set[str]:
 
 
 def test_every_tool_the_model_is_told_about_has_a_check_and_a_name():
-    assert [s["function"]["name"] for s in TOOL_SPECS] == list(TOOLS) == list(CHECKS)
+    assert [s["function"]["name"] for s in tool_specs(make_pack())] == list(TOOLS) == list(CHECKS)
 
 
 def test_the_json_and_the_checks_name_the_same_arguments():

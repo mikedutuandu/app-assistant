@@ -1,6 +1,6 @@
 {
   "case": "give_me_a_thread",
-  "recorded_at": "2026-11-20T14:53:55+00:00",
+  "recorded_at": "2026-11-21T04:56:56+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -30,32 +30,32 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Nice month: auto reply, the free hook scorer and dark mode, with 40 founders in the beta every day. Which of the three do you want the post to lead with?",
+      "reply": "Nice month, Mike. You shipped auto reply, which cuts reply time from 2 hours to 2 minutes. You also shipped a free hook scorer and dark mode, and 40 founders use the beta every day. Should the post lead with auto reply, since the 2 hours to 2 minutes change is the biggest result?",
       "drafts": [],
       "saved": [
-        "This month we shipped auto reply, a free hook scorer anyone can use, and dark mode.",
-        "With auto reply, replies go out in 2 min instead of 2 hours.",
+        "This month we shipped auto reply: replies go out in 2 minutes instead of 2 hours.",
+        "This month we shipped a hook scorer anyone can use for free.",
+        "This month we shipped dark mode.",
         "40 founders use the beta every day."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.016718
+      "cost_usd": 0.017655999999999998
     },
     {
       "user": "give me a thread",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Here's your thread, Mike. Want me to change anything in it?",
+      "reply": "Here's your thread, Mike, with auto reply up front. Want me to make it punchier?",
       "drafts": [
         {
-          "id": "A00E1028000009",
+          "id": "A00E1028000010",
           "kind": "x_thread",
           "posts": [
-            "Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and we shipped it this month.",
-            "Auto reply: replies go out in 2 min instead of 2 hours.",
-            "We also shipped a free hook scorer that anyone can use.",
-            "And dark mode shipped too.",
+            "Replies now go out in 2 minutes instead of 2 hours. That's auto reply, and we shipped it this month.",
+            "We also shipped a hook scorer this month. Anyone can use it for free.",
+            "Dark mode is in too.",
             "40 founders use the beta every day."
           ]
         }
@@ -63,23 +63,23 @@
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.030654300000000002
+      "cost_usd": 0.0247222
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The draft card is labeled 'thread' and is split into five numbered posts (1/5 to 5/5), so it is a thread, not one post.",
+      "why": "The last turn's draft card is labeled 'thread' and has four numbered parts (1/4 to 4/4), so it is several posts.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "Every item in the thread comes from Mike's message (2 min vs 2 hours, free hook scorer, dark mode, 40 founders daily), and no extra numbers, features or results are added.",
+      "why": "The thread uses only what Mike listed: auto reply at 2 minutes vs 2 hours, the free hook scorer, dark mode, and 40 founders using the beta daily, with no extra numbers or features.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The last reply, \"Here's your thread, Mike. Want me to change anything in it?\", is two short sentences and does not repeat any of the thread's text.",
+      "why": "The last reply, \"Here's your thread, Mike, with auto reply up front. Want me to make it punchier?\", is two short sentences and does not repeat any of the thread's text.",
       "holds": true
     }
   ],
@@ -96,8 +96,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "267354da5def49a7",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "3c59cb80b2400bd4",
         "messages_sha256": "a9ecdd2fb0dbd256",
         "messages": [
           {
@@ -110,15 +110,18 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01NTBR7yPrQcgxGKSQp3AoXz",
+            "id": "toolu_01V6KZj7Tgk1Rnzrqj5A1qYY",
             "name": "save_facts",
             "arguments": {
               "facts": [
                 {
-                  "text": "This month we shipped auto reply, a free hook scorer anyone can use, and dark mode."
+                  "text": "This month we shipped auto reply: replies go out in 2 minutes instead of 2 hours."
                 },
                 {
-                  "text": "With auto reply, replies go out in 2 min instead of 2 hours."
+                  "text": "This month we shipped a hook scorer anyone can use for free."
+                },
+                {
+                  "text": "This month we shipped dark mode."
                 },
                 {
                   "text": "40 founders use the beta every day."
@@ -128,7 +131,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.008518,
+        "cost_usd": 0.008758,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -144,9 +147,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "ad52cb90d55b6449",
-        "messages_sha256": "95c5d8175e0ccc7c",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "b6ee77d66e13e401",
+        "messages_sha256": "365257ab612dc59c",
         "messages": [
           {
             "role": "user",
@@ -161,14 +164,14 @@
           },
           {
             "role": "tool",
-            "content": "saved 3 facts"
+            "content": "saved 4 facts"
           }
         ]
       },
       "response": {
-        "text": "Nice month: auto reply, the free hook scorer and dark mode, with 40 founders in the beta every day. Which of the three do you want the post to lead with?",
+        "text": "Nice month, Mike. You shipped auto reply, which cuts reply time from 2 hours to 2 minutes. You also shipped a free hook scorer and dark mode, and 40 founders use the beta every day. Should the post lead with auto reply, since the 2 hours to 2 minutes change is the biggest result?",
         "calls": [],
-        "cost_usd": 0.0082,
+        "cost_usd": 0.008898,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -184,9 +187,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "ad52cb90d55b6449",
-        "messages_sha256": "ac535a3fd760143b",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "b6ee77d66e13e401",
+        "messages_sha256": "f92f2dc63fc9eb7a",
         "messages": [
           {
             "role": "user",
@@ -194,7 +197,7 @@
           },
           {
             "role": "assistant",
-            "content": "Nice month: auto reply, the free hook scorer and dark mode, with 40 founders in the beta every day. Which of the three do you want the post to lead with?"
+            "content": "Nice month, Mike. You shipped auto reply, which cuts reply time from 2 hours to 2 minutes. You also shipped a free hook scorer and dark mode, and 40 founders use the beta every day. Should the post lead with auto reply, since the 2 hours to 2 minutes change is the biggest result?"
           },
           {
             "role": "user",
@@ -206,10 +209,10 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_012WcUaJVvdT2UQyD7pkLodJ",
+            "id": "toolu_013Fon76SDiff8LruWhuuYi4",
             "name": "write_drafts",
             "arguments": {
-              "brief": "Monthly shipping recap: auto reply (replies go out in 2 min instead of 2 hours), a free hook scorer anyone can use, and dark mode. 40 founders use the beta every day.",
+              "brief": "Month recap: shipped auto reply (replies go out in 2 minutes instead of 2 hours), a free hook scorer anyone can use, and dark mode. 40 founders use the beta every day. Lead with auto reply.",
               "kind": "x_thread",
               "language": "en",
               "count": 1
@@ -217,7 +220,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.009314,
+        "cost_usd": 0.009648,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -230,12 +233,12 @@
         "max_tokens": 6024,
         "schema": "DraftsOut",
         "schema_sha256": "f07cf13ae7f856bc",
-        "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "3de09ef08bc7e57b",
+        "system_sha256": "a0850108ad6670fd",
+        "messages_sha256": "b859df1ed6a070da",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply, a free hook scorer anyone can use, and dark mode.</data>\n<data source=\"user\" fact=\"F2\">With auto reply, replies go out in 2 min instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders use the beta every day.</data>\n\nKind \"x_thread\". Rules: 2 to 8 posts; at most 280 characters per post; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a thread for X in the user's own voice. Open the first post with one of their winning hook shapes\nwhen one fits. Then one point per post, using facts from the list, in plain words.\nThe first post may carry the image.\n\nWrite exactly 1 draft(s) of kind \"x_thread\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Monthly shipping recap: auto reply (replies go out in 2 min instead of 2 hours), a free hook scorer anyone can use, and dark mode. 40 founders use the beta every day.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply: replies go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F2\">This month we shipped a hook scorer anyone can use for free.</data>\n<data source=\"user\" fact=\"F3\">This month we shipped dark mode.</data>\n<data source=\"user\" fact=\"F4\">40 founders use the beta every day.</data>\n\nKind \"x_thread\" (X thread: a thread for X, only when the user asks for a thread). Rules: 2 to 8 parts; at most 280 characters per part; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a thread for X in the user's own voice. Open the first post with one of their winning hook shapes\nwhen one fits. Then one point per post, using facts from the list, in plain words.\nThe first post may carry the image.\n\nWrite exactly 1 draft(s) of kind \"x_thread\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Month recap: shipped auto reply (replies go out in 2 minutes instead of 2 hours), a free hook scorer anyone can use, and dark mode. 40 fou…"
           }
         ]
       },
@@ -244,22 +247,22 @@
           "drafts": [
             {
               "posts": [
-                "Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and it's the first thing we shipped this month.",
-                "Auto reply: replies go out in 2 min instead of 2 hours.",
-                "We also shipped a free hook scorer that anyone can use.",
-                "And dark mode shipped too.",
+                "Replies now go out in 2 minutes instead of 2 hours. That's auto reply, and we shipped it this month.",
+                "We also shipped a hook scorer this month. Anyone can use it for free.",
+                "Dark mode is in too.",
                 "40 founders use the beta every day."
               ],
               "fact_ids": [
                 "F1",
                 "F2",
-                "F3"
+                "F3",
+                "F4"
               ],
               "image_file_id": null
             }
           ]
         },
-        "cost_usd": 0.005842
+        "cost_usd": 0.005744
       }
     },
     {
@@ -271,80 +274,12 @@
         "max_tokens": 400,
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "ba8bdc7ca9e1097e",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "6df6eaf7e04fbaed",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply, a free hook scorer anyone can use, and dark mode.</data>\n<data source=\"user\" fact=\"F2\">With auto reply, replies go out in 2 min instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders use the beta every day.</data>\n\nThe thread to check, post by post:\n<data source=\"draft\" post=\"1\">Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and it's the first thing we shipped this month.</data>\n<data source=\"draft\" post=\"2\">Auto reply: replies go out in 2 min instead of 2 hours.</data>\n<data source=\"draft\" post=\"3\">We also shipped a free hook scorer that anyone can use.</data>\n<data source=\"draft\" post=\"4\">And dark mode shipped too.</data>\n<data source=\"draft\" post=\"5\">40 founders use the beta every day.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "unsupported": [
-            "it's the first thing we shipped this month"
-          ]
-        },
-        "cost_usd": 0.0001043
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "DRAFT_WRITER",
-        "model": "anthropic/claude-sonnet-5.5",
-        "reasoning": "low",
-        "max_tokens": 6024,
-        "schema": "DraftsOut",
-        "schema_sha256": "f07cf13ae7f856bc",
-        "system_sha256": "cacdba84fef7a77e",
-        "messages_sha256": "cdb7c586c7908d81",
-        "messages": [
-          {
-            "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecent posts (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply, a free hook scorer anyone can use, and dark mode.</data>\n<data source=\"user\" fact=\"F2\">With auto reply, replies go out in 2 min instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders use the beta every day.</data>\n\nKind \"x_thread\". Rules: 2 to 8 posts; at most 280 characters per post; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a thread for X in the user's own voice. Open the first post with one of their winning hook shapes\nwhen one fits. Then one point per post, using facts from the list, in plain words.\nThe first post may carry the image.\n\nWrite exactly 1 draft(s) of kind \"x_thread\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Monthly shipping recap: auto reply (replies go out in 2 min instead of 2 hours), a free hook scorer anyone can use, and dark mode. 40 founders use the beta every day.</data>\n\nRewrite these 1 draft(s), in this order, fixing the problems listed:\n1. problems: it says something yo…"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "drafts": [
-            {
-              "posts": [
-                "Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and we shipped it this month.",
-                "Auto reply: replies go out in 2 min instead of 2 hours.",
-                "We also shipped a free hook scorer that anyone can use.",
-                "And dark mode shipped too.",
-                "40 founders use the beta every day."
-              ],
-              "fact_ids": [
-                "F1",
-                "F2",
-                "F3"
-              ],
-              "image_file_id": null
-            }
-          ]
-        },
-        "cost_usd": 0.006296
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "CLAIM_CHECK",
-        "model": "openai/gpt-6-luna",
-        "reasoning": null,
-        "max_tokens": 400,
-        "schema": "ClaimOut",
-        "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "62c552a7632e3663",
-        "messages_sha256": "15184d15c164f91b",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply, a free hook scorer anyone can use, and dark mode.</data>\n<data source=\"user\" fact=\"F2\">With auto reply, replies go out in 2 min instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders use the beta every day.</data>\n\nThe thread to check, post by post:\n<data source=\"draft\" post=\"1\">Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and we shipped it this month.</data>\n<data source=\"draft\" post=\"2\">Auto reply: replies go out in 2 min instead of 2 hours.</data>\n<data source=\"draft\" post=\"3\">We also shipped a free hook scorer that anyone can use.</data>\n<data source=\"draft\" post=\"4\">And dark mode shipped too.</data>\n<data source=\"draft\" post=\"5\">40 founders use the beta every day.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">This month we shipped auto reply: replies go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F2\">This month we shipped a hook scorer anyone can use for free.</data>\n<data source=\"user\" fact=\"F3\">This month we shipped dark mode.</data>\n<data source=\"user\" fact=\"F4\">40 founders use the beta every day.</data>\n\nThe piece to check, part by part:\n<data source=\"draft\" post=\"1\">Replies now go out in 2 minutes instead of 2 hours. That's auto reply, and we shipped it this month.</data>\n<data source=\"draft\" post=\"2\">We also shipped a hook scorer this month. Anyone can use it for free.</data>\n<data source=\"draft\" post=\"3\">Dark mode is in too.</data>\n<data source=\"draft\" post=\"4\">40 founders use the beta every day.</data>"
           }
         ]
       },
@@ -352,7 +287,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 9.4e-05
+        "cost_usd": 0.0001002
       }
     },
     {
@@ -367,9 +302,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "2ab61caecd99afe0",
-        "messages_sha256": "a2de690a22a44e2f",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "ed2570c8e4bc18a2",
+        "messages_sha256": "d1c156f388e31684",
         "messages": [
           {
             "role": "user",
@@ -377,7 +312,7 @@
           },
           {
             "role": "assistant",
-            "content": "Nice month: auto reply, the free hook scorer and dark mode, with 40 founders in the beta every day. Which of the three do you want the post to lead with?"
+            "content": "Nice month, Mike. You shipped auto reply, which cuts reply time from 2 hours to 2 minutes. You also shipped a free hook scorer and dark mode, and 40 founders use the beta every day. Should the post lead with auto reply, since the 2 hours to 2 minutes change is the biggest result?"
           },
           {
             "role": "user",
@@ -392,14 +327,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"A00E1028000009\" kind=\"x_thread\">(1/5) Replies used to go out in 2 hours. Now they go out in 2 min. That's auto reply, and we shipped it this month.\n\n(2/5) Auto reply: replies go out in 2 min instead of 2 hours.\n\n(3/5) We also shipped a free hook scorer that anyone can use.\n\n(4/5) And dark mode shipped too.\n\n(5/5) 40 founders use the beta every day.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"A00E1028000010\" kind=\"x_thread\">(1/4) Replies now go out in 2 minutes instead of 2 hours. That's auto reply, and we shipped it this month.\n\n(2/4) We also shipped a hook scorer this month. Anyone can use it for free.\n\n(3/4) Dark mode is in too.\n\n(4/4) 40 founders use the beta every day.</data>"
           }
         ]
       },
       "response": {
-        "text": "Here's your thread, Mike. Want me to change anything in it?",
+        "text": "Here's your thread, Mike, with auto reply up front. Want me to make it punchier?",
         "calls": [],
-        "cost_usd": 0.009004,
+        "cost_usd": 0.00923,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

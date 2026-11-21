@@ -1,6 +1,6 @@
 {
   "case": "playback_chatbot",
-  "recorded_at": "2026-11-20T13:54:51+00:00",
+  "recorded_at": "2026-11-21T04:55:03+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -32,28 +32,28 @@
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.007358
+      "cost_usd": 0.007458
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply says \"You deployed a chatbot that helps people plan their week,\" which is a clean, correctly spelled restatement of what Mike shipped.",
+      "why": "The reply says \"You deployed a chatbot that helps people plan their week,\" which is a clean, correctly spelled play-back of what Mike shipped.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply writes \"plan their week\" and repeats neither \"weet\" nor \"help user plan weet\".",
+      "why": "The reply writes \"plan their week\" and never uses \"weet\" or \"help user plan weet\".",
       "holds": true
     },
     {
       "note": 3,
-      "why": "After the play-back statement the reply asks only \"Who is it for?\", which is a single question.",
+      "why": "The only ask is \"Who is it for?\"; it is a single question and nothing else is requested.",
       "holds": true
     },
     {
       "note": 4,
-      "why": "The reply is two short sentences with no post draft and no invented number, user count or result.",
+      "why": "The reply is a short play-back plus a question; it has no post and no invented number, user count or result.",
       "holds": true
     }
   ],
@@ -70,8 +70,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "86e72e53c355143a",
-        "system_sha256": "267354da5def49a7",
+        "tools_sha256": "d6a1cd7ac66fb1cb",
+        "system_sha256": "3c59cb80b2400bd4",
         "messages_sha256": "977faf4d8224bf9f",
         "messages": [
           {
@@ -83,7 +83,7 @@
       "response": {
         "text": "You deployed a chatbot that helps people plan their week. Who is it for?",
         "calls": [],
-        "cost_usd": 0.007358,
+        "cost_usd": 0.007458,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }
