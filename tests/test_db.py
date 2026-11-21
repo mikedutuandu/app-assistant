@@ -185,18 +185,34 @@ async def test_lifespan_fails_without_packs(test_settings):
             pass
 
 
-async def test_lifespan_fails_without_hookplaybooks_secret(test_settings, monkeypatch):
+async def test_lifespan_starts_with_hookplaybook_off_when_its_secret_is_unset(
+    test_settings, monkeypatch, fresh_schema, caplog
+):
+    """A new deployment needs no secret for an app it does not serve: that app is off, and the log says so."""
+    import logging
+
+    url, schema = fresh_schema
     monkeypatch.setenv("DEMO_SESSION_SECRET", "d" * 64)
     monkeypatch.delenv("HOOKPLAYBOOK_SESSION_SECRET", raising=False)
-    settings = Settings(**{**test_settings.model_dump(), "packs_dir": Path("apps"), "run_lifespan": True})
+    settings = Settings(
+        **{
+            **test_settings.model_dump(),
+            "database_url": url,
+            "db_schema": schema,
+            "packs_dir": Path("apps"),
+            "run_lifespan": True,
+        }
+    )
     app = create_app(settings)
-    with pytest.raises(PackError, match="HOOKPLAYBOOK_SESSION_SECRET"):
+    with caplog.at_level(logging.WARNING):
         async with app.router.lifespan_context(app):
-            pass
+            assert await app.state.packs.get("demo") is not None
+    assert "HOOKPLAYBOOK_SESSION_SECRET" in caplog.text
 
 
-async def test_lifespan_fails_when_a_pack_secret_is_unset(test_settings, monkeypatch):
+async def test_lifespan_fails_when_no_app_has_its_secret(test_settings, monkeypatch):
     monkeypatch.delenv("DEMO_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("HOOKPLAYBOOK_SESSION_SECRET", raising=False)
     settings = Settings(**{**test_settings.model_dump(), "packs_dir": Path("apps"), "run_lifespan": True})
     app = create_app(settings)
     with pytest.raises(PackError, match="DEMO_SESSION_SECRET"):
