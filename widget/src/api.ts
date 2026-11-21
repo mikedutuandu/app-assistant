@@ -13,19 +13,32 @@ export interface Draft {
   edit_url?: string | null;
   scheduled_at?: string | null;
 }
+/** A change the assistant asked the user to confirm (the app's own tool), and what became of it. */
+export interface Confirm {
+  id: string;
+  tool: string;
+  title: string;
+  lines: string[];
+  /** Only on one read back from a thread. */
+  state?: "waiting" | "running" | "done" | "failed" | "cancelled" | "expired";
+  result?: string | null;
+}
 export type BotEvent =
   | { event: "thread"; data: { thread_id: string; title: string } }
   | { event: "status"; data: { step: string } }
   | { event: "transcript"; data: { file_id: string; text: string } }
   | { event: "text"; data: { delta: string } }
   | { event: "draft"; data: Draft }
+  | { event: "confirm"; data: Confirm }
   | { event: "saved"; data: { kind: "facts"; items: string[] } }
   | { event: "note"; data: { text: string } }
   | { event: "done"; data: { message_id: string; cost_usd: number } }
   | { event: "failed"; data: { error: string; message: string } }
   | { event: string; data: any };
 
-export type ActionBody = { action_id: string; kind: "add_draft"; draft_id: string; schedule_at?: string };
+export type ActionBody =
+  | { action_id: string; kind: "add_draft"; draft_id: string; schedule_at?: string }
+  | { action_id: string; kind: "confirm" | "cancel"; pending_id: string };
 /** What a save answers: `scheduled_at` only when the app put the draft on its schedule, else why not. */
 export type ActionResult = {
   draft_id: string;
@@ -267,7 +280,12 @@ export class BotApi {
     return this.request("POST", `/uploads/${encodeURIComponent(started.upload_id)}/finish`, { thread_id: started.thread_id });
   }
 
-  act(threadId: string, body: ActionBody): Promise<ActionResult> {
+  /** What the window shows before the first message: the app's starters. */
+  config(): Promise<{ starters: string[] }> {
+    return this.request("GET", "/config");
+  }
+
+  act(threadId: string, body: ActionBody): Promise<any> {
     return this.request("POST", `/threads/${encodeURIComponent(threadId)}/actions`, body);
   }
 
@@ -276,7 +294,14 @@ export class BotApi {
   }
 
   thread(id: string): Promise<{
-    messages: { role: "user" | "assistant"; text: string; drafts?: Draft[]; saved?: string[]; files?: SentFileRef[] }[];
+    messages: {
+      role: "user" | "assistant";
+      text: string;
+      drafts?: Draft[];
+      saved?: string[];
+      files?: SentFileRef[];
+      confirms?: Confirm[];
+    }[];
   }> {
     return this.request("GET", `/threads/${encodeURIComponent(id)}`);
   }

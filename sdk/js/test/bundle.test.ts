@@ -28,7 +28,7 @@ describe("the built ./server bundle", () => {
 
   it("exports what the README says", async () => {
     const mod = await import(`${root}/dist/server/index.js`);
-    expect(Object.keys(mod).sort()).toEqual(["createAssistantHost", "readEvents", "signToken", "verifyToken"]);
+    expect(Object.keys(mod).sort()).toEqual(["createAssistantHost", "readEvents", "signToken", "verifyAssistantToken", "verifyToken"]);
     const types = readFileSync(`${root}/dist/server/index.d.ts`, "utf8");
     expect(types).toContain("createAssistantHost");
   });

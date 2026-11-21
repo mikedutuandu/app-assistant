@@ -1446,7 +1446,7 @@ async def test_an_old_change_has_expired(api: Api):
 
 
 async def test_another_workspaces_change_is_not_found(api: Api):
-    tid, card = await asked(api)
+    _tid, card = await asked(api)
     other = await api.thread_row(workspace="ws2")
     r = await api.act(other, tap(card["id"]), workspace="ws2")
     assert (r.status_code, r.json()) == (404, {"error": "change"})

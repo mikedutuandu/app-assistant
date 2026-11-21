@@ -42,12 +42,13 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))  # FakeTools, the app double every test uses
 
-from fakes import FakeTools
+from fakes import FakeActions, FakeTools
 from langgraph.checkpoint.memory import InMemorySaver
 
 from assistant import writer
 from assistant.api import turn as turn_module
 from assistant.api.turn import TurnInput, run_turn
+from assistant.app_actions import AppTool
 from assistant.auth import Session
 from assistant.checks import Fact, numbers_in, unsupported_numbers
 from assistant.files import intake
@@ -57,7 +58,7 @@ from assistant.graph.build import serializer
 from assistant.graph.prompts import data
 from assistant.graph.reply_text import BUBBLE_ENDS
 from assistant.llm import Llm, LlmError, LlmResult, ToolCall, ToolTurn
-from assistant.packs import AppPack, load_packs
+from assistant.packs import Actions, AppPack, load_packs
 from assistant.tools import AppContext
 
 CONVERSATIONS = ROOT / "tests" / "conversations"
@@ -122,6 +123,23 @@ class Hard(BaseModel):
     draft_picture: bool | None = None
     # Every draft of the last turn has a time to post (true) or none (false).
     draft_time: bool | None = None
+    # How many change cards the last turn showed (the app's tools that aren't read-only).
+    confirms: Count | None = None
+    # The app's read tools the chat must have called, in any turn.
+    reads: list[str] = []
+
+
+class AppToolSpec(BaseModel):
+    """One of the app's own tools in a case, with the fixed answer it gives."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    title: str
+    description: str = ""
+    read_only: bool
+    params: dict[str, str] = {}  # argument name -> its description (all strings)
+    answer: str = "Done."
 
 
 class Case(BaseModel):
@@ -131,6 +149,7 @@ class Case(BaseModel):
     turns: list[CaseTurn] = Field(min_length=1)
     expect: list[str] = Field(min_length=1)
     hard: Hard
+    app_tools: list["AppToolSpec"] = []  # the app's own tools for this case (its pack gets `actions`)
     context: dict[str, Any] = {}  # changes to the suite's context for this case (e.g. the app's free times)
 
     @field_validator("turns", mode="before")
@@ -187,6 +206,8 @@ class TurnLog:
     cost_usd: float = 0.0
     first_words_s: float | None = None  # seconds from the message to the first text the user saw (live runs only)
     took_s: float | None = None  # seconds the whole turn took
+    confirms: list[dict] = field(default_factory=list)  # change cards shown: {"title", "lines"}
+    reads: list[str] = field(default_factory=list)  # the app's read tools called this turn
 
 
 _TIMES = ("first_words_s", "took_s")  # how long a live turn took: not part of what the bot showed
@@ -328,6 +349,12 @@ def check_hard(case: Case, logs: list[TurnLog]) -> list[str]:
         for d in last.drafts:
             if ("post_at" in d) != hard.draft_time:
                 problems.append(f"draft_time: the last turn's draft {'has no' if hard.draft_time else 'has a'} time")
+    if hard.confirms is not None and not _fits(len(last.confirms), hard.confirms):
+        problems.append(f"confirms: the last turn showed {len(last.confirms)} change cards, expected {hard.confirms}")
+    read = {name for t in logs for name in t.reads}
+    for name in hard.reads:
+        if name not in read:
+            problems.append(f"reads: the chat never looked up {name}")
     if hard.draft_numbers_from_user:
         given = Fact(text="", numbers=[x for t in case.turns for x in numbers_in(f"{t.text}\n{t.shows or ''}")])
         for n, t in enumerate(logs, 1):
@@ -686,6 +713,25 @@ async def run_case(
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     tools = FakeTools(context=context)
+    actions = None
+    if case.app_tools:
+        pack = pack.model_copy(update={"actions": Actions(mcp_url="https://app.example/mcp")})
+        actions = FakeActions(
+            tools=[
+                AppTool(
+                    t.name,
+                    t.title,
+                    t.description,
+                    {
+                        "type": "object",
+                        "properties": {k: {"type": "string", "description": v} for k, v in t.params.items()},
+                    },
+                    t.read_only,
+                )
+                for t in case.app_tools
+            ],
+            answers={t.name: t.answer for t in case.app_tools},
+        )
     logs: list[TurnLog] = []
     async with httpx.AsyncClient() as http:
         state = SimpleNamespace(
@@ -696,6 +742,7 @@ async def run_case(
             llm=llm,
             settings=SimpleNamespace(demo_daily_usd_cap=0.0, max_app_daily_usd=None),
             tools_for=lambda _pack, _session: tools,
+            actions_for=lambda _pack, _session: actions,
         )
         thread: str | None = None
         events: list[tuple[str, dict]] = []  # the turn being run's
@@ -728,12 +775,14 @@ async def run_case(
                 events.clear()
                 turn = TurnInput(pack, session, thread, step.text, file_ids, "127.0.0.1", draft_id=draft_id)
                 timing.update(start=time.monotonic(), first=None)
+                called = len(actions.calls) if actions is not None else 0
                 await run_turn(state, turn, emit)
                 took = time.monotonic() - (timing["start"] or 0.0)
                 mismatch = getattr(llm, "mismatch", None)
                 if mismatch is not None:  # a stale recording, not a failure of the bot
                     raise mismatch
                 logs.append(_log(step, draft_id, events))
+                logs[-1].reads = [c[0] for c in actions.calls[called:]] if actions is not None else []
                 logs[-1].first_words_s, logs[-1].took_s = timing["first"], took
                 for kind, payload in events:
                     if kind == "thread":
@@ -777,6 +826,7 @@ def _log(step: CaseTurn, draft_id: str | None, events: list[tuple[str, dict]]) -
             if k == "draft"
         ],
         saved=[item for k, p in events if k == "saved" for item in p.get("items", [])],
+        confirms=[{"title": p["title"], "lines": p["lines"]} for k, p in events if k == "confirm"],
         ended=ended,
         failure=failed.get("message") if failed else None,
         cost_usd=float(done.get("cost_usd", 0.0)),
@@ -855,6 +905,13 @@ def judge_prompt(case: Case, context: AppContext, logs: list[TurnLog]) -> str:
             if "post_at" in d:
                 card += f", with a Schedule button set to {labels.get(d['post_at'], d['post_at'])}"
             chat.append(f"{card}]\n{body}")
+        for name in t.reads:
+            answer = next((a.answer for a in case.app_tools if a.name == name), "")
+            chat.append(f"[The assistant looked this up in the app with {name}, which answered: {answer}]")
+        for c in t.confirms:
+            chat.append(
+                f"[Change card with Confirm and Cancel buttons, nothing done yet: {c['title']}: {'; '.join(c['lines'])}]"
+            )
         if t.saved:
             chat.append("[App UI, not the assistant's words: a quiet line saying it saved " + " | ".join(t.saved) + "]")
         if t.ended != "done":

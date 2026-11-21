@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { signToken, verifyToken } from "../src/server/index";
+import { signToken, verifyAssistantToken, verifyToken } from "../src/server/index";
 import { APP_ID, mint, SECRET } from "./helpers";
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -114,5 +114,27 @@ describe("the bot and the package accept each other's tokens", () => {
     if (process.env.UPDATE_FIXTURES) writeFileSync(url, `${JSON.stringify(made, null, 2)}\n`);
     expect(existsSync(url), "run once with UPDATE_FIXTURES=1 to write it").toBe(true);
     expect(JSON.parse(readFileSync(url, "utf8"))).toEqual(made);
+  });
+});
+
+describe("verifyAssistantToken: the bot's token on the app's own MCP server", () => {
+  const KEY = "x".repeat(40);
+  const request = (token?: string) =>
+    new Request("https://app.example/api/mcp", {
+      method: "POST",
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+
+  it("gives the user's workspace for the assistant's draft token", async () => {
+    const token = await signToken(KEY, { appId: "shipnote", workspaceId: "ws_1", access: "draft" });
+    expect(await verifyAssistantToken(request(token), KEY, "shipnote")).toEqual({ workspaceId: "ws_1" });
+  });
+
+  it("refuses no token, another app's, another secret's, and a delete token", async () => {
+    const other = await signToken(KEY, { appId: "other", workspaceId: "ws_1", access: "draft" });
+    const wrong = await signToken("y".repeat(40), { appId: "shipnote", workspaceId: "ws_1", access: "draft" });
+    const del = await signToken(KEY, { appId: "shipnote", workspaceId: "ws_1", access: "delete" });
+    for (const r of [request(), request(other), request(wrong), request(del), request("not.a.token")])
+      expect(await verifyAssistantToken(r, KEY, "shipnote")).toBeNull();
   });
 });

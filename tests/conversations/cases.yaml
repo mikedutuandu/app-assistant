@@ -280,3 +280,41 @@ cases:
       - The last draft is a shorter version of the first one, about the same news (automatic post scheduling for X launched this week; 30 beta users scheduled 500 posts in the first 3 days), and adds no number or result Mike didn't give.
       - The last reply is short, one sentence plus at most one light question (a sentence and a question is fine), and does not paste the draft's text again.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, language: vi, shorter_than_previous_draft: true}
+
+  # ---- the app's own tools (the pack's actions): reads run, changes wait for the user's tap ----
+
+  - name: app_question_reads
+    app_tools:
+      - name: get_results
+        title: Get results
+        description: The user's numbers for the last 7 days.
+        read_only: true
+        answer: '{"last_7_days": {"posts": 5, "impressions": 12400, "best_post": "shipped a hook scorer this week", "best_post_impressions": 6100}}'
+      - name: move_post
+        title: Move a post
+        description: Moves a planned post to another time.
+        read_only: false
+        params: {id: "the post's id", when: "the new time, in the user's words"}
+    turns: ["how did my posts do this week?"]
+    expect:
+      - The reply answers from the app's numbers (5 posts, 12,400 impressions, the hook scorer post did best with 6,100) and states no number the app didn't give.
+      - The reply shows no change card and offers no draft.
+    hard: {drafts: 0, saved: any, max_questions_per_reply: 1, confirms: 0, reads: [get_results], draft_numbers_from_user: false}
+
+  - name: app_change_waits_for_ok
+    app_tools:
+      - name: list_posts
+        title: List planned posts
+        description: The user's planned posts with their id, text and time.
+        read_only: true
+        answer: '[{"id": "p1", "text": "week 7 of building in public", "status": "scheduled", "at": "Tue 9:30 AM"}]'
+      - name: move_post
+        title: Move a post
+        description: Moves a planned post to another time.
+        read_only: false
+        params: {id: "the post's id", when: "the new time, in the user's words"}
+    turns: ["move my tuesday post to friday 9am"]
+    expect:
+      - The last turn shows one change card moving post p1 to Friday 9 AM, with Confirm and Cancel.
+      - The reply says the post moves once Mike confirms, and never says it is already moved or done.
+    hard: {drafts: 0, saved: any, max_questions_per_reply: 1, confirms: 1, reads: [list_posts]}

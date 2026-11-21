@@ -610,3 +610,88 @@ describe("a draft with a time to post", () => {
     expect(buttons($$(".draft")[0])).toEqual(["Scheduled for Tue 9:30 AM", "Shorter", "Another angle"]);
   });
 });
+
+describe("the app's own tools", () => {
+  const thr = { event: "thread", data: { thread_id: "t1", title: "" } } as BotEvent;
+  const card = { id: "p1", tool: "move_item", title: "Move an item", lines: ["Id: i7", "Day: Friday"] };
+  const confirmEv = { event: "confirm", data: card } as BotEvent;
+  const buttons = (el: Element) => Array.from(el.querySelectorAll("button")).map((b) => b.textContent);
+
+  it("shows a change as a card with what will change, Confirm and Cancel", async () => {
+    const { $$, say } = setup({}, [thr, confirmEv]);
+    await say("move it");
+    const el = $$(".confirm")[0];
+    expect(el.querySelector(".title")!.textContent).toBe("Move an item");
+    expect(Array.from(el.querySelectorAll("li")).map((l) => l.textContent)).toEqual(["Id: i7", "Day: Friday"]);
+    expect(buttons(el)).toEqual(["Confirm", "Cancel"]);
+  });
+
+  it("Confirm runs it once and says it is done, with the app's words", async () => {
+    const act = vi.fn(async () => ({ state: "done", result: "Moved to Friday." }));
+    const { $$, say, flush } = setup({ act } as any, [thr, confirmEv]);
+    await say("move it");
+    const el = $$(".confirm")[0];
+    (el.querySelector("button") as HTMLButtonElement).click();
+    await flush();
+    expect(act).toHaveBeenCalledWith("t1", { action_id: "confirm:p1", kind: "confirm", pending_id: "p1" });
+    expect(buttons(el)).toEqual([]);
+    expect(el.querySelector(".state")!.textContent).toBe("Done. Moved to Friday.");
+  });
+
+  it("Cancel drops it", async () => {
+    const act = vi.fn(async () => ({ state: "cancelled", result: null }));
+    const { $$, say, flush } = setup({ act } as any, [thr, confirmEv]);
+    await say("move it");
+    (Array.from($$(".confirm")[0].querySelectorAll("button"))[1] as HTMLButtonElement).click();
+    await flush();
+    expect(act).toHaveBeenCalledWith("t1", { action_id: "confirm:p1", kind: "cancel", pending_id: "p1" });
+    expect($$(".confirm")[0].querySelector(".state")!.textContent).toBe("Cancelled.");
+  });
+
+  it("a change that didn't work says so, and one read back after a reload shows its state", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({
+      messages: [
+        { role: "user", text: "move it" },
+        {
+          role: "assistant",
+          text: "Tap Confirm.",
+          confirms: [
+            { ...card, state: "failed", result: "That day is full." },
+            { ...card, id: "p2", state: "expired", result: null },
+            { ...card, id: "p3", state: "waiting", result: null },
+          ],
+        },
+      ],
+    }));
+    const { $$, flush } = setup({ thread } as any);
+    await flush();
+    const states = $$(".confirm").map((c) => c.querySelector(".state")?.textContent ?? buttons(c).join("|"));
+    expect(states).toEqual(["Didn't work: That day is full.", "Too old to confirm now. Ask again.", "Confirm|Cancel"]);
+  });
+
+  it("an empty chat shows the app's starters; a tap sends it", async () => {
+    const config = vi.fn(async () => ({ starters: ["How did I do?", "Plan my week"] }));
+    const { $$, api, flush } = setup({ config } as any, [thr]);
+    await flush();
+    const starters = $$(".starter");
+    expect(starters.map((s) => s.textContent)).toEqual(["How did I do?", "Plan my week"]);
+    starters[0].click();
+    await flush();
+    expect(api.send.mock.calls[0][1]).toBe("How did I do?");
+    expect($$(".starter")).toHaveLength(0);
+  });
+
+  it("says it is checking the app while a read runs", async () => {
+    let release!: () => void;
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on(thr);
+      on({ event: "status", data: { step: "reading_app" } } as BotEvent);
+      await new Promise<void>((r) => (release = r));
+    });
+    const { $, say } = setup({ send } as any);
+    await say("how did I do?");
+    expect($(".working .label").textContent).toBe("Checking your app…");
+    release();
+  });
+});

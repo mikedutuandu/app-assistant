@@ -1,6 +1,9 @@
 id: demo
 name: Shipnote
 api_base: "{base}/demo/api/assistant"
+actions:
+  mcp_url: "{base}/demo/mcp"
+  starters: ["What have I saved so far?", "Write a changelog entry"]
 secret_env: DEMO_SESSION_SECRET
 allowed_origins: ["{base}"]
 demo: true
