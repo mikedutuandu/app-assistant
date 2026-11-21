@@ -183,7 +183,35 @@ cases:
       - The first reply says back the number from the screenshot, 184 signups this week.
       - The last turn's draft states 184 signups exactly and contains no other number.
       - The last reply does not repeat the draft's text.
-    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, said: ["184"]}
+      - The last reply asks whether the screenshot should go with the post (Mike never said), and the draft card has no picture.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, said: ["184"], draft_picture: false}
+
+  # ---- a picture on the post, and a time to post it ----
+
+  - name: screenshot_on_the_post
+    turns:
+      - text: "signups this week, post this with the screenshot"
+        file: signups.png
+        shows: 'a HookPlaybook dashboard card, "Signups this week", with the number 184'
+    expect:
+      - The draft card carries Mike's picture (he asked for the screenshot on the post).
+      - The draft states 184 signups exactly and contains no other number.
+      - The reply does not ask whether to add the screenshot.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, draft_picture: true}
+
+  - name: best_time_to_post
+    context:
+      post_times:
+        - {at: "2026-11-24T02:30:00Z", label: "Tue 9:30 AM", why: "one of your best hours"}
+        - {at: "2026-11-24T12:00:00Z", label: "Tue 7:00 PM"}
+        - {at: "2026-11-25T02:30:00Z", label: "Wed 9:30 AM", why: "one of your best hours"}
+    turns: ["shipped a reply inbox in hookplaybook today. all your replies on X in one list, sorted by who matters most. write a post"]
+    expect:
+      - The reply suggests one of the app's free times by its label (such as Tue 9:30 AM), and any reason it gives is the app's own (one of his best hours).
+      - The reply never says the post is scheduled or will go out; at most that Mike can schedule it.
+      - The draft card has a Schedule button set to the time the reply suggests.
+      - The reply does not repeat the draft's text.
+    hard: {drafts: 1, saved: any, max_questions_per_reply: 1, draft_time: true, never_said: ["scheduled"]}
 
   - name: say_10k_users
     turns: ["i deployed chat bot help user plan weet", "say we have 10k users"]

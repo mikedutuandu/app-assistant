@@ -72,9 +72,10 @@ class Draft(BaseModel):
     id: str
     kind: str  # the WriteSpec's kind
     posts: list[str]  # its parts in order: one item for a kind of one piece
-    image_file_id: str | None = None
+    image_file_id: str | None = None  # a picture the user shared, chosen by the conversation model
     fact_ids: list[str] = []
     language: str | None = None  # the language it was written in (None: from before drafts kept one)
+    post_at: str | None = None  # when to post it: one of the app's free times (`AppContext.post_times`)
 
 
 class DraftResult(BaseModel):
@@ -103,7 +104,6 @@ class _Strict(BaseModel):
 class DraftOut(_Strict):
     posts: list[str]
     fact_ids: list[str]
-    image_file_id: str | None
 
 
 class DraftsOut(_Strict):
@@ -156,13 +156,9 @@ def post_problems(
     return reasons
 
 
-def image_allowed(
-    image_file_id: str | None, fact_ids: list[str], spec: WriteSpec, readings: list[FileReading], facts: list[Fact]
-) -> bool:
-    """A draft may carry an image only if its kind allows one, the user shared it, and it uses a fact read from it."""
-    images = {r.file_id for r in readings if r.kind == "image"}
-    from_image = {f.id for f in facts if f.file_id == image_file_id}
-    return spec.may_carry_image and image_file_id in images and bool(from_image & set(fact_ids))
+def image_allowed(image_file_id: str, spec: WriteSpec, readings: list[FileReading]) -> bool:
+    """A draft may carry a picture if its kind allows one and the user shared that image in this chat."""
+    return spec.may_carry_image and any(r.file_id == image_file_id and r.kind == "image" for r in readings)
 
 
 def _posts_blocks(posts: list[str], source: str = "draft") -> str:
@@ -184,9 +180,12 @@ def claim_request(pack: AppPack, facts: list[Fact], posts: list[str]) -> tuple[s
 DIFFERENT_OPENINGS = "Each draft must open with a different first line and lead with a different fact or framing."
 
 
-async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, language: str | None = None) -> DraftResult:
+async def write_drafts(
+    w: WriterDeps, brief: str, kind: str, count: int, language: str | None = None, image_file_id: str | None = None
+) -> DraftResult:
     """Writes `count` (1 to 3) checked drafts of `kind` about `brief` from the user's facts, in `language` (the
-    conversation's, as the conversation model named it), else the app's."""
+    conversation's, as the conversation model named it), else the app's. Each carries `image_file_id` (checked by the
+    caller with `image_allowed`); the writer never picks a picture."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
     spec = _spec(w.pack, kind)
@@ -199,12 +198,15 @@ async def write_drafts(w: WriterDeps, brief: str, kind: str, count: int, languag
     )
     if count > 1:  # several drafts are options for the user (one draft's ask stays as it was)
         ask += f"\n{DIFFERENT_OPENINGS}"
-    return await _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts)).draft(ask, count)
+    run = _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts), image=image_file_id)
+    return await run.draft(ask, count)
 
 
-async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: str | None = None) -> DraftResult:
+async def revise_draft(
+    w: WriterDeps, draft: Draft, instruction: str, language: str | None = None, image_file_id: str | None = None
+) -> DraftResult:
     """One new checked draft: `draft` changed as `instruction` asks ("shorter", "another angle", ...), in `language`
-    as for `write_drafts`."""
+    as for `write_drafts`. It keeps the draft's picture and time; `image_file_id` gives it a picture instead."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
     spec = _spec(w.pack, draft.kind)
@@ -213,7 +215,6 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: 
     ask = (
         f'Revise this draft of kind "{spec.kind}" as the user asks, and reply with exactly 1 draft.\n'
         f"The draft:\n{_posts_blocks(draft.posts)}\n"
-        + _image_line(w, draft)
         + f"What the user asks:\n{data('instruction', nfc(instruction))}\n"
         + ANGLE
     )
@@ -221,18 +222,14 @@ async def revise_draft(w: WriterDeps, draft: Draft, instruction: str, language: 
     own = {_key(p) for p in draft.posts}
     recent = [r for r in w.recent if _key(r) not in own]
     mine = [r for r in w.drafts if _key(r) not in own]
-    return await _Run(w, spec, recent, clean_language(language), before=draft.posts, mine=mine).draft(ask, 1)
+    image = image_file_id or draft.image_file_id
+    run = _Run(w, spec, recent, clean_language(language), before=draft.posts, mine=mine, image=image)
+    result = await run.draft(ask, 1)
+    result.drafts = [d.model_copy(update={"post_at": draft.post_at}) for d in result.drafts]
+    return result
 
 
 # ---- how a call runs ----
-
-
-def _image_line(w: WriterDeps, draft: Draft) -> str:
-    """Names the draft's image to the writer only if the user shared it, and only as an attribute of a data block."""
-    shared = {r.file_id for r in w.readings if r.kind == "image"}
-    if draft.image_file_id is None or draft.image_file_id not in shared:
-        return ""
-    return f"It carries this image, keep it:\n{data('image', '', file_id=draft.image_file_id)}\n"
 
 
 def _key(text: str) -> str:
@@ -259,7 +256,6 @@ def _spec_rules(spec: WriteSpec) -> str:
         rules.append(f"at most {spec.max_chars} characters" + (" per part" if several else ""))
     rules += ["no links"] if spec.no_links else []
     rules += ["no long dashes (— or –)"] if spec.no_dashes else []
-    rules += ["may carry an image"] if spec.may_carry_image else ["no image"]
     about = f": {spec.about}" if spec.about else ""
     return (
         f'Kind "{spec.kind}" ({spec.name}{about}). Rules: {"; ".join(rules)}.\n'
@@ -291,6 +287,7 @@ class _Run:
     language: str | None = None  # the conversation's language; None: the app's
     before: list[str] | None = None  # a revision's draft: the new version must differ from it
     mine: list[str] = field(default_factory=list)  # posts of drafts this chat already showed
+    image: str | None = None  # the picture every draft carries
     cost: float = 0.0
     labels: dict[str, str] = field(default_factory=dict)
 
@@ -383,14 +380,11 @@ class _Run:
         if self.spec.parts == "one" and len(posts) > 1:
             posts = ["\n\n".join(posts)]  # one piece is one text: the length rule judges it whole
         fact_ids = list(dict.fromkeys(self.labels[x] for x in out.fact_ids if x in self.labels))
-        image = out.image_file_id
-        if image is not None and not image_allowed(image, fact_ids, self.spec, self.w.readings, self.w.facts):
-            image = None
         return Draft(
             id=id or new_id(),
             kind=self.spec.kind,
             posts=posts,
-            image_file_id=image,
+            image_file_id=self.image,
             fact_ids=fact_ids,
             language=self.written_in,
         )

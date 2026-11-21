@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, Literal
 
@@ -250,6 +251,7 @@ class AddDraftIn(BaseModel):
     action_id: ActionId
     kind: Literal["add_draft"]
     draft_id: str
+    schedule_at: str | None = Field(None, max_length=40)  # one of the draft's free times: save and schedule it
 
 
 ActionIn = AddDraftIn
@@ -264,17 +266,30 @@ returning 1
 """
 
 
-async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> tuple[list[str], str | None, list[Fact]]:
+@dataclass
+class _Stored:
+    posts: list[str]
+    image_file_id: str | None
+    facts: list[Fact]
+    post_times: list[str]  # the `at` of each free time the draft was shown with
+
+
+async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> _Stored:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "select posts, text, image_file_id, facts from pieces where id = %s and app = %s and workspace = %s"
-            " and thread_id = %s",
+            "select posts, text, image_file_id, facts, post_times from pieces where id = %s and app = %s"
+            " and workspace = %s and thread_id = %s",
             (draft_id, session.app, session.workspace, chat_id),
         )
         row = await cur.fetchone()
     if row is None:
         raise ApiError(404, "draft")
-    return (row[0] if row[0] else [row[1]]), row[2], [Fact.model_validate(f) for f in row[3]]
+    return _Stored(
+        posts=row[0] if row[0] else [row[1]],
+        image_file_id=row[2],
+        facts=[Fact.model_validate(f) for f in row[3]],
+        post_times=[t["at"] for t in row[4] or []],
+    )
 
 
 FILE_LINK_SECONDS = 300  # a file link for the host app (`file_link`): long enough to load, short enough to not leak
@@ -301,7 +316,10 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):
         raise ApiError(429, "limit", "You've done that a lot this hour. Try again a bit later.")
     await owned_thread(state.pool, session, thread_id)
-    posts, image_file_id, facts = await _draft(state.pool, session, thread_id, body.draft_id)
+    stored = await _draft(state.pool, session, thread_id, body.draft_id)
+    posts, image_file_id, facts = stored.posts, stored.image_file_id, stored.facts
+    if body.schedule_at is not None and body.schedule_at not in stored.post_times:
+        raise ApiError(400, "invalid", "That time isn't one of this draft's free times.")
 
     key = f"{session.app}:{session.workspace}:{body.action_id}"
     async with state.pool.connection() as conn:
@@ -320,10 +338,14 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     tools = state.tools_for(pack, session)
     try:
         media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
-        draft = await tools.save_draft(posts[0], posts[1:], media, key=body.action_id)
+        draft = await tools.save_draft(posts[0], posts[1:], media, key=body.action_id, schedule_at=body.schedule_at)
         if facts:
             await tools.save_material(facts, draft.id, key=body.action_id + ":facts")
         result: dict = {"draft_id": draft.id, "edit_url": draft.edit_url}
+        if body.schedule_at is not None:  # scheduled only when the app says so; else saved, with its why
+            result["scheduled_at"] = draft.scheduled_at
+            if draft.scheduled_at is None and draft.schedule_note:
+                result["schedule_note"] = draft.schedule_note
     except Exception as e:
         async with state.pool.connection() as conn:  # free the action so the user can tap again
             await conn.execute(
@@ -340,9 +362,17 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
             (Jsonb(result), key, session.app, session.workspace),
         )
         await conn.execute(
-            "update pieces set added_draft_id = %s, edit_url = %s"
+            "update pieces set added_draft_id = %s, edit_url = %s, scheduled_at = %s"
             " where id = %s and app = %s and workspace = %s and thread_id = %s",
-            (draft.id, draft.edit_url, body.draft_id, session.app, session.workspace, thread_id),
+            (
+                draft.id,
+                draft.edit_url,
+                result.get("scheduled_at"),
+                body.draft_id,
+                session.app,
+                session.workspace,
+                thread_id,
+            ),
         )
     log.info("action app=%s thread=%s action=%s", pack.id, thread_id, body.kind)
     return result
@@ -392,8 +422,8 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
     snapshot = await graph.aget_state(config)
     async with state.pool.connection() as conn:
         cur = await conn.execute(
-            "select id, message_id, spec_kind, posts, text, image_file_id, added_draft_id, edit_url from pieces"
-            " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
+            "select id, message_id, spec_kind, posts, text, image_file_id, added_draft_id, edit_url, post_at,"
+            " post_times, scheduled_at from pieces where app = %s and workspace = %s and thread_id = %s order by created_at, id",
             (session.app, session.workspace, thread_id),
         )
         draft_rows = await cur.fetchall()
@@ -459,6 +489,12 @@ def _draft_out(r) -> dict:
     draft: dict = {"id": r[0], "kind": r[2], "posts": posts, "added": r[6] is not None, "edit_url": r[7]}
     if r[5] is not None:
         draft["image_file_id"] = r[5]
+    if r[9]:  # the app's free times it was shown with, and the one picked
+        draft["post_times"] = r[9]
+        if r[8] is not None:
+            draft["post_at"] = r[8]
+    if r[10] is not None:
+        draft["scheduled_at"] = r[10]
     return draft
 
 

@@ -85,7 +85,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `text` | `{delta}`: the reply, piece by piece |
 | `transcript` | `{file_id, text}`: what a voice note said |
 | `note` | `{text}`: a short line about what the bot did |
-| `draft` | `{id, kind, posts, image_file_id?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); show it with an Add button |
+| `draft` | `{id, kind, posts, image_file_id?, post_at?, post_times?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); `image_file_id` a picture the user sent that goes with it; `post_times` your free times when you sent some, `post_at` the bot's pick; show it with an Add button (and Schedule with `post_times`) |
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
 | `done` | `{message_id, cost_usd}` |
@@ -105,7 +105,9 @@ for your app), `server` (the bot's own fault).
 ### Add a draft: `POST /v1/chat/{app}/threads/{thread_id}/actions`
 
 `{"action_id": "<your unique id, up to 100 characters>", "kind": "add_draft", "draft_id": "<a draft event's id>"}`. The bot calls your
-`/drafts` (and `/material` with the facts) and answers `{"draft_id", "edit_url"}` from your answer. It runs once per
+`/drafts` (and `/material` with the facts) and answers `{"draft_id", "edit_url"}` from your answer. Add
+`"schedule_at"` (one of the draft's `post_times`) to schedule it too: the answer then has `scheduled_at` (or `null`, with
+your `schedule_note`). Save and Schedule share one `action_id` per draft: the first tap wins. It runs once per
 `action_id`; a repeat gets the same answer, and one still running is 409 `pending`. A failure is 402 (out of credits)
 or 502 with `{error, message}`.
 
@@ -162,6 +164,21 @@ Only `language` (an ISO code such as `en` or `vi`) is required. `credits_left` i
 `null` (or left out) when you don't count credits; at 0 or below, the turn stops with `failed out_of_credits` and your
 `out_of_credits_message`. `kept_facts` are facts the user kept in earlier chats that no post has used yet.
 
+**Scheduling (optional).** If your app can schedule a post, also answer the user's next free times, soonest first (at
+most 10 are read):
+
+```json
+"post_times": [
+  {"at": "2026-11-24T02:30:00Z", "label": "Tue 9:30 AM", "why": "one of your best hours"},
+  {"at": "2026-11-25T12:00:00Z", "label": "Wed 7:00 PM"}
+]
+```
+
+`at` is an ISO time; `label` is how the user reads it, in their own time zone (the bot shows it as you wrote it);
+`why` (optional) is a few words the bot may repeat. The bot picks the time that fits a draft, and the draft gets a
+**Schedule** button with your free times to choose from, beside **Save draft**. Leave `post_times` out and drafts are
+only saved.
+
 ### `POST /drafts`
 
 ```json
@@ -171,6 +188,12 @@ Only `language` (an ISO code such as `en` or `vi`) is required. `credits_left` i
 `text` is the first post, `thread` the posts after it (`[]` for a single post), `media` the pictures for the first
 post (`[]` for none). Save the draft for the token's workspace and answer `{"draft_id": "d_123", "edit_url":
 "https://shipnote.app/drafts/d_123"}` (`edit_url` may be `null`). Never publish it: the user does that in your app.
+
+**Scheduled.** When the user tapped Schedule, the body also has `"schedule_at": "2026-11-24T02:30:00Z"` (one of your
+`post_times`). The tap is the user's OK: save the draft, then put it on your schedule at that time, and answer
+`"scheduled_at": "2026-11-24T02:30:00Z"` as well. If you can't (the time is taken now, no credits left), keep it as
+a draft and answer `"scheduled_at": null` with `"schedule_note": "That time is taken now."` in the user's words. The
+bot tells the user it's scheduled only when your answer says `scheduled_at`.
 
 **Pictures.** Each `media.url` is a signed GET link to the bot's storage, valid for 5 minutes. Fetch it at once and
 keep your own copy (it stops working). Accept only image types, cap the size (5 MB is plenty), and only fetch from the

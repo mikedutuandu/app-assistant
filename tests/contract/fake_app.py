@@ -36,11 +36,13 @@ class FakeApp:
         done: list[dict] = (),  # [{"path", "key", "answer"}] for the token's workspace
         in_flight: list[dict] = (),  # [{"path", "key"}]
         workspace: str | None = None,  # the workspace `done` and `in_flight` belong to
+        schedule_note: str | None = None,  # set: a draft with `schedule_at` is only saved, with this note
     ):
         self.app_id = app_id
         self.secret = secret
         self.profile = context if context is not None else {"language": "en"}
         self.credits_left = credits_left
+        self.schedule_note = schedule_note
         self.drafts: list[dict] = []
         self.materials: list[dict] = []
         self.charges: list[dict] = []
@@ -138,9 +140,17 @@ class FakeApp:
             isinstance(m, dict) and all(isinstance(m.get(f), str) for f in fields) for m in media
         ):
             raise Refused(400, "invalid", "media must be a list of {url, alt, mime}.")
+        at = body.get("schedule_at")
+        if at is not None and not isinstance(at, str):
+            raise Refused(400, "invalid", "schedule_at must be an ISO time.")
         draft_id = f"d_{len(self.drafts) + 1}"
         self.drafts.append({"workspace": ws, "id": draft_id, "text": text, "thread": thread, "media": media})
-        return {"draft_id": draft_id, "edit_url": EDIT_BASE + draft_id}
+        answer: dict[str, Any] = {"draft_id": draft_id, "edit_url": EDIT_BASE + draft_id}
+        if at is not None:  # saved, then scheduled at that time unless it can't be
+            answer["scheduled_at"] = at if self.schedule_note is None else None
+            if self.schedule_note is not None:
+                answer["schedule_note"] = self.schedule_note
+        return answer
 
     def _material(self, ws: str, body: dict) -> dict:
         facts, draft_id = body.get("facts"), body.get("draft_id")

@@ -34,9 +34,14 @@ def draft_block(d: Draft, new: bool = False) -> str:
         text = d.posts[0]
     else:
         text = "\n\n".join(f"({i}/{len(d.posts)}) {p}" for i, p in enumerate(d.posts, 1))
+    extra = {}
+    if d.image_file_id is not None:
+        extra["picture"] = d.image_file_id
+    if d.post_at is not None:
+        extra["post_at"] = d.post_at
     if new:  # written in this message: never an earlier draft (review N3)
-        return data("draft", text, id=d.id, kind=d.kind, written="just now, in this message")
-    return data("draft", text, id=d.id, kind=d.kind)
+        return data("draft", text, id=d.id, kind=d.kind, written="just now, in this message", **extra)
+    return data("draft", text, id=d.id, kind=d.kind, **extra)
 
 
 def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: list[Draft], written: set[str]) -> str:
@@ -59,6 +64,12 @@ def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: li
             f"Their latest posts:\n{recent}"
         )
         parts.append("About the user, from their app:\n" + data("context", about))
+        if ctx.post_times:
+            times = "\n".join(f"{t.at}: {t.label}" + (f" ({t.why})" if t.why else "") for t in ctx.post_times)
+            parts.append(
+                "Free times the app can post at, soonest first (the user sees the labels; pick by `at`):\n"
+                + data("context", times)
+            )
         if ctx.kept_facts:
             kept = "\n".join(data("kept", k.text, id=k.id) for k in ctx.kept_facts)
             parts.append("Facts they kept in an earlier chat, not used in a post yet:\n" + kept)

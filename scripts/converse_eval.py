@@ -118,6 +118,10 @@ class Hard(BaseModel):
     # Every number in every draft must be one Mike gave: in a turn's text, or in what its file `shows`. Parsed with
     # the bot's own `numbers_in` ("10k", "two hours", "1,200"), matched as the bot's check matches (within 0.5%).
     draft_numbers_from_user: bool = True
+    # Every draft of the last turn carries the picture Mike sent (true) or none (false).
+    draft_picture: bool | None = None
+    # Every draft of the last turn has a time to post (true) or none (false).
+    draft_time: bool | None = None
 
 
 class Case(BaseModel):
@@ -127,6 +131,7 @@ class Case(BaseModel):
     turns: list[CaseTurn] = Field(min_length=1)
     expect: list[str] = Field(min_length=1)
     hard: Hard
+    context: dict[str, Any] = {}  # changes to the suite's context for this case (e.g. the app's free times)
 
     @field_validator("turns", mode="before")
     @classmethod
@@ -152,6 +157,11 @@ class Suite(BaseModel):
         return cases
 
 
+def context_for(suite: Suite, case: Case) -> AppContext:
+    """The app's context for one case: the suite's, with the case's own changes."""
+    return AppContext.model_validate(suite.context.model_dump() | case.context)
+
+
 def load_suite(path: Path = CASES) -> Suite:
     return Suite.model_validate(yaml.safe_load(path.read_text()))
 
@@ -170,7 +180,7 @@ class TurnLog:
     shows: str | None  # what the file shows (the case's words), for the judge
     draft_id: str | None  # the draft the message was about
     reply: str  # the streamed text
-    drafts: list[dict]  # {"id", "kind", "posts"}
+    drafts: list[dict]  # {"id", "kind", "posts", "image_file_id"?, "post_at"?}
     saved: list[str]  # the saved lines' items
     ended: str  # "done" or "failed"
     failure: str | None = None  # the failed event's message
@@ -308,6 +318,16 @@ def check_hard(case: Case, logs: list[TurnLog]) -> list[str]:
                 f"shorter_than_previous_draft: {_length(last.drafts[0])} characters, the draft before had "
                 f"{_length(about)}"
             )
+    if hard.draft_picture is not None:
+        for d in last.drafts:
+            if ("image_file_id" in d) != hard.draft_picture:
+                problems.append(
+                    f"draft_picture: the last turn's draft {'has no' if hard.draft_picture else 'has a'} picture"
+                )
+    if hard.draft_time is not None:
+        for d in last.drafts:
+            if ("post_at" in d) != hard.draft_time:
+                problems.append(f"draft_time: the last turn's draft {'has no' if hard.draft_time else 'has a'} time")
     if hard.draft_numbers_from_user:
         given = Fact(text="", numbers=[x for t in case.turns for x in numbers_in(f"{t.text}\n{t.shows or ''}")])
         for n, t in enumerate(logs, 1):
@@ -751,7 +771,11 @@ def _log(step: CaseTurn, draft_id: str | None, events: list[tuple[str, dict]]) -
         shows=step.shows,
         draft_id=draft_id,
         reply=reply_text(events),
-        drafts=[{"id": p["id"], "kind": p["kind"], "posts": p["posts"]} for k, p in events if k == "draft"],
+        drafts=[
+            {k2: p[k2] for k2 in ("id", "kind", "posts", "image_file_id", "post_at") if k2 in p}
+            for k, p in events
+            if k == "draft"
+        ],
         saved=[item for k, p in events if k == "saved" for item in p.get("items", [])],
         ended=ended,
         failure=failed.get("message") if failed else None,
@@ -800,7 +824,16 @@ def judge_prompt(case: Case, context: AppContext, logs: list[TurnLog]) -> str:
             "His latest posts: " + " | ".join(context.recent_posts),
             "Facts kept from earlier chats: none",
         ]
+        + (
+            [
+                "Free times the app can post at: "
+                + " | ".join(t.label + (f" ({t.why})" if t.why else "") for t in context.post_times)
+            ]
+            if context.post_times
+            else []
+        )
     )
+    labels = {t.at: t.label for t in context.post_times}
     chat: list[str] = []
     for n, t in enumerate(logs, 1):
         chat.append(f"Turn {n}")
@@ -816,7 +849,12 @@ def judge_prompt(case: Case, context: AppContext, logs: list[TurnLog]) -> str:
             body = (
                 posts[0] if len(posts) == 1 else "\n".join(f"  ({i}/{len(posts)}) {p}" for i, p in enumerate(posts, 1))
             )
-            chat.append(f"[Draft card, {'thread' if d['kind'] == 'x_thread' else 'post'}]\n{body}")
+            card = f"[Draft card, {'thread' if d['kind'] == 'x_thread' else 'post'}"
+            if "image_file_id" in d:
+                card += ", with Mike's picture"
+            if "post_at" in d:
+                card += f", with a Schedule button set to {labels.get(d['post_at'], d['post_at'])}"
+            chat.append(f"{card}]\n{body}")
         if t.saved:
             chat.append("[App UI, not the assistant's words: a quiet line saying it saved " + " | ".join(t.saved) + "]")
         if t.ended != "done":
@@ -967,15 +1005,15 @@ async def run_one(
                 outcome.error = "; ".join(problems)
                 return outcome
             replay = ReplayLlm(rec["calls"])
-            logs = await run_case(case, suite.context, replay, pool, pack)
+            logs = await run_case(case, context_for(suite, case), replay, pool, pack)
             if replay.left:
                 outcome.error = f"{replay.left} recorded calls were not made: re-record this case"
             outcome.recorded_verdicts = rec.get("verdicts")
             outcome.hard = check_hard(case, logs)
         else:
             recorder = RecordingLlm(live)
-            logs = await run_case(case, suite.context, recorder, pool, pack)
-            outcome.verdicts = await judge(case, suite.context, logs, live)
+            logs = await run_case(case, context_for(suite, case), recorder, pool, pack)
+            outcome.verdicts = await judge(case, context_for(suite, case), logs, live)
             outcome.hard = check_hard(case, logs)
             if record:  # only a passing case goes to recorded/: CI replays it as the proof; a failing one is kept aside
                 target = folder if outcome.passed else failed_folder

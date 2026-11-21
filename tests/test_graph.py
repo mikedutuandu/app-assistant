@@ -28,7 +28,7 @@ def writes_once() -> FakeLlm:
                 ),
                 "Here's one.",
             ],
-            "DRAFT_WRITER": [{"drafts": [{"posts": [POST], "fact_ids": ["F1"], "image_file_id": None}]}],
+            "DRAFT_WRITER": [{"drafts": [{"posts": [POST], "fact_ids": ["F1"]}]}],
             "CLAIM_CHECK": [OK],
         }
     )

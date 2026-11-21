@@ -130,6 +130,7 @@ class FakeTools:
         self.drafts: list[dict] = []
         self.materials: list[dict] = []
         self.charges: list[dict] = []
+        self.schedule_note: str | None = None  # set: the app can't schedule, and says why
 
     def _record(self, name: str) -> None:
         self.calls.append(name)
@@ -140,15 +141,23 @@ class FakeTools:
         self._record("context")
         return self._context
 
-    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
+    async def save_draft(
+        self, text: str, thread: list[str], media: list[dict], key: str, schedule_at: str | None = None
+    ) -> SavedDraft:
+        """Schedules at `schedule_at` unless `schedule_note` is set (then it only saves the draft, with that note)."""
         self._record("save_draft")
         for d in self.drafts:
             if d["key"] == key:
-                return SavedDraft(id=d["id"], edit_url=d["edit_url"])
+                return SavedDraft(id=d["id"], edit_url=d["edit_url"], scheduled_at=d["scheduled_at"])
         draft = {"id": f"draft-{len(self.drafts) + 1}", "text": text, "thread": thread, "media": media, "key": key}
         draft["edit_url"] = f"https://app.example/drafts/{draft['id']}"
+        draft["schedule_at"] = schedule_at
+        draft["scheduled_at"] = schedule_at if self.schedule_note is None else None
         self.drafts.append(draft)
-        return SavedDraft(id=draft["id"], edit_url=draft["edit_url"])
+        note = self.schedule_note if schedule_at is not None else None
+        return SavedDraft(
+            id=draft["id"], edit_url=draft["edit_url"], scheduled_at=draft["scheduled_at"], schedule_note=note
+        )
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None:
         self._record("save_material")

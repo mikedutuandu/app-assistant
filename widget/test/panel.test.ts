@@ -503,3 +503,94 @@ describe("a message's files", () => {
   });
 });
 
+
+describe("a draft with a time to post", () => {
+  const TUE = "2099-11-24T02:30:00Z";
+  const WED = "2099-11-25T12:00:00Z";
+  const timed = {
+    id: "d1",
+    kind: "x_post",
+    posts: ["We moved into a new office."],
+    post_at: WED,
+    post_times: [
+      { at: TUE, label: "Tue 9:30 AM" },
+      { at: WED, label: "Wed 7:00 PM" },
+    ],
+  };
+  const thr = { event: "thread", data: { thread_id: "t1", title: "" } } as BotEvent;
+  const dr = (d: any = timed) => ({ event: "draft", data: d }) as BotEvent;
+  const buttons = (el: HTMLElement) => Array.from(el.querySelectorAll("button")).map((b) => b.textContent);
+
+  it("offers the app's free times, the bot's pick first chosen, and Schedule before Save draft", async () => {
+    const { $$, say } = setup({}, [thr, dr()]);
+    await say("hi");
+    const el = $$(".draft")[0];
+    const select = el.querySelector("select") as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => [o.value, o.textContent])).toEqual([
+      [TUE, "Tue 9:30 AM"],
+      [WED, "Wed 7:00 PM"],
+    ]);
+    expect(select.value).toBe(WED);
+    expect(select.getAttribute("aria-label")).toBe("Time to post");
+    expect(buttons(el)).toEqual(["Schedule", "Save draft", "Shorter", "Another angle"]);
+  });
+
+  it("Schedule sends the chosen time and says when, once the app scheduled it", async () => {
+    const act = vi.fn(async () => ({ draft_id: "p1", edit_url: null, scheduled_at: TUE }));
+    const { $$, say, flush } = setup({ act } as any, [thr, dr()]);
+    await say("hi");
+    const el = $$(".draft")[0];
+    const select = el.querySelector("select") as HTMLSelectElement;
+    select.value = TUE;
+    select.dispatchEvent(new Event("change"));
+    (el.querySelector("button") as HTMLButtonElement).click();
+    await flush();
+    expect(act).toHaveBeenCalledWith("t1", { action_id: "add:d1", kind: "add_draft", draft_id: "d1", schedule_at: TUE });
+    expect(buttons(el)).toEqual(["Scheduled for Tue 9:30 AM", "Shorter", "Another angle"]);
+    expect(select.disabled).toBe(true);
+  });
+
+  it("a time the app couldn't take leaves it saved as a draft, with the app's why", async () => {
+    const act = vi.fn(async () => ({ draft_id: "p1", edit_url: null, scheduled_at: null, schedule_note: "That time is taken now." }));
+    const { $$, say, flush } = setup({ act } as any, [thr, dr()]);
+    await say("hi");
+    const el = $$(".draft")[0];
+    (el.querySelector("button") as HTMLButtonElement).click();
+    await flush();
+    expect(buttons(el)).toEqual(["Saved", "Shorter", "Another angle"]);
+    expect(el.querySelector(".note")!.textContent).toBe("Saved as a draft: That time is taken now.");
+  });
+
+  it("Save draft only saves it, without a time", async () => {
+    const act = vi.fn(async () => ({ draft_id: "p1", edit_url: null }));
+    const { $$, say, flush } = setup({ act } as any, [thr, dr()]);
+    await say("hi");
+    const el = $$(".draft")[0];
+    (el.querySelectorAll("button")[1] as HTMLButtonElement).click();
+    await flush();
+    expect(act).toHaveBeenCalledWith("t1", { action_id: "add:d1", kind: "add_draft", draft_id: "d1" });
+    expect(buttons(el)).toEqual(["Saved", "Shorter", "Another angle"]);
+  });
+
+  it("times already past are not offered, and with none left there is no Schedule", async () => {
+    const old = { ...timed, post_at: "2001-01-01T00:00:00Z", post_times: [{ at: "2001-01-01T00:00:00Z", label: "Mon 1:00 AM" }] };
+    const { $$, say } = setup({}, [thr, dr(old)]);
+    await say("hi");
+    const el = $$(".draft")[0];
+    expect(el.querySelector("select")).toBeNull();
+    expect(buttons(el)).toEqual(["Save draft", "Shorter", "Another angle"]);
+  });
+
+  it("a draft read back after it was scheduled says when", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({
+      messages: [
+        { role: "user", text: "hi" },
+        { role: "assistant", text: "", drafts: [{ ...timed, added: true, edit_url: null, scheduled_at: TUE }] },
+      ],
+    }));
+    const { $$, flush } = setup({ thread } as any);
+    await flush();
+    expect(buttons($$(".draft")[0])).toEqual(["Scheduled for Tue 9:30 AM", "Shorter", "Another angle"]);
+  });
+});

@@ -18,6 +18,12 @@ export interface AppContext {
   /** In your own unit; `null` or left out when you don't count credits. At 0 or below the turn stops. */
   credits_left?: number | null;
   out_of_credits_message?: string;
+  /**
+   * The user's next free times to post (at most 10, soonest first), when you can schedule a draft: `at` is an ISO
+   * time, `label` how the user reads it in their own time zone ("Tue 9:30 AM"), `why` a few words ("one of your best
+   * hours"). The bot picks one and the user can schedule the draft from the chat (`saveDraft`'s `schedule_at`).
+   */
+  post_times?: { at: string; label: string; why?: string }[];
 }
 
 export interface DraftInput {
@@ -27,11 +33,17 @@ export interface DraftInput {
   thread: string[];
   /** Pictures for the first post: signed links to the bot's storage, valid 5 minutes. Copy them at once. */
   media: { url: string; alt: string; mime: string }[];
+  /** Set when the user tapped Schedule: one of your `post_times`. Save the draft, then schedule it then. */
+  schedule_at?: string;
 }
 
 export interface SavedDraft {
   draft_id: string;
   edit_url: string | null;
+  /** With `schedule_at`: the time you scheduled it, or `null` when you only saved it (say why in `schedule_note`). */
+  scheduled_at?: string | null;
+  /** Why it wasn't scheduled, in the user's words ("That time is taken now."). */
+  schedule_note?: string;
 }
 
 export type ChargeResult = { ok: true } | { outOfCredits: string };
@@ -233,8 +245,10 @@ function prepare(
   key: string,
 ) {
   if (name === "drafts") {
-    const { text, thread, media } = body;
+    const { text, thread, media, schedule_at } = body;
     if (!isText(text)) throw new Refused(400, "invalid", "The draft is empty.");
+    if (schedule_at !== undefined && schedule_at !== null && !isText(schedule_at))
+      throw new Refused(400, "invalid", "schedule_at must be an ISO time.");
     if (!isStrings(thread)) throw new Refused(400, "invalid", "thread must be a list of posts.");
     const fields = ["url", "alt", "mime"];
     if (!Array.isArray(media) || !media.every((m) => isObject(m) && fields.every((f) => typeof m[f] === "string")))
@@ -244,6 +258,7 @@ function prepare(
       thread,
       media: media.map((m: Record<string, string>) => ({ url: m.url, alt: m.alt, mime: m.mime })),
     };
+    if (isText(schedule_at)) draft.schedule_at = schedule_at;
     return async () => {
       const saved = await opts.saveDraft(ws, draft, key);
       if (!isObject(saved) || !isText(saved.draft_id))
@@ -251,7 +266,14 @@ function prepare(
       const editUrl = saved.edit_url ?? null;
       if (editUrl !== null && typeof editUrl !== "string")
         throw new WrongAnswer("saveDraft()'s edit_url is a string or null");
-      return { draft_id: saved.draft_id, edit_url: editUrl };
+      const answer: Record<string, unknown> = { draft_id: saved.draft_id, edit_url: editUrl };
+      if (draft.schedule_at !== undefined) {
+        const at = saved.scheduled_at ?? null;
+        if (at !== null && !isText(at)) throw new WrongAnswer("saveDraft()'s scheduled_at is a string or null");
+        answer.scheduled_at = at;
+        if (at === null && isText(saved.schedule_note)) answer.schedule_note = saved.schedule_note;
+      }
+      return answer;
     };
   }
   if (name === "material") {

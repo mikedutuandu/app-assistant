@@ -62,7 +62,7 @@ def happy_script() -> dict:
     write = [call("save_facts", facts=[{"text": FACT}]), call("write_drafts", brief="faster replies", kind="x_post")]
     return {
         "CONVERSE": [Reply(calls=write), REPLY],
-        "DRAFT_WRITER": [{"drafts": [{"posts": [LAUNCH], "fact_ids": ["F1"], "image_file_id": None}]}],
+        "DRAFT_WRITER": [{"drafts": [{"posts": [LAUNCH], "fact_ids": ["F1"]}]}],
         "CLAIM_CHECK": [OK],
     }
 

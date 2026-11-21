@@ -58,6 +58,17 @@ _TOOL_SPECS: list[dict] = [
                             "in, never the language of a button's text."
                         ),
                     },
+                    "image_file_id": {
+                        "type": "string",
+                        "description": (
+                            "The file_id of an image the user shared, to post with the drafts: only when they asked "
+                            "for it or said yes when you asked."
+                        ),
+                    },
+                    "post_at": {
+                        "type": "string",
+                        "description": "When to post it: the `at` of one of the app's free times, the one that fits best.",
+                    },
                 },
                 "required": ["brief", "kind", "language"],
             },
@@ -81,6 +92,13 @@ _TOOL_SPECS: list[dict] = [
                         "description": (
                             "The language to write in, as a short tag (en, vi, pt-BR): the one the user talks with you "
                             "in, never the language of a button's text."
+                        ),
+                    },
+                    "image_file_id": {
+                        "type": "string",
+                        "description": (
+                            "The file_id of an image the user shared, to post with it, when they ask to add one. "
+                            "Left out, the draft keeps its own picture."
                         ),
                     },
                 },
@@ -145,17 +163,24 @@ _Text = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min
 _Language = Annotated[str | None, BeforeValidator(lambda v: clean_language(v) if isinstance(v, str) else None)]
 
 
+# An optional id or time: anything but a non-empty string is left out (checked against the chat when the tool runs).
+_Optional = Annotated[str | None, BeforeValidator(lambda v: v.strip()[:100] or None if isinstance(v, str) else None)]
+
+
 class WriteDraftsArgs(BaseModel):
     brief: Annotated[_Text, StringConstraints(max_length=2000)]
     kind: _Text  # one of the pack's kinds (the writer answers an unknown one with the kinds it can write)
     count: StrictInt = Field(1, ge=1, le=3)
     language: _Language = None
+    image_file_id: _Optional = None
+    post_at: _Optional = None
 
 
 class ReviseDraftArgs(BaseModel):
     draft_id: _Text
     instruction: Annotated[_Text, StringConstraints(max_length=500)]
     language: _Language = None
+    image_file_id: _Optional = None
 
 
 class FactArg(BaseModel):
