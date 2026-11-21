@@ -4,10 +4,12 @@
 [![npm](https://img.shields.io/npm/v/@app-assistant/host)](https://www.npmjs.com/package/@app-assistant/host)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An AI assistant you add to your SaaS. It chats with your users like a person, answers from their real data in your
-app, and does things for them through your own **MCP server**, **each change only after they tap Confirm**
-(human-in-the-loop). A read can show its result as your own UI: an **MCP Apps** card, the same one Claude and ChatGPT
-draw. It also writes for your users (posts, changelogs, emails) from what they actually did, in their voice, **never
+Let your users run your app by chatting. What they would do by clicking through your UI, they can ask for instead:
+the assistant reads their real data and does it for them through your own **MCP server**, **each change only after
+they tap Confirm** (human-in-the-loop), and shows what it read as your own UI: an **MCP Apps** card, the same one
+Claude and ChatGPT draw. Your UI stays; the chat is a second way to use all of it.
+
+It can also write for your users (posts, changelogs, emails) from what they actually did, in their voice, **never
 inventing a number**, and they can attach screenshots, PDFs and voice notes. Your app decides where a draft goes; the
 bot never publishes anything by itself.
 
