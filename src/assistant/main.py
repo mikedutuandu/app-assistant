@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from assistant.files.storage import Storage
 from assistant.graph.build import serializer
 from assistant.llm import Llm
 from assistant.pack_store import PackStore, load_registry, registry_path
-from assistant.packs import PackError, load_packs
+from assistant.packs import AppPack, PackError, RegistryEntry, load_packs
 from assistant.tools import tools_for
 
 WIDGET_JS = Path(__file__).parent / "static" / "widget.js"  # built by `npm run build` in widget/
@@ -51,6 +52,24 @@ def log_to_stdout() -> None:
 
 PLACEHOLDER_MARKER = "change-before-you-expose"  # in the throwaway secrets docker-compose.yml gives for localhost
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def apps_with_secrets(
+    local: dict[str, AppPack], registry: list[RegistryEntry]
+) -> tuple[dict[str, AppPack], list[RegistryEntry]]:
+    """The apps whose shared secret is set. One whose secret is unset is left out with a warning naming the
+    variable (a new deployment needs no secret for an app it does not serve, such as the shipped HookPlaybook
+    entry); with none left, the server does not start."""
+    unset = [k for k in [*local.values(), *registry] if not os.environ.get(k.secret_env)]
+    for key in unset:
+        log.warning("app %r is off: set %s to serve it", key.id, key.secret_env)
+    off = {id(key) for key in unset}
+    kept_local = {app_id: pack for app_id, pack in local.items() if id(pack) not in off}
+    kept_registry = [entry for entry in registry if id(entry) not in off]
+    if not kept_local and not kept_registry:
+        names = ", ".join(sorted({k.secret_env for k in unset}))
+        raise PackError(f"no app has its secret set: set one of {names} (openssl rand -hex 32)")
+    return kept_local, kept_registry
 
 
 def refuse_placeholder_secrets(secrets: dict[str, str], settings: Settings) -> None:
@@ -111,8 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         registry = load_registry(registry_path(settings.packs_dir), settings.apps)
         if not local and not registry:
             raise PackError(f"no app packs in {settings.packs_dir}")
-        for key in [*local.values(), *registry]:
-            key.secret()  # fail at startup, not on every request, when an app's secret is unset
+        local, registry = apps_with_secrets(local, registry)  # an app without its secret is off, said in the log
         refuse_placeholder_secrets({k.secret_env: k.secret() for k in [*local.values(), *registry]}, settings)
         pool = await open_pool(direct_url(settings), settings.db_schema, settings.db_pool_max)
         saver_pool = await open_saver_pool(direct_url(settings), settings.db_schema, settings.saver_pool_max)

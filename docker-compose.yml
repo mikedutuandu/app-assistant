@@ -1,15 +1,15 @@
 # `docker compose up --build` gives a working bot at http://localhost:8000, the demo app at /demo included, with no cloud
 # account: Postgres 16 and the files on local disk (the `assistant-data` volume).
 #
-# OPENROUTER_API_KEY is needed for real replies (export it or put it in a `.env` file next to this one). The two
-# *_SESSION_SECRET defaults below are for trying it on your own machine: set your own before the bot is reachable by
+# OPENROUTER_API_KEY is needed for real replies (export it or put it in a `.env` file next to this one). The
+# DEMO_SESSION_SECRET default below is for trying it on your own machine: set your own before the bot is reachable by
 # anyone else (`openssl rand -hex 32`), and set PUBLIC_BASE_URL to its public address: the bot refuses to start with
-# these placeholders while PUBLIC_BASE_URL is not localhost. The port is bound to this machine only.
+# this placeholder while PUBLIC_BASE_URL is not localhost. The port is bound to this machine only.
 services:
   bot:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"  # this machine only; see README to publish it
+      - "127.0.0.1:8000:8000"  # this machine only; see docs/DEPLOY.md to publish it
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DATABASE_URL: postgresql://assistant:assistant@postgres:5432/assistant
@@ -17,7 +17,6 @@ services:
       DATA_DIR: /data
       FILES_SIGNING_KEY: ${FILES_SIGNING_KEY:-}
       DEMO_SESSION_SECRET: ${DEMO_SESSION_SECRET:-local-demo-secret-change-before-you-expose-this-bot}
-      HOOKPLAYBOOK_SESSION_SECRET: ${HOOKPLAYBOOK_SESSION_SECRET:-local-hookplaybook-secret-change-before-you-expose}
     volumes:
       - assistant-data:/data
     depends_on:

@@ -51,7 +51,7 @@ def _texts(name: str) -> list[str]:
 
 
 def test_mikes_chats_are_all_there():
-    """The chats Mike saw go wrong on 20 Nov 2026, and the rest of the spec's list."""
+    """The chats the first tester saw go wrong on 20 Nov 2026, and the rest of the cases."""
     assert _texts("hi") == ["hi"]
     assert _texts("how_are_you")[-1] == "how are you"
     assert _texts("my_name_mike")[-1] == "my name mike"

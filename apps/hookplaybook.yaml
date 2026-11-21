@@ -1,7 +1,7 @@
 id: hookplaybook
 name: HookPlaybook
 mcp_url: https://hookplaybook.com/api/v1/mcp
-# The same value as HookPlaybook's ASSISTANT_TOKEN_SECRET.
+# The secret HookPlaybook signs its tokens with (set only on HookPlaybook's own bot).
 secret_env: HOOKPLAYBOOK_SESSION_SECRET
 # The dashboard is at /dashboard on the same origin.
 allowed_origins: ["https://hookplaybook.com"]

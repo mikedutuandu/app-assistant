@@ -1,5 +1,5 @@
 """HookPlaybook's pack (apps/hookplaybook.yaml): its values, its tokens as HookPlaybook mints them, its origin and its
-workspace deletion. HookPlaybook's side lives in ai-mono (products/hookplaybook)."""
+workspace deletion. HookPlaybook's own side is its own (closed) code; these tests hold the bot to what it sends."""
 
 import base64
 import hashlib
@@ -27,7 +27,7 @@ from assistant.tools import tools_for as real_tools_for
 APPS = Path("apps")
 SITE = "https://hookplaybook.com"
 SECRET_ENV = "HOOKPLAYBOOK_SESSION_SECRET"
-# HookPlaybook's own test vector (shared/core/test/assistant-token.test.ts): secret "s", iat 1700000000, a draft
+# HookPlaybook's own test vector (from its token tests): secret "s", iat 1700000000, a draft
 # token for workspace w1 living an hour.
 VECTOR = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJob29rcGxheWJvb2siLCJzdWIiOiJ3MSIsImFjY2VzcyI6ImRyYWZ0IiwiaWF0"
@@ -41,7 +41,7 @@ def _b64url(raw: bytes) -> str:
 
 
 def hookplaybook_token(secret: str, sub: str, access: str, ttl: int = 3600, now: int | None = None) -> str:
-    """A token made the way HookPlaybook's signAssistantToken makes it (shared/core/src/assistant-token.ts)."""
+    """A token made the way HookPlaybook makes it."""
     now = int(time.time()) if now is None else now
     compact = lambda o: json.dumps(o, separators=(",", ":")).encode()  # JSON.stringify's compact form
     header = _b64url(compact({"alg": "HS256", "typ": "JWT"}))
@@ -130,7 +130,7 @@ def test_hookplaybooks_delete_token_verifies(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_context_reads_hookplaybooks_kept_facts():
-    # assistant_context's answer, as HookPlaybook gives it (shared/core/src/assistant.ts).
+    # assistant_context's answer, as HookPlaybook gives it.
     answer = {
         "voice": "Plain and direct.",
         "topics": ["indie hacking"],
@@ -227,7 +227,7 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
     config = {"configurable": {"thread_id": thread_id("hookplaybook", "ws_hp", gone)}}
     assert await hp.checkpointer.aget_tuple(config) is not None
 
-    # As HookPlaybook's forgetAssistantData calls it (app/lib/assistant.ts): a delete token living 300 s, no Origin.
+    # As HookPlaybook calls it when a workspace is deleted: a delete token living 300 s, no Origin.
     token = hookplaybook_token(SECRET, "ws_hp", "delete", ttl=300)
     r = await hp.client.delete("/v1/apps/hookplaybook/workspaces/ws_hp", headers={"authorization": f"Bearer {token}"})
     assert (r.status_code, r.json()) == (200, {"deleted_threads": 1})

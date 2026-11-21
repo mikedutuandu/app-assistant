@@ -1,6 +1,6 @@
-# Conversation tests from real chats (spec: docs/superpowers/specs/2026-11-20-one-assistant-design.md,
-# "Conversation tests"). They start with what Mike saw on 20 Nov 2026: "hi" asked the same question twice, "my name
-# mike" became two posts, and drafts came with lists of check reasons.
+# Conversation tests from real chats (README, "Conversation tests"). They start with what the first tester ("Mike",
+# the persona below) saw on 20 Nov 2026: "hi" asked the same question twice, "my name mike" became two posts, and
+# drafts came with lists of check reasons.
 #
 # Each case is one chat in the HookPlaybook pack, run through `run_turn` with FakeTools and the context below.
 #

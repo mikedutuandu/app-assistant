@@ -2,7 +2,9 @@
 name = "app-assistant"
 version = "0.1.0"
 description = "A chat bot any web app adds with one script tag (FastAPI + LangGraph)."
-authors = [{ name = "Mike Du", email = "mikedutuandu@gmail.com" }]
+authors = [{ name = "Mike Du" }]
+license = "MIT"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.44.7",
@@ -25,6 +27,10 @@ dependencies = [
     "sse-starlette>=3.7.0",
     "uvicorn[standard]>=0.54.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mikedutuandu/app-assistant"
+Issues = "https://github.com/mikedutuandu/app-assistant/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.32,<0.12.0"]
