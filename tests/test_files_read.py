@@ -173,6 +173,24 @@ async def test_text_pdf_no_model_call(pool, storage, put, meter):
 
 @pytest.mark.db
 @respx.mock
+async def test_a_pdf_whose_text_has_nul_characters_is_read_and_kept(pool, storage, put, meter, monkeypatch):
+    """Some PDFs extract with NUL characters, which Postgres refuses in the reading's JSON (HookPlaybook, 21 Nov 2026:
+    a PDF failed the turn with UntranslatableCharacter). They are dropped: the reading is stored and read back."""
+    import pypdf
+
+    monkeypatch.setattr(
+        pypdf.PageObject, "extract_text", lambda self, *a, **k: "signups\x00 rose 42\x00 percent. " * 20
+    )
+    rec = await put("pdf", "application/pdf", (FIX / "text.pdf").read_bytes())
+    got = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)
+    assert "\x00" not in got.text
+    assert "signups rose 42 percent" in got.text
+    again = await read_file(rec, _pack(), Llm("k"), storage, pool, meter)  # from the stored row this time
+    assert again.text == got.text
+
+
+@pytest.mark.db
+@respx.mock
 async def test_long_pdf_text_is_cut(pool, storage, put, meter, monkeypatch):
     import assistant.files.read as read_mod
 
