@@ -82,7 +82,7 @@ def test_draft_picture_and_draft_time():
 def test_a_case_may_change_the_context():
     suite = load_suite()
     timed = next(c for c in suite.cases if c.name == "best_time_to_post")
-    assert [t.label for t in context_for(suite, timed).post_times][0] == "Tue 9:30 AM"
+    assert context_for(suite, timed).post_times[0].label == "Tue 9:30 AM"
     assert context_for(suite, timed).name == suite.context.name == "Mike"
     assert context_for(suite, suite.cases[0]).post_times == []
 
