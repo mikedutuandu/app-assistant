@@ -1,6 +1,6 @@
 {
   "case": "my_name_mike",
-  "recorded_at": "2026-11-21T05:57:12+00:00",
+  "recorded_at": "2026-11-21T14:38:45+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -35,35 +35,39 @@
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.00829
+      "cost_usd": 0.00849,
+      "confirms": [],
+      "reads": []
     },
     {
       "user": "my name mike",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Nice to meet you, Mike. Glad you're here.",
+      "reply": "Nice to meet you, Mike. Good to have you here.",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.008394
+      "cost_usd": 0.008594,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The last reply says \"Nice to meet you, Mike. Glad you're here.\", which is warm and uses the name.",
+      "why": "The last reply says \"Nice to meet you, Mike. Good to have you here.\", which is warm and uses the name.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply only says \"Nice to meet you, Mike. Glad you're here.\" and never calls the name news or a story or suggests posting about it.",
+      "why": "The reply only greets Mike and never calls the name news or a story or suggests posting about it.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither reply contains a post, and no drafts appear under either turn: only \"Hi Mike! What are you working on these days?\" and \"Nice to meet you, Mike.\"",
+      "why": "Neither reply contains a post, and no drafts are shown in either turn.",
       "holds": true
     }
   ],
@@ -80,8 +84,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "634d376787d62b03",
         "messages": [
           {
@@ -93,7 +97,7 @@
       "response": {
         "text": "Hi Mike! What are you working on these days?",
         "calls": [],
-        "cost_usd": 0.00829,
+        "cost_usd": 0.00849,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -109,8 +113,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "aec91c213e907a76",
         "messages": [
           {
@@ -128,9 +132,9 @@
         ]
       },
       "response": {
-        "text": "Nice to meet you, Mike. Glad you're here.",
+        "text": "Nice to meet you, Mike. Good to have you here.",
         "calls": [],
-        "cost_usd": 0.008394,
+        "cost_usd": 0.008594,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

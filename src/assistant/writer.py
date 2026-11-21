@@ -14,7 +14,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from assistant.checks import Fact, nfc, repeats, rule_problems, unsupported_numbers
 from assistant.db import new_id
@@ -72,10 +72,19 @@ class Draft(BaseModel):
     id: str
     kind: str  # the WriteSpec's kind
     posts: list[str]  # its parts in order: one item for a kind of one piece
-    image_file_id: str | None = None  # a picture the user shared, chosen by the conversation model
+    image_file_id: str | None = None  # its first picture (kept for drafts and readers from before several)
+    image_file_ids: list[str] = []  # the pictures the user shared, in order, chosen by the conversation model
     fact_ids: list[str] = []
     language: str | None = None  # the language it was written in (None: from before drafts kept one)
     post_at: str | None = None  # when to post it: one of the app's free times (`AppContext.post_times`)
+
+    @model_validator(mode="after")
+    def _pictures_in_step(self) -> "Draft":
+        """`image_file_ids` is the list; `image_file_id` its first. A draft kept from before has the one only."""
+        if not self.image_file_ids and self.image_file_id:
+            self.image_file_ids = [self.image_file_id]
+        self.image_file_id = self.image_file_ids[0] if self.image_file_ids else None
+        return self
 
 
 class DraftResult(BaseModel):
@@ -157,7 +166,7 @@ def post_problems(
 
 
 def image_allowed(image_file_id: str, spec: WriteSpec, readings: list[FileReading]) -> bool:
-    """A draft may carry a picture if its kind allows one and the user shared that image in this chat."""
+    """A draft may carry a picture if its kind allows pictures and the user shared that image in this chat."""
     return spec.may_carry_image and any(r.file_id == image_file_id and r.kind == "image" for r in readings)
 
 
@@ -181,10 +190,15 @@ DIFFERENT_OPENINGS = "Each draft must open with a different first line and lead 
 
 
 async def write_drafts(
-    w: WriterDeps, brief: str, kind: str, count: int, language: str | None = None, image_file_id: str | None = None
+    w: WriterDeps,
+    brief: str,
+    kind: str,
+    count: int,
+    language: str | None = None,
+    image_file_ids: list[str] | None = None,
 ) -> DraftResult:
     """Writes `count` (1 to 3) checked drafts of `kind` about `brief` from the user's facts, in `language` (the
-    conversation's, as the conversation model named it), else the app's. Each carries `image_file_id` (checked by the
+    conversation's, as the conversation model named it), else the app's. Each carries `image_file_ids` (checked by the
     caller with `image_allowed`); the writer never picks a picture."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
@@ -198,15 +212,19 @@ async def write_drafts(
     )
     if count > 1:  # several drafts are options for the user (one draft's ask stays as it was)
         ask += f"\n{DIFFERENT_OPENINGS}"
-    run = _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts), image=image_file_id)
+    run = _Run(w, spec, w.recent, clean_language(language), mine=list(w.drafts), images=list(image_file_ids or []))
     return await run.draft(ask, count)
 
 
 async def revise_draft(
-    w: WriterDeps, draft: Draft, instruction: str, language: str | None = None, image_file_id: str | None = None
+    w: WriterDeps,
+    draft: Draft,
+    instruction: str,
+    language: str | None = None,
+    image_file_ids: list[str] | None = None,
 ) -> DraftResult:
     """One new checked draft: `draft` changed as `instruction` asks ("shorter", "another angle", ...), in `language`
-    as for `write_drafts`. It keeps the draft's picture and time; `image_file_id` gives it a picture instead."""
+    as for `write_drafts`. It keeps the draft's pictures and time; `image_file_ids` gives it these pictures instead."""
     if not w.facts:
         return DraftResult(drafts=[], note=NO_FACTS)
     spec = _spec(w.pack, draft.kind)
@@ -222,8 +240,8 @@ async def revise_draft(
     own = {_key(p) for p in draft.posts}
     recent = [r for r in w.recent if _key(r) not in own]
     mine = [r for r in w.drafts if _key(r) not in own]
-    image = image_file_id or draft.image_file_id
-    run = _Run(w, spec, recent, clean_language(language), before=draft.posts, mine=mine, image=image)
+    images = list(image_file_ids or draft.image_file_ids)
+    run = _Run(w, spec, recent, clean_language(language), before=draft.posts, mine=mine, images=images)
     result = await run.draft(ask, 1)
     result.drafts = [d.model_copy(update={"post_at": draft.post_at}) for d in result.drafts]
     return result
@@ -287,7 +305,7 @@ class _Run:
     language: str | None = None  # the conversation's language; None: the app's
     before: list[str] | None = None  # a revision's draft: the new version must differ from it
     mine: list[str] = field(default_factory=list)  # posts of drafts this chat already showed
-    image: str | None = None  # the picture every draft carries
+    images: list[str] = field(default_factory=list)  # the pictures every draft carries, in order
     cost: float = 0.0
     labels: dict[str, str] = field(default_factory=dict)
 
@@ -384,7 +402,7 @@ class _Run:
             id=id or new_id(),
             kind=self.spec.kind,
             posts=posts,
-            image_file_id=self.image,
+            image_file_ids=list(self.images),
             fact_ids=fact_ids,
             language=self.written_in,
         )

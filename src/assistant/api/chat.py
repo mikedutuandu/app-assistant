@@ -20,6 +20,7 @@ from assistant.auth import AuthError, Session, verify_delete_token
 from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import PENDING, UploadError, UploadNotFound, check_claim, finish_upload, start_upload
+from assistant.graph.agent import FILE_REF
 from assistant.graph.build import build_graph
 from assistant.graph.build import thread_id as graph_thread_id
 from assistant.limits import hit
@@ -277,7 +278,7 @@ returning 1
 @dataclass
 class _Stored:
     posts: list[str]
-    image_file_id: str | None
+    image_file_ids: list[str]  # in order; a draft stored before several has its one
     facts: list[Fact]
     post_times: list[str]  # the `at` of each free time the draft was shown with
 
@@ -285,7 +286,7 @@ class _Stored:
 async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> _Stored:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "select posts, text, image_file_id, facts, post_times from pieces where id = %s and app = %s"
+            "select posts, text, image_file_id, facts, post_times, image_file_ids from pieces where id = %s and app = %s"
             " and workspace = %s and thread_id = %s",
             (draft_id, session.app, session.workspace, chat_id),
         )
@@ -294,7 +295,7 @@ async def _draft(pool, session: Session, chat_id: str, draft_id: str) -> _Stored
         raise ApiError(404, "draft")
     return _Stored(
         posts=row[0] if row[0] else [row[1]],
-        image_file_id=row[2],
+        image_file_ids=list(row[5]) if row[5] else ([row[2]] if row[2] else []),
         facts=[Fact.model_validate(f) for f in row[3]],
         post_times=[t["at"] for t in row[4] or []],
     )
@@ -316,6 +317,29 @@ async def _image_url(state, session: Session, chat_id: str, file_id: str) -> lis
     return [{"url": await asyncio.to_thread(state.storage.signed_url, row[0], 300), "alt": "", "mime": row[1]}]
 
 
+class _FileGone(ToolError):
+    def __init__(self) -> None:
+        super().__init__("refused", "A file you sent for this isn't in the chat any more. Send it again and ask again.")
+
+
+async def _with_file_links(state, session: Session, chat_id: str, value):
+    """A change's arguments with each `file:<id>` the user sent in this chat as a link that lives 5 minutes: the app
+    fetches it when the change runs. A file no longer here fails the change, in words the user can act on."""
+    if isinstance(value, str):
+        m = FILE_REF.match(value.strip())
+        if not m:
+            return value
+        found = await _image_url(state, session, chat_id, m.group(1))
+        if not found:
+            raise _FileGone()
+        return found[0]["url"]
+    if isinstance(value, dict):
+        return {k: await _with_file_links(state, session, chat_id, v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [await _with_file_links(state, session, chat_id, v) for v in value]
+    return value
+
+
 @router.post("/threads/{thread_id}/actions")
 async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> dict:
     """A tap on the draft's save button: runs once per action_id; a repeat gets the same result."""
@@ -327,7 +351,7 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     if isinstance(body, ConfirmIn):
         return await _confirm(state, pack, session, thread_id, body)
     stored = await _draft(state.pool, session, thread_id, body.draft_id)
-    posts, image_file_id, facts = stored.posts, stored.image_file_id, stored.facts
+    posts, image_file_ids, facts = stored.posts, stored.image_file_ids, stored.facts
     if body.schedule_at is not None and body.schedule_at not in stored.post_times:
         raise ApiError(400, "invalid", "That time isn't one of this draft's free times.")
 
@@ -347,7 +371,7 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
 
     tools = state.tools_for(pack, session)
     try:
-        media = await _image_url(state, session, thread_id, image_file_id) if image_file_id else []
+        media = [m for file_id in image_file_ids for m in await _image_url(state, session, thread_id, file_id)]
         draft = await tools.save_draft(posts[0], posts[1:], media, key=body.action_id, schedule_at=body.schedule_at)
         if facts:
             await tools.save_material(facts, draft.id, key=body.action_id + ":facts")
@@ -426,6 +450,7 @@ async def _confirm(state, pack, session: Session, thread_id: str, body: ConfirmI
             raise ApiError(409, "pending", "Still working on that. Try again in a moment.")
     key = f"confirm:{body.pending_id}"
     try:
+        arguments = await _with_file_links(state, session, thread_id, arguments)
         done = await actions.call(tool, arguments, key=key)
         outcome, text = ("failed" if done.is_error else "done"), done.text
     except ToolError as e:
@@ -494,7 +519,7 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
     async with state.pool.connection() as conn:
         cur = await conn.execute(
             "select id, message_id, spec_kind, posts, text, image_file_id, added_draft_id, edit_url, post_at,"
-            " post_times, scheduled_at from pieces where app = %s and workspace = %s and thread_id = %s order by created_at, id",
+            " post_times, scheduled_at, image_file_ids from pieces where app = %s and workspace = %s and thread_id = %s order by created_at, id",
             (session.app, session.workspace, thread_id),
         )
         draft_rows = await cur.fetchall()
@@ -589,8 +614,10 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
 def _draft_out(r) -> dict:
     posts = r[3] if r[3] else [r[4]]
     draft: dict = {"id": r[0], "kind": r[2], "posts": posts, "added": r[6] is not None, "edit_url": r[7]}
-    if r[5] is not None:
-        draft["image_file_id"] = r[5]
+    images = list(r[11]) if r[11] else ([r[5]] if r[5] is not None else [])
+    if images:
+        draft["image_file_ids"] = images
+        draft["image_file_id"] = images[0]
     if r[9]:  # the app's free times it was shown with, and the one picked
         draft["post_times"] = r[9]
         if r[8] is not None:

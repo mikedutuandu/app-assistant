@@ -519,6 +519,32 @@ describe("a message's files", () => {
     expect(mine.textContent).toContain("look");
   });
 
+  // Mike, 21 Nov 2026: "the bot can't make a tweet with multiple images". A draft shows each of its pictures, in order.
+  it("a draft with several pictures shows each, in order", async () => {
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: (f: File) => `blob:${f.name}` }));
+    const upload = vi
+      .fn()
+      .mockResolvedValueOnce({ file_id: "i1", kind: "image", thread_id: "t1" })
+      .mockResolvedValueOnce({ file_id: "i2", kind: "image", thread_id: "t1" });
+    const withPictures = { ...draft, image_file_id: "i2", image_file_ids: ["i2", "i1"] };
+    const events = [
+      { event: "thread", data: { thread_id: "t1", title: "" } },
+      { event: "draft", data: withPictures },
+    ] as BotEvent[];
+    const { $, $$, say, flush } = setup({ upload } as any, events);
+    const input = $("input[type=file]") as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["x"], "one.png", { type: "image/png" }), new File(["x"], "two.png", { type: "image/png" })],
+    });
+    input.dispatchEvent(new Event("change"));
+    await flush();
+    await flush();
+    await say("post it with both");
+    const shown = Array.from($$(".draft")[0].querySelectorAll("img")).map((i) => i.getAttribute("src"));
+    expect(shown).toEqual(["blob:two.png", "blob:one.png"]);
+  });
+
   it("after a reload, each message's files come back through the bot's short links", async () => {
     sessionStorage.setItem("assistant:thread:demo", "t1");
     const thread = vi.fn(async () => ({

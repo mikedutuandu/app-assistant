@@ -14,8 +14,9 @@ drafts and the reply's text.
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import ValidationError
@@ -243,13 +244,22 @@ class AgentTurn:
             return answer
         if self.asked:
             return "error: one change at a time; the user hasn't answered the card already shown. Nothing was done"
+        shared = {r.file_id: r for r in self.state.get("readings", []) if r.kind != "link"}
+        unknown = [f for f in file_refs(arguments) if f not in shared]
+        if unknown:
+            return (
+                f"error: {unknown[0][:64]!r} isn't a file the user sent in this chat, so nothing was asked. Use the "
+                "file_id of one they sent here, or ask them to send it"
+            )
         if turn.deps.on_pending is None:
             return "error: changes can't be confirmed here; nothing was done"
         change = {"tool": tool.name, "title": tool.title, "arguments": arguments}
         pending_id = await turn.deps.on_pending(change)
         self.asked = True
+        names = {f: (shared[f].kind, getattr(shared[f], "name", None)) for f in file_refs(arguments)}
         await self.reply.emit(
-            "confirm", {"id": pending_id, "tool": tool.name, "title": tool.title, "lines": confirm_lines(arguments)}
+            "confirm",
+            {"id": pending_id, "tool": tool.name, "title": tool.title, "lines": confirm_lines(arguments, names)},
         )
         return (
             "waiting for the user's OK on a card under your reply: nothing has changed yet. Say in one short sentence "
@@ -357,39 +367,47 @@ class AgentTurn:
         kinds = [w.kind for w in turn.pack.writes]
         if args.kind not in kinds:  # the app's own kinds only (tool_specs lists them)
             return f"error: invalid arguments (kind: must be one of {', '.join(kinds)}); nothing was done"
-        image, notes = self._picture(args.image_file_id, args.kind, turn)
+        images, notes = self._pictures(list(args.image_file_ids), args.kind, turn)
         post_at = args.post_at
         if post_at is not None and post_at not in {t.at for t in self._post_times()}:
             notes.append("post_at is not one of the app's free times, so the drafts have no time")
             post_at = None
         turn.gate()
         writer = self._writer(turn, args.kind, set())
-        result = await write_drafts(writer, args.brief, args.kind, args.count, args.language, image)
+        result = await write_drafts(writer, args.brief, args.kind, args.count, args.language, images)
         result.drafts = [d.model_copy(update={"post_at": post_at}) for d in result.drafts]
         return await self._shown(result, root=None, notes=notes)
 
     def _post_times(self):
         return self.context.post_times if self.context else []
 
-    def _picture(self, file_id: str | None, kind: str, turn: Turn) -> tuple[str | None, list[str]]:
-        """The picture a draft of `kind` may carry, and what to tell the model when it can't carry the one asked."""
-        if file_id is None:
-            return None, []
+    def _pictures(self, file_ids: list[str], kind: str, turn: Turn) -> tuple[list[str], list[str]]:
+        """The pictures a draft of `kind` may carry, in order, and what to tell the model about the ones it can't."""
+        asked = list(dict.fromkeys(f for f in file_ids if f))
+        if not asked:
+            return [], []
         spec = next(w for w in turn.pack.writes if w.kind == kind)
         if not spec.may_carry_image:
-            return None, [f"{kind} can't carry a picture, so it has none"]
-        if not image_allowed(file_id, spec, self.state.get("readings", [])):
-            return None, [
-                f"image_file_id {file_id[:64]!r} is not an image the user shared in this chat, so it isn't attached"
-            ]
-        return file_id, []
+            return [], [f"{kind} can't carry a picture, so it has none"]
+        readings = self.state.get("readings", [])
+        kept, notes = [], []
+        for file_id in asked:
+            if image_allowed(file_id, spec, readings):
+                kept.append(file_id)
+            else:
+                notes.append(f"{file_id[:64]!r} is not an image the user shared in this chat, so it isn't attached")
+        most = spec.max_images or 1
+        if len(kept) > most:
+            notes.append(f"{kind} carries at most {most} pictures, so only the first {most} are on it")
+            kept = kept[:most]
+        return kept, notes
 
     async def _revise(self, args: ReviseDraftArgs, turn: Turn) -> str:
         draft = next((d for d in self.drafts if d.id == args.draft_id), None)
         if draft is None:
             ids = ", ".join(d.id for d in self.drafts[-MAX_DRAFTS_SHOWN:]) or "none"
             return f"error: there is no draft {args.draft_id[:64]!r} in this chat; its drafts: {ids}"
-        image, notes = self._picture(args.image_file_id, draft.kind, turn) if args.image_file_id else (None, [])
+        images, notes = self._pictures(list(args.image_file_ids), draft.kind, turn) if args.image_file_ids else ([], [])
         turn.gate()
         # Earlier versions of the same draft aren't repeats of it: "shorter" twice must not drop the second version.
         root = self.family.get(draft.id, draft.id)
@@ -397,7 +415,9 @@ class AgentTurn:
         # A tap on the draft's own buttons sends the app's (English) words: the new version keeps the draft's language.
         tapped = self.about() is not None and self.about().id == draft.id
         language = draft.language if tapped and draft.language else (args.language or draft.language)
-        result = await revise_draft(self._writer(turn, draft.kind, line), draft, args.instruction, language, image)
+        result = await revise_draft(
+            self._writer(turn, draft.kind, line), draft, args.instruction, language, images or None
+        )
         return await self._shown(result, root=root, notes=notes)
 
     async def _shown(self, result: DraftResult, root: str | None, notes: list[str] | None = None) -> str:
@@ -412,8 +432,9 @@ class AgentTurn:
             if root is not None:
                 self.family[d.id] = root
             payload: dict = {"id": d.id, "kind": d.kind, "posts": d.posts}
-            if d.image_file_id is not None:
-                payload["image_file_id"] = d.image_file_id
+            if d.image_file_ids:
+                payload["image_file_ids"] = list(d.image_file_ids)
+                payload["image_file_id"] = d.image_file_ids[0]  # a widget from before several shows the first
             times = self._post_times()
             if times:  # the app can schedule: the card offers its free times, the model's pick first
                 if d.post_at is not None:
@@ -485,10 +506,52 @@ def carry(results: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return list(reversed(kept))
 
 
-def confirm_lines(arguments: dict) -> list[str]:
-    """A change's arguments as the user reads them on its card: "label: value", values shortened."""
+# A file the user sent, named in a change's arguments: `file:<file_id>`. The app gets a short-lived link to it when the
+# user taps Confirm (api/chat.py `_confirm`); the card says what it is.
+FILE_REF = re.compile(r"^file:([A-Za-z0-9_-]{1,100})$")
+
+
+def file_refs(value: Any) -> list[str]:
+    """The file ids named as `file:<id>` anywhere in a change's arguments, in order, each once."""
+    found: list[str] = []
+    if isinstance(value, str):
+        m = FILE_REF.match(value.strip())
+        if m:
+            found.append(m.group(1))
+    elif isinstance(value, dict):
+        for v in value.values():
+            found += file_refs(v)
+    elif isinstance(value, list):
+        for v in value:
+            found += file_refs(v)
+    return list(dict.fromkeys(found))
+
+
+def _named_files(value: Any, names: dict[str, tuple[str, str | None]]) -> Any:
+    """`value` with each `file:<id>` said in words: "the picture you sent", with its name when it has one."""
+    if isinstance(value, str):
+        m = FILE_REF.match(value.strip())
+        if not m:
+            return value
+        kind, name = names.get(m.group(1), ("file", None))
+        what = "the picture you sent" if kind == "image" else "the file you sent"
+        return f"{what} ({name})" if name else what
+    if isinstance(value, dict):
+        return {k: _named_files(v, names) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_named_files(v, names) for v in value]
+    return value
+
+
+def confirm_lines(arguments: dict, files: dict[str, tuple[str, str | None]] | None = None) -> list[str]:
+    """A change's arguments as the user reads them on its card: "label: value", values shortened, a file the user
+    sent said in words."""
     lines = []
-    for key, value in list(arguments.items())[:12]:
+    for key, value in list(_named_files(arguments, files or {}).items())[:12]:
+        if isinstance(value, list) and all(isinstance(v, dict) and len(v) == 1 for v in value):
+            value = [next(iter(v.values())) for v in value]  # [{"url": "the picture you sent"}] reads as its value
+        if isinstance(value, list) and all(isinstance(v, str) for v in value):
+            value = ", ".join(value)
         shown = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         shown = " ".join(shown.split())
         if len(shown) > 160:

@@ -5,7 +5,8 @@ export interface Draft {
   id: string;
   kind: string; // one of the app's kinds of writing (its pack's `writes`), e.g. "changelog_entry" or "x_thread"
   posts: string[];
-  image_file_id?: string | null;
+  image_file_id?: string | null; // the first picture (the only one, from a bot before several)
+  image_file_ids?: string[]; // its pictures, in order
   /** When the app can schedule: its next free times (labelled in the user's time zone), and the bot's pick. */
   post_times?: { at: string; label: string }[];
   post_at?: string | null;

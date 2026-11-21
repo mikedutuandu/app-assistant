@@ -101,6 +101,8 @@ header h2 { margin: 0; flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
 .draft ol.posts { margin: 0 0 10px; padding-left: 22px; }
 .draft ol.posts .post { margin: 0 0 8px; padding-left: 2px; }
 .draft img { display: block; max-width: 100%; max-height: 220px; border-radius: 10px; margin-bottom: 10px; }
+.draft .pics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.draft .pics img { width: 100%; height: 120px; object-fit: cover; margin: 0; }
 .draft .when { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 14px; color: var(--muted); }
 .draft .when select { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; background: var(--bg); }
 .draft .note { font-size: 13px; color: var(--muted); margin-top: 8px; }

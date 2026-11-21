@@ -1,6 +1,6 @@
 {
   "case": "best_time_to_post",
-  "recorded_at": "2026-11-21T05:59:38+00:00",
+  "recorded_at": "2026-11-21T14:41:12+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,7 +27,7 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Your draft's ready, Mike, and you can schedule it for Tue 9:30 AM, one of your best hours. Do you have a number or a result from using it yet?",
+      "reply": "Here's a draft, Mike. Tue 9:30 AM is one of your best hours, so you can schedule it for then. Want to add a detail, like why you built it?",
       "drafts": [
         {
           "id": "24C6E724000007",
@@ -39,33 +39,35 @@
         }
       ],
       "saved": [
-        "Shipped a reply inbox in HookPlaybook today.",
-        "It shows all your replies on X in one list, sorted by who matters most."
+        "Mike shipped a reply inbox in HookPlaybook today.",
+        "The reply inbox shows all your replies on X in one list, sorted by who matters most."
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0261483
+      "cost_usd": 0.026688000000000003,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply says \"schedule it for Tue 9:30 AM, one of your best hours\", which is a free time from the app, and the reason given is the app's own label.",
+      "why": "The reply says \"Tue 9:30 AM is one of your best hours\", which is a listed free time and uses the app's own reason.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply only says \"you can schedule it for Tue 9:30 AM\", offering the option and never claiming it is scheduled or will go out.",
+      "why": "It only says \"you can schedule it for then\", which offers scheduling and does not claim the post is scheduled or will go out.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The draft card shows a Schedule button set to Tue 9:30 AM, which matches the time the reply suggests.",
+      "why": "The reply suggests Tue 9:30 AM and the card has a \"Schedule button set to Tue 9:30 AM\".",
       "holds": true
     },
     {
       "note": 4,
-      "why": "The reply text (\"Your draft's ready... Do you have a number or a result...\") does not quote or restate the draft's wording about the reply inbox.",
+      "why": "The reply text (\"Here's a draft, Mike... Want to add a detail, like why you built it?\") does not repeat the draft's wording.",
       "holds": true
     }
   ],
@@ -82,8 +84,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "7e3a60d16e3a3a0e",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af15c6e834f4cd41",
         "messages_sha256": "def65d487b8845cf",
         "messages": [
           {
@@ -96,25 +98,25 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01RVpyNZ7FvWtegqDemyZEdX",
+            "id": "toolu_01259dY2yxw4UUqTnZMiL9hj",
             "name": "save_facts",
             "arguments": {
               "facts": [
                 {
-                  "text": "Shipped a reply inbox in HookPlaybook today."
+                  "text": "Mike shipped a reply inbox in HookPlaybook today."
                 },
                 {
-                  "text": "It shows all your replies on X in one list, sorted by who matters most."
+                  "text": "The reply inbox shows all your replies on X in one list, sorted by who matters most."
                 }
               ]
             },
             "bad_arguments": null
           },
           {
-            "id": "toolu_016Ue1jMW9mswqypbwiZwqK8",
+            "id": "toolu_01K12TXw396uZqTSyvJUc5V2",
             "name": "write_drafts",
             "arguments": {
-              "brief": "Shipped a reply inbox in HookPlaybook today: all your replies on X in one list, sorted by who matters most.",
+              "brief": "Mike shipped a reply inbox in HookPlaybook today: all your X replies in one list, sorted by who matters most.",
               "kind": "x_post",
               "language": "en",
               "post_at": "2026-11-24T02:30:00Z"
@@ -122,7 +124,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.011164,
+        "cost_usd": 0.011444,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -136,11 +138,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "ccabe93b84514988",
         "system_sha256": "ae68d4ff7b1a77b6",
-        "messages_sha256": "7d54b37464dca387",
+        "messages_sha256": "e300f97fefbc67ac",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">It shows all your replies on X in one list, sorted by who matters most.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Shipped a reply inbox in HookPlaybook today: all your replies on X in one list, sorted by who matters most.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Mike shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">The reply inbox shows all your replies on X in one list, sorted by who matters most.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Mike shipped a reply inbox in HookPlaybook today: all your X replies in one list, sorted by who matters most.</data>"
           }
         ]
       },
@@ -158,7 +160,7 @@
             }
           ]
         },
-        "cost_usd": 0.00454
+        "cost_usd": 0.004556
       }
     },
     {
@@ -171,11 +173,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "e4f056b9dc77ee26",
+        "messages_sha256": "88aa577683536639",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">It shows all your replies on X in one list, sorted by who matters most.</data>\n\nThe piece to check:\n<data source=\"draft\">Shipped a reply inbox in HookPlaybook today. All your replies on X in one list, sorted by who matters most.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Mike shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">The reply inbox shows all your replies on X in one list, sorted by who matters most.</data>\n\nThe piece to check:\n<data source=\"draft\">Shipped a reply inbox in HookPlaybook today. All your replies on X in one list, sorted by who matters most.</data>"
           }
         ]
       },
@@ -183,7 +185,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 6.03e-05
+        "cost_usd": 7.4e-05
       }
     },
     {
@@ -198,9 +200,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "8d39bbf9828a5422",
-        "messages_sha256": "a1b485a5b1c6ba60",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "51a30584f540fca3",
+        "messages_sha256": "a48808045ad3922e",
         "messages": [
           {
             "role": "user",
@@ -225,9 +227,9 @@
         ]
       },
       "response": {
-        "text": "Your draft's ready, Mike, and you can schedule it for Tue 9:30 AM, one of your best hours. Do you have a number or a result from using it yet?",
+        "text": "Here's a draft, Mike. Tue 9:30 AM is one of your best hours, so you can schedule it for then. Want to add a detail, like why you built it?",
         "calls": [],
-        "cost_usd": 0.010384,
+        "cost_usd": 0.010614,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

@@ -1,6 +1,6 @@
 {
   "case": "app_change_waits_for_ok",
-  "recorded_at": "2026-11-21T06:39:30+00:00",
+  "recorded_at": "2026-11-21T14:42:14+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,12 +27,12 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Once you tap OK, your \"week 7 of building in public\" post will move from Tue 9:30 AM to Friday 9am.",
+      "reply": "Once you tap Confirm, your \"week 7 of building in public\" post will move from Tue 9:30 AM to Friday 9am.",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.029674,
+      "cost_usd": 0.030827999999999998,
       "confirms": [
         {
           "title": "Move a post",
@@ -50,12 +50,12 @@
   "verdicts": [
     {
       "note": 1,
-      "why": "The last turn shows a single change card, 'Move a post: Id: p1; When: Friday 9am', with Confirm and Cancel buttons.",
+      "why": "The last turn shows a change card 'Move a post: Id: p1; When: Friday 9am' with Confirm and Cancel buttons, nothing done yet.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply says 'Once you tap OK, your ... post will move', which is conditional on confirmation and never claims the move is already done.",
+      "why": "The reply says 'Once you tap Confirm, your ... post will move', which frames the move as pending and never claims it is already done.",
       "holds": true
     }
   ],
@@ -74,8 +74,8 @@
           "list_posts",
           "move_post"
         ],
-        "tools_sha256": "548afa7e98295b34",
-        "system_sha256": "ff9b529b658c37a9",
+        "tools_sha256": "ee66cc1669dc77d9",
+        "system_sha256": "4ab3bd221c0082ee",
         "messages_sha256": "35d90da6ddface7a",
         "messages": [
           {
@@ -88,13 +88,13 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01UjYWKydE9ewRWvfn4pE6Rd",
+            "id": "toolu_016fYFkSWymf2kK18GCQsaN4",
             "name": "list_posts",
             "arguments": {},
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.009444,
+        "cost_usd": 0.009822,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -112,9 +112,9 @@
           "list_posts",
           "move_post"
         ],
-        "tools_sha256": "548afa7e98295b34",
-        "system_sha256": "ff9b529b658c37a9",
-        "messages_sha256": "82ac9255219accf6",
+        "tools_sha256": "ee66cc1669dc77d9",
+        "system_sha256": "4ab3bd221c0082ee",
+        "messages_sha256": "74dd9084cdb04e7e",
         "messages": [
           {
             "role": "user",
@@ -137,7 +137,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_013fTo6BaH6Ka3PhwDY7uqK8",
+            "id": "toolu_01KjJswzeEmurMDGxugjNB4t",
             "name": "move_post",
             "arguments": {
               "id": "p1",
@@ -146,7 +146,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.010138,
+        "cost_usd": 0.010516,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -164,9 +164,9 @@
           "list_posts",
           "move_post"
         ],
-        "tools_sha256": "548afa7e98295b34",
-        "system_sha256": "ff9b529b658c37a9",
-        "messages_sha256": "31539ca424781701",
+        "tools_sha256": "ee66cc1669dc77d9",
+        "system_sha256": "4ab3bd221c0082ee",
+        "messages_sha256": "890c70a4e572cfda",
         "messages": [
           {
             "role": "user",
@@ -197,9 +197,9 @@
         ]
       },
       "response": {
-        "text": "Once you tap OK, your \"week 7 of building in public\" post will move from Tue 9:30 AM to Friday 9am.",
+        "text": "Once you tap Confirm, your \"week 7 of building in public\" post will move from Tue 9:30 AM to Friday 9am.",
         "calls": [],
-        "cost_usd": 0.010092,
+        "cost_usd": 0.01049,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

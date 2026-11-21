@@ -35,8 +35,8 @@ def draft_block(d: Draft, new: bool = False) -> str:
     else:
         text = "\n\n".join(f"({i}/{len(d.posts)}) {p}" for i, p in enumerate(d.posts, 1))
     extra = {}
-    if d.image_file_id is not None:
-        extra["picture"] = d.image_file_id
+    if d.image_file_ids:
+        extra["pictures"] = ", ".join(d.image_file_ids)
     if d.post_at is not None:
         extra["post_at"] = d.post_at
     if new:  # written in this message: never an earlier draft (review N3)

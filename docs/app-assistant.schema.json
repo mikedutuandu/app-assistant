@@ -263,6 +263,20 @@
           "title": "May Carry Image",
           "type": "boolean"
         },
+        "max_images": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Images"
+        },
         "instructions": {
           "title": "Instructions",
           "type": "string"

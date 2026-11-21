@@ -58,11 +58,13 @@ _TOOL_SPECS: list[dict] = [
                             "in, never the language of a button's text."
                         ),
                     },
-                    "image_file_id": {
-                        "type": "string",
+                    "image_file_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 10,
                         "description": (
-                            "The file_id of an image the user shared, to go with the drafts: only when they asked "
-                            "for it or said yes when you asked."
+                            "The file_ids of images the user shared, in the order they go with the drafts (up to the "
+                            "kind's most): only when they asked for them or said yes when you asked."
                         ),
                     },
                     "post_at": {
@@ -94,11 +96,13 @@ _TOOL_SPECS: list[dict] = [
                             "in, never the language of a button's text."
                         ),
                     },
-                    "image_file_id": {
-                        "type": "string",
+                    "image_file_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 10,
                         "description": (
-                            "The file_id of an image the user shared, to go with it, when they ask to add one. "
-                            "Left out, the draft keeps its own picture."
+                            "The file_ids of images the user shared, in order, when they ask to add, change or "
+                            "reorder its pictures: the whole new list. Left out, the draft keeps its own pictures."
                         ),
                     },
                 },
@@ -165,6 +169,13 @@ _Language = Annotated[str | None, BeforeValidator(lambda v: clean_language(v) if
 
 # An optional id or time: anything but a non-empty string is left out (checked against the chat when the tool runs).
 _Optional = Annotated[str | None, BeforeValidator(lambda v: v.strip()[:100] or None if isinstance(v, str) else None)]
+# A list of ids (pictures): its non-empty strings, at most 10, each cut as an optional id is (checked when the tool runs).
+_Ids = Annotated[
+    list[str],
+    BeforeValidator(
+        lambda v: [x.strip()[:100] for x in v if isinstance(x, str) and x.strip()][:10] if isinstance(v, list) else []
+    ),
+]
 
 
 class WriteDraftsArgs(BaseModel):
@@ -172,7 +183,7 @@ class WriteDraftsArgs(BaseModel):
     kind: _Text  # one of the pack's kinds (the writer answers an unknown one with the kinds it can write)
     count: StrictInt = Field(1, ge=1, le=3)
     language: _Language = None
-    image_file_id: _Optional = None
+    image_file_ids: _Ids = []
     post_at: _Optional = None
 
 
@@ -180,7 +191,7 @@ class ReviseDraftArgs(BaseModel):
     draft_id: _Text
     instruction: Annotated[_Text, StringConstraints(max_length=500)]
     language: _Language = None
-    image_file_id: _Optional = None
+    image_file_ids: _Ids = []
 
 
 class FactArg(BaseModel):
