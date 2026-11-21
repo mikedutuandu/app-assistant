@@ -69,7 +69,9 @@ workspace), 404 `app` | `thread` | `draft` | `file` | `upload`, 400 for a bad bo
 
 **The easy way:** `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`
 (optional `data-label`, `data-position="left"`, and `data-schedule-label`: the word before a draft's time picker in
-your app's terms, such as `Post at` or `Send at`; default `Publish at`). It does everything below.
+your app's terms, such as `Post at` or `Send at`; default `Publish at`). It does everything below. Its look follows your
+CSS variables `--assistant-accent`, `--assistant-radius` and `--assistant-font`; `--assistant-bottom` lifts its open
+button above a bar of your own at the bottom of the screen (a phone's tab bar: `html { --assistant-bottom: 4.75rem }`).
 
 ### Send a message: `POST /v1/chat/{app}/messages`
 

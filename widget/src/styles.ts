@@ -1,4 +1,4 @@
-/** The widget's CSS, inside its shadow root. Themed by the host's --assistant-accent, --assistant-radius and --assistant-font. */
+/** The widget's CSS, inside its shadow root. Themed by the host's --assistant-accent, --assistant-radius and --assistant-font; --assistant-bottom lifts the open button above the host's own bottom bar. */
 export const CSS = `
 :host { all: initial; --a: var(--assistant-accent, #111); --r: var(--assistant-radius, 12px);
   --f: var(--assistant-font, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
@@ -8,7 +8,7 @@ button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .6; }
 :focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
-.launcher { position: fixed; bottom: 20px; z-index: 2147483000; display: inline-flex; align-items: center; gap: 8px;
+.launcher { position: fixed; bottom: calc(20px + var(--assistant-bottom, 0px)); transition: bottom 0.2s; z-index: 2147483000; display: inline-flex; align-items: center; gap: 8px;
   background: var(--a); color: #fff; border: 0; border-radius: 999px; padding: 12px 18px; font-size: 15px; font-weight: 600;
   box-shadow: 0 6px 24px rgba(0,0,0,.25); }
 .right .launcher, .right .panel { right: 20px; }

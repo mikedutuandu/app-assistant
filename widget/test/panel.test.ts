@@ -450,6 +450,13 @@ describe("panel", () => {
       const css = p.root.querySelector("style")!.textContent!;
       expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\.dot[^}]*animation: none/s);
     });
+
+    // Mike, 21 Nov 2026: on StreakPlan's phone layout the open button sat on the app's tab bar.
+    it("lets the host lift the open button above its own bottom bar", () => {
+      const { p } = setup();
+      const css = p.root.querySelector("style")!.textContent!;
+      expect(css).toMatch(/\.launcher \{[^}]*bottom: calc\(20px \+ var\(--assistant-bottom, 0px\)\)/);
+    });
   });
 });
 
