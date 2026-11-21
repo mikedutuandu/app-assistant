@@ -51,14 +51,16 @@ def registry_path(packs_dir: Path) -> Path:
     return found[0] if found else packs_dir / REGISTRY_FILES[0]
 
 
-def load_registry(path: Path, override: list[RegistryEntry] | None) -> list[RegistryEntry]:
+def load_registry(
+    path: Path, override: list[RegistryEntry] | None, one: RegistryEntry | None = None
+) -> list[RegistryEntry]:
     """The apps the bot trusts to serve their own pack: `override` (the APPS setting) when set, else the file's
-    `apps:` list (none when the file is missing)."""
+    `apps:` list (none when the file is missing), then `one` (the app APP_ID and APP_SITE name) when given."""
     if override is not None:
         entries = list(override)
         where = "APPS"
     elif not path.is_file():
-        return []
+        entries, where = [], "APP_ID"
     else:
         where = str(path)
         try:
@@ -71,6 +73,8 @@ def load_registry(path: Path, override: list[RegistryEntry] | None) -> list[Regi
             entries = [RegistryEntry.model_validate(e) for e in raw.get("apps") or []]
         except ValidationError as exc:
             raise PackError(f"{path}: invalid registry entry: {exc}") from exc
+    if one is not None:
+        entries.append(one)
     seen: set[str] = set()
     for entry in entries:
         if entry.id in seen:

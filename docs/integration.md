@@ -264,7 +264,10 @@ keeps the last good copy, so your chats keep working while this route is down. T
 
 ## The registry entry (the bot owner adds it)
 
-The bot only talks to apps its owner trusts. Send the owner your app id and site; they add to `apps/registry.yaml`:
+The bot only talks to apps its owner trusts. On a bot that serves one app, its owner sets three variables:
+`APP_ID=shipnote`, `APP_SITE=https://shipnote.app` and `APP_SECRET` (your shared secret; both sides keep the same value).
+
+For several apps on one bot, send the owner your app id and site; they add to `apps/registry.yaml`:
 
 ```yaml
 apps:

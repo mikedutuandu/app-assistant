@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     packs_dir: Path = Path("apps")  # the YAML packs, and registry.yaml: the apps trusted to serve their own pack
     # APPS: the registry as JSON (`[{"id", "site", "secret_env"}]`); when set, apps/registry.yaml is not read.
     apps: Annotated[list[RegistryEntry] | None, NoDecode] = None
+    # One app without YAML: APP_ID and APP_SITE register it, with its shared secret in APP_SECRET (`one_app`).
+    app_id: str | None = None
+    app_site: str | None = None
     # The owner's ceilings, over every pack (an app's own pack can never raise them):
     max_message_usd: float = 0.25  # caps a pack's message_usd_cap
     allowed_models: Annotated[list[str] | None, NoDecode] = None  # ALLOWED_MODELS="a/b,c/d"; unset: any model
@@ -107,6 +110,20 @@ class Settings(BaseSettings):
         if not self.s3_configured:
             return "local"
         return "supabase" if self.supabase_url and self.supabase_service_key else "s3"
+
+    @property
+    def one_app(self) -> RegistryEntry | None:
+        """The app APP_ID and APP_SITE register (its secret in APP_SECRET), added to the registry; None when unset."""
+        if not (self.app_id and self.app_site):
+            return None
+        return RegistryEntry(id=self.app_id, site=self.app_site, secret_env="APP_SECRET")
+
+    @model_validator(mode="after")
+    def _one_app_is_whole(self) -> "Settings":
+        if bool(self.app_id) != bool(self.app_site):
+            raise ValueError("APP_ID and APP_SITE go together: set both (and APP_SECRET) or neither")
+        self.one_app  # noqa: B018 (an invalid id or site fails here, at startup)
+        return self
 
     @model_validator(mode="after")
     def _storage_is_whole(self) -> "Settings":
