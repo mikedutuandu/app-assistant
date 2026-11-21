@@ -1,6 +1,6 @@
 {
   "case": "typos_come_back_clean",
-  "recorded_at": "2026-11-21T04:55:12+00:00",
+  "recorded_at": "2026-11-21T05:30:44+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,13 +27,13 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Going from 15 minutes to 3 is a big win, Mike. Here's a first draft. What changed in the onboarding to make it that fast?",
+      "reply": "Nice win, Mike, going from 15 minutes to 3 is a big cut. Here's a first draft. What changed in the onboarding to make it that fast?",
       "drafts": [
         {
           "id": "CD448F8B000007",
           "kind": "x_post",
           "posts": [
-            "Mike fixed the onboarding. New users now get to their first post in 3 minutes instead of 15."
+            "New users used to take 15 minutes to get to their first post. Now it's 3 minutes. Mike fixed the onboarding."
           ]
         }
       ],
@@ -43,23 +43,23 @@
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0321218
+      "cost_usd": 0.0247712
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The draft says \"Mike fixed the onboarding. New users now get to their first post in 3 minutes instead of 15,\" which is clean, correctly spelled and covers both points.",
+      "why": "The reply says \"going from 15 minutes to 3 is a big cut\" and the draft says \"New users used to take 15 minutes to get to their first post. Now it's 3 minutes. Mike fixed the onboarding.\", all correctly spelled and covering both facts.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply says \"15 minutes to 3\" and the draft says \"3 minutes instead of 15\"; both keep Mike's numbers and no other number appears.",
+      "why": "Both the reply and the draft use only 3 and 15 minutes, matching Mike's figures, and no other number appears (\"first draft\" is a word, not a number).",
       "holds": true
     },
     {
       "note": 3,
-      "why": "Neither the reply nor the draft contains \"finaly\", \"fixd\", \"onbording\" or \"insted\"; all are spelled correctly.",
+      "why": "Neither the reply nor the draft contains \"finaly\", \"fixd\", \"onbording\" or \"insted\"; all are spelled correctly as \"onboarding\" and so on.",
       "holds": true
     }
   ],
@@ -76,8 +76,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "d6a1cd7ac66fb1cb",
-        "system_sha256": "3c59cb80b2400bd4",
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "9dccef9cc6cd9aa7",
         "messages_sha256": "cb90c8fd9160abf0",
         "messages": [
           {
@@ -90,7 +90,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01M1Bkobkk21prqVL69yYZmq",
+            "id": "toolu_01D4qakCgckCpkjp4P8JwZoV",
             "name": "save_facts",
             "arguments": {
               "facts": [
@@ -103,53 +103,12 @@
               ]
             },
             "bad_arguments": null
-          }
-        ],
-        "cost_usd": 0.008176,
-        "model": "anthropic/claude-sonnet-5.5"
-      }
-    },
-    {
-      "request": {
-        "method": "chat_tools",
-        "marker": "CONVERSE",
-        "model": "anthropic/claude-sonnet-5.5",
-        "reasoning": "low",
-        "max_tokens": 2224,
-        "tools": [
-          "write_drafts",
-          "revise_draft",
-          "save_facts"
-        ],
-        "tools_sha256": "d6a1cd7ac66fb1cb",
-        "system_sha256": "84a7ea7bb3f3978f",
-        "messages_sha256": "7591ae645e7c4296",
-        "messages": [
-          {
-            "role": "user",
-            "content": "<data source=\"user\">finaly fixd the onbording. new users get to there first post in 3 min insted of 15</data>\n(Your reply: at most one question, and it asks one thing.)"
           },
           {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-              "save_facts"
-            ]
-          },
-          {
-            "role": "tool",
-            "content": "saved 2 facts"
-          }
-        ]
-      },
-      "response": {
-        "text": "",
-        "calls": [
-          {
-            "id": "toolu_017WqyUvDDdrS2UsVfFecnhR",
+            "id": "toolu_01Txx6XV93TivTzarG4njibC",
             "name": "write_drafts",
             "arguments": {
-              "brief": "Mike finally fixed the onboarding: new users now get to their first post in 3 minutes instead of 15.",
+              "brief": "Fixed onboarding: new users now reach their first post in 3 minutes instead of 15.",
               "kind": "x_post",
               "language": "en",
               "count": 1
@@ -157,7 +116,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.010194,
+        "cost_usd": 0.010396,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -169,13 +128,13 @@
         "reasoning": "low",
         "max_tokens": 4024,
         "schema": "DraftsOut",
-        "schema_sha256": "f07cf13ae7f856bc",
-        "system_sha256": "a0850108ad6670fd",
-        "messages_sha256": "ae974f928b691bb6",
+        "schema_sha256": "ccabe93b84514988",
+        "system_sha256": "ae68d4ff7b1a77b6",
+        "messages_sha256": "d676b47c0ddb38cb",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Mike fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –); may carry an image.\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Mike finally fixed the onboarding: new users now get to their first post in 3 minutes instead of 15.</data>"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Mike fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Fixed onboarding: new users now reach their first post in 3 minutes instead of 15.</data>"
           }
         ]
       },
@@ -184,17 +143,16 @@
           "drafts": [
             {
               "posts": [
-                "Mike fixed the onboarding. New users now get to their first post in 3 minutes instead of 15."
+                "New users used to take 15 minutes to get to their first post. Now it's 3 minutes. Mike fixed the onboarding."
               ],
               "fact_ids": [
                 "F1",
                 "F2"
-              ],
-              "image_file_id": null
+              ]
             }
           ]
         },
-        "cost_usd": 0.004884
+        "cost_usd": 0.004524
       }
     },
     {
@@ -207,11 +165,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "6ca2d7c612f103ce",
+        "messages_sha256": "8f10af64d1c8fd65",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Mike fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nThe piece to check:\n<data source=\"draft\">Mike fixed the onboarding. New users now get to their first post in 3 minutes instead of 15.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Mike fixed the onboarding.</data>\n<data source=\"user\" fact=\"F2\">New users now get to their first post in 3 minutes instead of 15.</data>\n\nThe piece to check:\n<data source=\"draft\">New users used to take 15 minutes to get to their first post. Now it's 3 minutes. Mike fixed the onboarding.</data>"
           }
         ]
       },
@@ -219,7 +177,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 5.18e-05
+        "cost_usd": 7.32e-05
       }
     },
     {
@@ -234,9 +192,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "d6a1cd7ac66fb1cb",
-        "system_sha256": "fee64d2bfbca78b4",
-        "messages_sha256": "88d69560c0153b53",
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "b036ed6798bea80b",
+        "messages_sha256": "fdcc80f2b965bdad",
         "messages": [
           {
             "role": "user",
@@ -246,7 +204,8 @@
             "role": "assistant",
             "content": "",
             "tool_calls": [
-              "save_facts"
+              "save_facts",
+              "write_drafts"
             ]
           },
           {
@@ -254,22 +213,15 @@
             "content": "saved 2 facts"
           },
           {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [
-              "write_drafts"
-            ]
-          },
-          {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"CD448F8B000007\" kind=\"x_post\">Mike fixed the onboarding. New users now get to their first post in 3 minutes instead of 15.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"CD448F8B000007\" kind=\"x_post\">New users used to take 15 minutes to get to their first post. Now it's 3 minutes. Mike fixed the onboarding.</data>"
           }
         ]
       },
       "response": {
-        "text": "Going from 15 minutes to 3 is a big win, Mike. Here's a first draft. What changed in the onboarding to make it that fast?",
+        "text": "Nice win, Mike, going from 15 minutes to 3 is a big cut. Here's a first draft. What changed in the onboarding to make it that fast?",
         "calls": [],
-        "cost_usd": 0.008816,
+        "cost_usd": 0.009778,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

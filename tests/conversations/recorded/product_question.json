@@ -1,6 +1,6 @@
 {
   "case": "product_question",
-  "recorded_at": "2026-11-21T04:57:31+00:00",
+  "recorded_at": "2026-11-21T05:33:27+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,28 +27,28 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "I don't have any info on credits or pricing, so I can't say what a post costs. Your account page in the app should show it.",
+      "reply": "I don't have any info on credit costs, so I can't give you a number without guessing. Your account page in the app is the best place to check.",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.00757
+      "cost_usd": 0.0084
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply says \"I don't have any info on credits or pricing\" and points Mike to \"Your account page in the app\", which is honest and gives a place to look, though it names a different spot than Billing or Ask.",
+      "why": "The reply says \"I don't have any info on credit costs\" and points Mike to \"Your account page in the app\", which is honest and gives a place to check, though it is not literally Billing or Ask.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply states no credit price or other number; it only says it has no info on credits or pricing.",
+      "why": "The reply gives no credit price or any other number, and explicitly declines to give one \"without guessing\".",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The reply is a plain answer with no post in it and does not treat the question as a story.",
+      "why": "The reply is a short plain answer with no post and does not turn the question into a story.",
       "holds": true
     }
   ],
@@ -65,8 +65,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "d6a1cd7ac66fb1cb",
-        "system_sha256": "3c59cb80b2400bd4",
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "9dccef9cc6cd9aa7",
         "messages_sha256": "a17c9ed42bd07d3e",
         "messages": [
           {
@@ -76,9 +76,9 @@
         ]
       },
       "response": {
-        "text": "I don't have any info on credits or pricing, so I can't say what a post costs. Your account page in the app should show it.",
+        "text": "I don't have any info on credit costs, so I can't give you a number without guessing. Your account page in the app is the best place to check.",
         "calls": [],
-        "cost_usd": 0.00757,
+        "cost_usd": 0.0084,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

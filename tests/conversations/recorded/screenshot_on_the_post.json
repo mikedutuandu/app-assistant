@@ -1,0 +1,316 @@
+{
+  "case": "screenshot_on_the_post",
+  "recorded_at": "2026-11-21T05:34:23+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "signups this week, post this with the screenshot",
+      "file": "signups.png",
+      "shows": "a HookPlaybook dashboard card, \"Signups this week\", with the number 184"
+    }
+  ],
+  "turns": [
+    {
+      "user": "signups this week, post this with the screenshot",
+      "file": "signups.png",
+      "shows": "a HookPlaybook dashboard card, \"Signups this week\", with the number 184",
+      "draft_id": null,
+      "reply": "Here's your draft, with the dashboard screenshot attached. Do you want to add where those signups came from?",
+      "drafts": [
+        {
+          "id": "00FE4464000007",
+          "kind": "x_post",
+          "posts": [
+            "184 signups this week. That's what HookPlaybook got."
+          ],
+          "image_file_id": "00FE4464000002"
+        }
+      ],
+      "saved": [
+        "HookPlaybook got 184 signups this week."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.030701600000000006
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The draft card is shown as '[Draft card, post, with Mike's picture]', so the screenshot he asked for is attached.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "The draft reads '184 signups this week. That's what HookPlaybook got.' and the only number in it is 184, matching the screenshot.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The reply asks 'Do you want to add where those signups came from?', which is about adding a source, not about whether to add the screenshot, and it says the screenshot is already attached.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "IMAGE_READER",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 800,
+        "schema": "ImageRead",
+        "schema_sha256": "4089474037c1700d",
+        "system_sha256": "dc6a7eae4fc68503",
+        "messages_sha256": "3be9702542443ce1",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Read this image. [image]"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "text": "HookPlaybook · Dashboard\nSignups this week\n184",
+          "unsure": []
+        },
+        "cost_usd": 4.96e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "1da2a94085cf68f6",
+        "messages_sha256": "f7ab093200eba856",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">signups this week, post this with the screenshot</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01SVKadjf4S9ZS6NUXjgzDU3",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "HookPlaybook got 184 signups this week.",
+                  "file_id": "00FE4464000002"
+                }
+              ]
+            },
+            "bad_arguments": null
+          },
+          {
+            "id": "toolu_01VkjrhFzsZbFMcJVqgHVWb6",
+            "name": "write_drafts",
+            "arguments": {
+              "brief": "HookPlaybook got 184 signups this week, shared with the dashboard screenshot.",
+              "kind": "x_post",
+              "language": "en",
+              "image_file_id": "00FE4464000002"
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.01186,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "ccabe93b84514988",
+        "system_sha256": "ae68d4ff7b1a77b6",
+        "messages_sha256": "0c4d6c43527d8c6a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nFiles and links the user shared:\n<data source=\"image\" file_id=\"00FE4464000002\">HookPlaybook · Dashboard\nSignups this week\n184</data>\n\nKnown facts:\n<data source=\"image\" fact=\"F1\">HookPlaybook got 184 signups this week.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">HookPlaybook got 184 signups this week, shared with the dashboard screenshot.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "184 signups this week. HookPlaybook's dashboard just showed me the number. Posting the screenshot."
+              ],
+              "fact_ids": [
+                "F1"
+              ]
+            }
+          ]
+        },
+        "cost_usd": 0.004472
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "4d0c85f19312345a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"image\" fact=\"F1\">HookPlaybook got 184 signups this week.</data>\n\nThe piece to check:\n<data source=\"draft\">184 signups this week. HookPlaybook's dashboard just showed me the number. Posting the screenshot.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": [
+            "HookPlaybook's dashboard just showed me the number.",
+            "Posting the screenshot."
+          ]
+        },
+        "cost_usd": 0.0001044
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "ccabe93b84514988",
+        "system_sha256": "ae68d4ff7b1a77b6",
+        "messages_sha256": "ab3f136350de0134",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nFiles and links the user shared:\n<data source=\"image\" file_id=\"00FE4464000002\">HookPlaybook · Dashboard\nSignups this week\n184</data>\n\nKnown facts:\n<data source=\"image\" fact=\"F1\">HookPlaybook got 184 signups this week.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">HookPlaybook got 184 signups this week, shared with the dashboard screenshot.</data>\n\nRewrite these 1 draft(s), in this order, fixing the problems listed:\n1. problems: it says something you didn't tell me: <data source=\"claim\">HookPlaybook's dashboard just showed me the number.</data> <data source=\"claim\">Posting the screenshot.</data>\n<data source=\"draft\">184 signups this week. HookPlaybook's…"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "184 signups this week. That's what HookPlaybook got."
+              ],
+              "fact_ids": [
+                "F1"
+              ]
+            }
+          ]
+        },
+        "cost_usd": 0.00459
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "af12d7bbea6d6b6c",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"image\" fact=\"F1\">HookPlaybook got 184 signups this week.</data>\n\nThe piece to check:\n<data source=\"draft\">184 signups this week. That's what HookPlaybook got.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 5.76e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "947f6779ec008998",
+        "messages_sha256": "d0babbf1eb196847",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">signups this week, post this with the screenshot</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts",
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 1 facts"
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"00FE4464000007\" kind=\"x_post\" picture=\"00FE4464000002\">184 signups this week. That's what HookPlaybook got.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's your draft, with the dashboard screenshot attached. Do you want to add where those signups came from?",
+        "calls": [],
+        "cost_usd": 0.009568,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

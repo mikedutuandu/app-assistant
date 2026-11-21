@@ -1,0 +1,235 @@
+{
+  "case": "best_time_to_post",
+  "recorded_at": "2026-11-21T05:33:00+00:00",
+  "models": {
+    "chat": "anthropic/claude-sonnet-5.5",
+    "writer": "anthropic/claude-sonnet-5.5",
+    "writer_reasoning": "low",
+    "main": "openai/gpt-6-luna",
+    "cheap": "openai/gpt-6-luna",
+    "vision": "openai/gpt-6-luna",
+    "fallbacks": [
+      "anthropic/claude-haiku-5.5",
+      "openai/gpt-6-luna"
+    ],
+    "chat_reasoning": "low",
+    "chat_temperature": null
+  },
+  "judge_model": "anthropic/claude-sonnet-5.5",
+  "inputs": [
+    {
+      "text": "shipped a reply inbox in hookplaybook today. all your replies on X in one list, sorted by who matters most. write a post"
+    }
+  ],
+  "turns": [
+    {
+      "user": "shipped a reply inbox in hookplaybook today. all your replies on X in one list, sorted by who matters most. write a post",
+      "file": null,
+      "shows": null,
+      "draft_id": null,
+      "reply": "Here's your draft, Mike. Tue 9:30 AM is one of your best hours, and you can schedule it from the draft's button. Do you have a number yet, like how many people have tried the inbox?",
+      "drafts": [
+        {
+          "id": "24C6E724000007",
+          "kind": "x_post",
+          "posts": [
+            "shipped a reply inbox in HookPlaybook today. all your replies on X in one list, sorted by who matters most."
+          ],
+          "post_at": "2026-11-24T02:30:00Z"
+        }
+      ],
+      "saved": [
+        "Mike shipped a reply inbox in HookPlaybook today.",
+        "The reply inbox shows all your replies on X in one list, sorted by who matters most."
+      ],
+      "ended": "done",
+      "failure": null,
+      "cost_usd": 0.026066500000000003
+    }
+  ],
+  "verdicts": [
+    {
+      "note": 1,
+      "why": "The reply says \"Tue 9:30 AM is one of your best hours,\" which is a listed free time and uses the app's own reason.",
+      "holds": true
+    },
+    {
+      "note": 2,
+      "why": "It says \"you can schedule it from the draft's button,\" so it only offers scheduling and never claims the post is scheduled or going out.",
+      "holds": true
+    },
+    {
+      "note": 3,
+      "why": "The draft card shows a Schedule button set to Tue 9:30 AM, the same time the reply suggests.",
+      "holds": true
+    },
+    {
+      "note": 4,
+      "why": "The reply text only has an intro, the time suggestion and a question about a number; it does not quote the draft's text.",
+      "holds": true
+    }
+  ],
+  "calls": [
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "7401c7a00216bcad",
+        "messages_sha256": "def65d487b8845cf",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">shipped a reply inbox in hookplaybook today. all your replies on X in one list, sorted by who matters most. write a post</data>\n(Your reply: at most one question, and it asks one thing.)"
+          }
+        ]
+      },
+      "response": {
+        "text": "",
+        "calls": [
+          {
+            "id": "toolu_01MiFBxwANDGEPNZMRVXsvkA",
+            "name": "save_facts",
+            "arguments": {
+              "facts": [
+                {
+                  "text": "Mike shipped a reply inbox in HookPlaybook today."
+                },
+                {
+                  "text": "The reply inbox shows all your replies on X in one list, sorted by who matters most."
+                }
+              ]
+            },
+            "bad_arguments": null
+          },
+          {
+            "id": "toolu_01UTep7ta5miq11yNGW55M1w",
+            "name": "write_drafts",
+            "arguments": {
+              "brief": "Shipped a reply inbox in HookPlaybook today: all your replies on X in one list, sorted by who matters most.",
+              "kind": "x_post",
+              "language": "en",
+              "post_at": "2026-11-24T02:30:00Z"
+            },
+            "bad_arguments": null
+          }
+        ],
+        "cost_usd": 0.011086,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "ccabe93b84514988",
+        "system_sha256": "ae68d4ff7b1a77b6",
+        "messages_sha256": "13694694036a181a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">Mike shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">The reply inbox shows all your replies on X in one list, sorted by who matters most.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 1 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Shipped a reply inbox in HookPlaybook today: all your replies on X in one list, sorted by who matters most.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "shipped a reply inbox in HookPlaybook today. all your replies on X in one list, sorted by who matters most."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2"
+              ]
+            }
+          ]
+        },
+        "cost_usd": 0.004544
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "4c712d5f61611dc4",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">Mike shipped a reply inbox in HookPlaybook today.</data>\n<data source=\"user\" fact=\"F2\">The reply inbox shows all your replies on X in one list, sorted by who matters most.</data>\n\nThe piece to check:\n<data source=\"draft\">shipped a reply inbox in HookPlaybook today. all your replies on X in one list, sorted by who matters most.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 6.65e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_tools",
+        "marker": "CONVERSE",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 2224,
+        "tools": [
+          "write_drafts",
+          "revise_draft",
+          "save_facts"
+        ],
+        "tools_sha256": "6e4dba2118601d06",
+        "system_sha256": "5db835bf7b9d967b",
+        "messages_sha256": "d8ad87cc9860c253",
+        "messages": [
+          {
+            "role": "user",
+            "content": "<data source=\"user\">shipped a reply inbox in hookplaybook today. all your replies on X in one list, sorted by who matters most. write a post</data>\n(Your reply: at most one question, and it asks one thing.)"
+          },
+          {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+              "save_facts",
+              "write_drafts"
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "saved 2 facts"
+          },
+          {
+            "role": "tool",
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"24C6E724000007\" kind=\"x_post\" post_at=\"2026-11-24T02:30:00Z\">shipped a reply inbox in HookPlaybook today. all your replies on X in one list, sorted by who matters most.</data>"
+          }
+        ]
+      },
+      "response": {
+        "text": "Here's your draft, Mike. Tue 9:30 AM is one of your best hours, and you can schedule it from the draft's button. Do you have a number yet, like how many people have tried the inbox?",
+        "calls": [],
+        "cost_usd": 0.01037,
+        "model": "anthropic/claude-sonnet-5.5"
+      }
+    }
+  ]
+}

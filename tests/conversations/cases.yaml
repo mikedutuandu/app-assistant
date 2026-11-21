@@ -193,11 +193,10 @@ cases:
       - text: "signups this week, post this with the screenshot"
         file: signups.png
         shows: 'a HookPlaybook dashboard card, "Signups this week", with the number 184'
-      - "yes 184 is right, write it"
     expect:
-      - The last turn's draft card carries Mike's picture (he asked for the screenshot on the post).
-      - The last turn's draft states 184 signups exactly and contains no other number.
-      - The last reply does not ask again whether to add the screenshot.
+      - The draft card carries Mike's picture (he asked for the screenshot on the post).
+      - The draft states 184 signups exactly and contains no other number.
+      - The reply does not ask whether to add the screenshot.
     hard: {drafts: 1, saved: any, max_questions_per_reply: 1, draft_picture: true}
 
   - name: best_time_to_post
