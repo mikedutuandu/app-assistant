@@ -51,6 +51,10 @@ header h2 { margin: 0; font-size: 16px; }
 .btn.ghost { background: transparent; color: var(--a); }
 .btn.done { background: transparent; color: var(--ok); border-color: var(--ok); }
 .small { font-size: 13px; color: var(--bad); }
+.draft .when { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; color: var(--muted); }
+.draft .when select { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; color: inherit; background: var(--bg); }
+.draft .note { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.draft .note:empty { display: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px; }
 .chips:empty { display: none; }
 .chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--soft); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 13px; max-width: 100%; }

@@ -9,7 +9,7 @@ error kinds are logged, never text.
 The events a turn streams, in the order they can come: `thread` (a new chat's id and title), `status` (`{"step"}`: what
 the bot is doing now, one of `reading`, `listening`, `thinking`, `writing`, `checking`; no user text, never charged,
 and it may repeat), `transcript` (a voice note's words), `text` (`{"delta"}`), `note`, `saved` (`{"kind": "facts",
-"items"}`), `draft` (`{"id", "kind", "posts", "image_file_id"?}`), then `done` or `failed`. A `draft` is stored (in
+"items"}`), `draft` (`{"id", "kind", "posts", "image_file_id"?, "post_at"?, "post_times"?}`), then `done` or `failed`. A `draft` is stored (in
 `pieces`, with its posts) and a `saved` line is stored (in `saved_lines`) before it is sent on, so a reload shows both.
 """
 
@@ -167,7 +167,7 @@ async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: 
     async with pool.connection() as conn:
         await conn.execute(
             "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-            " fact_ids, facts, posts) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " fact_ids, facts, posts, post_at, post_times) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " on conflict (id) do nothing",
             (
                 draft["id"],
@@ -181,6 +181,8 @@ async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: 
                 Jsonb([f["id"] for f in told]),
                 Jsonb([Fact.model_validate(f).model_dump() for f in told]),
                 Jsonb(posts),
+                draft.get("post_at"),
+                Jsonb(draft["post_times"]) if draft.get("post_times") else None,
             ),
         )
 

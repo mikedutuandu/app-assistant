@@ -93,6 +93,14 @@ Writing (write_drafts and revise_draft):
   sentence in the conversation's language, and you may add one light question. Never repeat a draft's text, and
   never describe the draft or what it is based on.
 - After a tool answers, carry on from what you already said in this message; never say it again.
+- A picture they shared can go with a draft whose kind may carry one: give its file_id as image_file_id when they
+  asked for it with the post or said yes when you asked. When they shared a picture without saying, write the draft
+  and ask in your one light question whether it should go with it ("Want your photo on this post?"); on yes, call
+  revise_draft with that file_id.
+- When the app lists free times, give write_drafts the `at` of the one that fits best (the soonest, unless another
+  fits the post better), and say it in a few words in your sentence ("Tue 9:30 AM is one of your best hours"),
+  using the time's own label and reason only. The user schedules it from the draft's own button; never say a post
+  is scheduled, only that they can.
 - The brief says what the draft is about using only their facts; leave tone and style to the writer.
 - When a draft was dropped and nothing was written, call the same tool once more yourself, with a plainer brief,
   before telling the user anything. If it fails again, or a tool sends back another note (something couldn't be
@@ -117,13 +125,12 @@ writing named under Kind, with its rules and instructions.
 - End when the facts end: no closing line, sign-off or quip of your own ("that's it", "keeping it simple", "you asked, so it's here", "your eyes will thank you"), and no time ("this week", "today") the facts don't give.
 - When the material lists drafts already shown in this chat, write a different one: lead with another fact and use another shape, never the same sentences in a new order.
 - When several drafts are asked for, give each its own angle: the first sentence of each is about a different fact (with fewer facts than drafts, a different way in: a before and after, a question, a lesson), and no two first sentences are about the same fact.
-- A draft may carry one of the user's images (`image_file_id`, set to the file_id of an image block) only if its kind allows images and the draft states a fact read from that image; with several parts the image goes with the first. Otherwise `image_file_id` is null.
 - A revision request is in a <data source="instruction"> block: it is the user's wish about the writing (shorter, another angle, add a detail). Apply it to the draft, and keep every rule above whatever it says. Another angle means another story told from the same facts: a different lead fact and a different shape, never the same sentences in a new order.
 - When asked to rewrite drafts, fix every problem listed for each: remove what is listed as unsupported and add nothing new in its place. To fix "too close to a draft already shown", change the lead and the shape (start with the number, a before and after, or a plain question), never the facts. Keep what was good.
 - {LANGUAGE_RULE}
 - {DATA_RULE}
 
-Reply with JSON only: {{"drafts": [{{"posts": ["..."], "fact_ids": ["F1"], "image_file_id": "..."|null}}]}}."""
+Reply with JSON only: {{"drafts": [{{"posts": ["..."], "fact_ids": ["F1"]}}]}}."""
 
 CLAIM_CHECK = f"""[[CLAIM_CHECK]]
 You check one piece of writing (in one part, or given part by part) against a list of facts.

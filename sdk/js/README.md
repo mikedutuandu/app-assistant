@@ -60,6 +60,23 @@ export const assistant = createAssistantHost({
 });
 ```
 
+**Scheduling (optional).** If your app can schedule posts, add the user's next free times to `context`, labelled
+in their own time zone; the bot then picks one for each draft and shows a Schedule button:
+
+```ts
+context: async (ws) => ({
+  language: "en",
+  post_times: (await freeSlots(ws, 5)).map((t) => ({ at: t.toISOString(), label: label(t, tzOf(ws)), why: "one of your best hours" })),
+}),
+saveDraft: async (ws, { text, thread, media, schedule_at }, key) => {
+  const draft = await db.drafts.findOrCreate({ ws, key, text, thread, media });
+  const answer = { draft_id: draft.id, edit_url: `https://shipnote.app/drafts/${draft.id}` };
+  if (!schedule_at) return answer; // Save draft
+  const ok = await schedule(draft.id, schedule_at); // the user tapped Schedule: that tap is their OK
+  return ok ? { ...answer, scheduled_at: schedule_at } : { ...answer, scheduled_at: null, schedule_note: "That time is taken now." };
+},
+```
+
 **`once.claim` must be atomic and must expire on its own** (at least 60 s; 2 minutes is a good choice). `release`
 runs when a request ends, but not when the request is killed mid-work (a function timeout, a redeploy): a claim with
 no expiry would then stay forever, and every repeat of that key would get 409 (the bot doesn't retry a 409, so that

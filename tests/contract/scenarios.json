@@ -106,7 +106,8 @@
           }
         ],
         "credits_left": 12.5,
-        "out_of_credits_message": "You're out of credits. Top up in Billing."
+        "out_of_credits_message": "You're out of credits. Top up in Billing.",
+        "post_times": []
       }
     }
   },
@@ -149,7 +150,8 @@
         "kept_facts": [],
         "credits_left": null,
         "out_of_credits_message": null,
-        "language": "vi"
+        "language": "vi",
+        "post_times": []
       }
     }
   },
@@ -335,6 +337,94 @@
     }
   },
   {
+    "name": "context: free times to post",
+    "setup": {
+      "context": {
+        "language": "en",
+        "post_times": [
+          {
+            "at": "2026-11-24T02:30:00Z",
+            "label": "Tue 9:30 AM",
+            "why": "one of your best hours"
+          },
+          {
+            "at": "2026-11-25T12:00:00Z",
+            "label": "Wed 7:00 PM"
+          }
+        ]
+      }
+    },
+    "call": {
+      "method": "context",
+      "args": {}
+    },
+    "request": {
+      "method": "POST",
+      "path": "/context",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": null
+      },
+      "body": {}
+    },
+    "response_status": 200,
+    "response_body": {
+      "language": "en",
+      "post_times": [
+        {
+          "at": "2026-11-24T02:30:00Z",
+          "label": "Tue 9:30 AM",
+          "why": "one of your best hours"
+        },
+        {
+          "at": "2026-11-25T12:00:00Z",
+          "label": "Wed 7:00 PM"
+        }
+      ]
+    },
+    "match": {
+      "language": "en",
+      "post_times": [
+        {
+          "at": "2026-11-24T02:30:00Z",
+          "label": "Tue 9:30 AM",
+          "why": "one of your best hours"
+        },
+        {
+          "at": "2026-11-25T12:00:00Z",
+          "label": "Wed 7:00 PM"
+        }
+      ]
+    },
+    "expect": {
+      "returns": {
+        "name": null,
+        "voice": "",
+        "topics": [],
+        "recent_posts": [],
+        "patterns": [],
+        "kept_facts": [],
+        "credits_left": null,
+        "out_of_credits_message": null,
+        "language": "en",
+        "post_times": [
+          {
+            "at": "2026-11-24T02:30:00Z",
+            "label": "Tue 9:30 AM",
+            "why": "one of your best hours"
+          },
+          {
+            "at": "2026-11-25T12:00:00Z",
+            "label": "Wed 7:00 PM",
+            "why": null
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "context: a 5xx is retried once, then unavailable",
     "setup": {
       "broken": true
@@ -441,7 +531,8 @@
         "kept_facts": [],
         "credits_left": null,
         "out_of_credits_message": null,
-        "language": "en"
+        "language": "en",
+        "post_times": []
       },
       "attempts": 2
     }
@@ -526,7 +617,8 @@
         "kept_facts": [],
         "credits_left": null,
         "out_of_credits_message": null,
-        "language": "en"
+        "language": "en",
+        "post_times": []
       },
       "attempts": 2
     }
@@ -637,7 +729,9 @@
     "expect": {
       "returns": {
         "id": "d_1",
-        "edit_url": "https://app.example/drafts/d_1"
+        "edit_url": "https://app.example/drafts/d_1",
+        "scheduled_at": null,
+        "schedule_note": null
       }
     }
   },
@@ -698,7 +792,9 @@
     "expect": {
       "returns": {
         "id": "d_1",
-        "edit_url": "https://app.example/drafts/d_1"
+        "edit_url": "https://app.example/drafts/d_1",
+        "scheduled_at": null,
+        "schedule_note": null
       }
     }
   },
@@ -752,9 +848,154 @@
     "expect": {
       "returns": {
         "id": "d_7",
-        "edit_url": null
+        "edit_url": null,
+        "scheduled_at": null,
+        "schedule_note": null
       }
     }
+  },
+  {
+    "name": "drafts: scheduled at a free time",
+    "setup": {},
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-s1",
+        "schedule_at": "2026-11-24T02:30:00Z"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-s1"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "schedule_at": "2026-11-24T02:30:00Z"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "draft_id": "d_1",
+      "edit_url": "https://app.example/drafts/d_1",
+      "scheduled_at": "2026-11-24T02:30:00Z"
+    },
+    "match": {
+      "draft_id": "<string>",
+      "edit_url": "<string|null>",
+      "scheduled_at": "2026-11-24T02:30:00Z"
+    },
+    "expect": {
+      "returns": {
+        "id": "d_1",
+        "edit_url": "https://app.example/drafts/d_1",
+        "scheduled_at": "2026-11-24T02:30:00Z",
+        "schedule_note": null
+      }
+    }
+  },
+  {
+    "name": "drafts: a time no longer free is saved as a draft, with why",
+    "setup": {
+      "schedule_note": "That time is taken now."
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-s1",
+        "schedule_at": "2026-11-24T02:30:00Z"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-s1"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "schedule_at": "2026-11-24T02:30:00Z"
+      }
+    },
+    "response_status": 200,
+    "response_body": {
+      "draft_id": "d_1",
+      "edit_url": "https://app.example/drafts/d_1",
+      "scheduled_at": null,
+      "schedule_note": "That time is taken now."
+    },
+    "match": {
+      "draft_id": "<string>",
+      "edit_url": "<string|null>",
+      "scheduled_at": null,
+      "schedule_note": "That time is taken now."
+    },
+    "expect": {
+      "returns": {
+        "id": "d_1",
+        "edit_url": "https://app.example/drafts/d_1",
+        "scheduled_at": null,
+        "schedule_note": "That time is taken now."
+      }
+    }
+  },
+  {
+    "name": "drafts: a schedule_at that is not a string is 400",
+    "setup": {
+      "app_only": true
+    },
+    "call": {
+      "method": "save_draft",
+      "args": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "key": "add-3",
+        "schedule_at": 5
+      }
+    },
+    "request": {
+      "method": "POST",
+      "path": "/drafts",
+      "headers": {
+        "authorization": "Bearer <token>",
+        "content-type": "application/json",
+        "accept": "application/json",
+        "idempotency-key": "add-3"
+      },
+      "body": {
+        "text": "Shipped dark mode.",
+        "thread": [],
+        "media": [],
+        "schedule_at": 5
+      }
+    },
+    "response_status": 400,
+    "response_body": {
+      "error": "invalid",
+      "message": "schedule_at must be an ISO time."
+    },
+    "match": {
+      "error": "invalid"
+    },
+    "expect": {}
   },
   {
     "name": "drafts: a key still being saved is 409",

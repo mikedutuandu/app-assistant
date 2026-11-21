@@ -19,6 +19,7 @@ from converse_eval import (
     ReplayMismatch,
     TurnLog,
     check_hard,
+    context_for,
     in_language,
     inputs_of,
     judge_prompt,
@@ -63,6 +64,27 @@ def draft(*posts: str, id: str = "d1", kind: str = "x_post") -> dict:
 
 
 # ---- the hard rules ----
+
+
+def test_draft_picture_and_draft_time():
+    pictured = {**draft("We hit 184 signups."), "image_file_id": "f1", "post_at": "2026-11-24T02:30:00Z"}
+    plain = draft("We hit 184 signups.")
+    assert check_hard(case(draft_picture=True, draft_time=True), [turn(), turn(drafts=[pictured])]) == []
+    assert check_hard(case(draft_picture=False, draft_time=False), [turn(), turn(drafts=[plain])]) == []
+    assert check_hard(case(draft_picture=True), [turn(), turn(drafts=[plain])]) == [
+        "draft_picture: the last turn's draft has no picture"
+    ]
+    assert check_hard(case(draft_time=False), [turn(), turn(drafts=[pictured])]) == [
+        "draft_time: the last turn's draft has a time"
+    ]
+
+
+def test_a_case_may_change_the_context():
+    suite = load_suite()
+    timed = next(c for c in suite.cases if c.name == "best_time_to_post")
+    assert [t.label for t in context_for(suite, timed).post_times][0] == "Tue 9:30 AM"
+    assert context_for(suite, timed).name == suite.context.name == "Mike"
+    assert context_for(suite, suite.cases[0]).post_times == []
 
 
 def test_a_chat_that_keeps_every_rule_passes():
@@ -437,8 +459,8 @@ def scripted_chat() -> Scripted:
                 "Shorter.",
             ],
             "DRAFT_WRITER": [
-                {"drafts": [{"posts": [POST], "fact_ids": ["F1"], "image_file_id": None}]},
-                {"drafts": [{"posts": [SHORT], "fact_ids": ["F1"], "image_file_id": None}]},
+                {"drafts": [{"posts": [POST], "fact_ids": ["F1"]}]},
+                {"drafts": [{"posts": [SHORT], "fact_ids": ["F1"]}]},
             ],
             "CLAIM_CHECK": [{"unsupported": []}, {"unsupported": []}],
         }

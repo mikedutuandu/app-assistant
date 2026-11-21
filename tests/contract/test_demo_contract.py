@@ -21,6 +21,7 @@ SCENARIOS_FOR_DEMO = [
     for s in SCENARIOS
     if s["match"] is not None
     and not s["request"]["body"].get("media")
+    and "schedule_at" not in s["request"]["body"]  # the demo only saves drafts: it sends no free times
     and (set(s["setup"]) <= STATELESS or s["name"] in ALSO)
 ]
 

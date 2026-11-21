@@ -26,7 +26,7 @@ OK = {"unsupported": []}
 
 
 def drafts(*posts: list[str], image: str | None = None) -> dict:
-    return {"drafts": [{"posts": p, "fact_ids": ["F1", "F2"], "image_file_id": image} for p in posts]}
+    return {"drafts": [{"posts": p, "fact_ids": ["F1", "F2"]} for p in posts]}
 
 
 def save(*texts: str) -> dict:
@@ -202,26 +202,6 @@ async def test_drafts_written_this_message_are_marked_new():
     assert "no drafts before this message" not in later
     assert "first draft" not in tool_results(llm.calls[-1])[-1]["content"]  # the chat had one already
     assert 'written="just now' not in system_of(llm.calls[4])  # nothing new yet at the message's start
-
-
-async def test_a_draft_with_an_image_carries_it():
-    llm = FakeLlm(
-        {
-            "CONVERSE": [
-                Reply(calls=[call("save_facts", facts=[{"text": "40 accounts on", "file_id": "img1"}]), write()]),
-                "Here it is.",
-            ],
-            "DRAFT_WRITER": [
-                {"drafts": [{"posts": ["40 accounts on already."], "fact_ids": ["F1"], "image_file_id": "img1"}]}
-            ],
-            "CLAIM_CHECK": [OK],
-        }
-    )
-    h = Harness(llm)
-    h.files["img1"] = FileReading(file_id="img1", kind="image", text="40 accounts on")
-    await h.send("look", file_ids=["img1"])
-    [draft] = h.of("draft")
-    assert draft["image_file_id"] == "img1"
 
 
 async def test_write_without_facts_is_told_and_the_model_asks():

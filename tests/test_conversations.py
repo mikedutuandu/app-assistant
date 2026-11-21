@@ -12,6 +12,7 @@ from converse_eval import (
     RECORDED,
     ReplayLlm,
     check_hard,
+    context_for,
     load_pack,
     load_recording,
     load_suite,
@@ -99,7 +100,7 @@ async def test_a_recorded_case_replays_with_its_hard_rules(path, pool):
     assert recording_problems(recording, case, load_pack()) == []  # same case, same models, every note held
     await migrate(pool)
     llm = ReplayLlm(recording["calls"])
-    logs = await run_case(case, SUITE.context, llm, pool)
+    logs = await run_case(case, context_for(SUITE, case), llm, pool)
     assert llm.left == 0, f"{case.name}: {llm.left} recorded calls were not made: record the case again"
     assert check_hard(case, logs) == []
 

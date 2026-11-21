@@ -5,9 +5,13 @@ export interface Draft {
   kind: string; // one of the app's kinds of writing (its pack's `writes`), e.g. "changelog_entry" or "x_thread"
   posts: string[];
   image_file_id?: string | null;
+  /** When the app can schedule: its next free times (labelled in the user's time zone), and the bot's pick. */
+  post_times?: { at: string; label: string }[];
+  post_at?: string | null;
   /** Only on a draft read back from a thread. */
   added?: boolean;
   edit_url?: string | null;
+  scheduled_at?: string | null;
 }
 export type BotEvent =
   | { event: "thread"; data: { thread_id: string; title: string } }
@@ -21,7 +25,14 @@ export type BotEvent =
   | { event: "failed"; data: { error: string; message: string } }
   | { event: string; data: any };
 
-export type ActionBody = { action_id: string; kind: "add_draft"; draft_id: string };
+export type ActionBody = { action_id: string; kind: "add_draft"; draft_id: string; schedule_at?: string };
+/** What a save answers: `scheduled_at` only when the app put the draft on its schedule, else why not. */
+export type ActionResult = {
+  draft_id: string;
+  edit_url: string | null;
+  scheduled_at?: string | null;
+  schedule_note?: string;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -256,7 +267,7 @@ export class BotApi {
     return this.request("POST", `/uploads/${encodeURIComponent(started.upload_id)}/finish`, { thread_id: started.thread_id });
   }
 
-  act(threadId: string, body: ActionBody): Promise<any> {
+  act(threadId: string, body: ActionBody): Promise<ActionResult> {
     return this.request("POST", `/threads/${encodeURIComponent(threadId)}/actions`, body);
   }
 

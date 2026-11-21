@@ -209,7 +209,7 @@ async def test_delete_as_hookplaybook_calls_it_removes_chats_facts_and_files(hp:
             call("write_drafts", brief="the March milestone", kind="x_post"),
         ]
         hp.llm.add("CONVERSE", Reply(calls=write), "Here's one.")
-        hp.llm.add("DRAFT_WRITER", {"drafts": [{"posts": [post], "fact_ids": ["F1"], "image_file_id": None}]})
+        hp.llm.add("DRAFT_WRITER", {"drafts": [{"posts": [post], "fact_ids": ["F1"]}]})
         hp.llm.add("CLAIM_CHECK", {"unsupported": []})
         body = {"thread_id": up["thread_id"], "text": fact, "file_ids": [up["file_id"]]}
         r = await hp.client.post("/v1/chat/hookplaybook/messages", json=body, headers=_widget(workspace))

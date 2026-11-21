@@ -60,6 +60,7 @@ export interface Scenario {
     in_flight?: { path: string; key: string }[];
     broken?: boolean;
     app_only?: boolean;
+    schedule_note?: string;
   };
   request: { method: string; path: string; headers: Record<string, string | null>; body: unknown };
   response_status: number | null;

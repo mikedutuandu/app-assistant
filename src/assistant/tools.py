@@ -8,10 +8,10 @@ The bot never touches an app's database: it can only do what the signed-in user 
 import itertools
 import json
 import re
-from typing import Any, Literal, Protocol
+from typing import Annotated, Any, Literal, Protocol
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, BeforeValidator, Field, ValidationError
 
 from assistant.auth import Session
 from assistant.checks import Fact
@@ -43,6 +43,21 @@ class KeptFact(BaseModel):
     text: str
 
 
+MAX_POST_TIMES = 10  # free times kept from the app's `/context`
+
+
+class PostTime(BaseModel):
+    """One of the user's next free times to post, as the app labels it in their own time zone."""
+
+    at: str = Field(min_length=1, max_length=40)  # an ISO time, sent back as `schedule_at`
+    label: str = Field(min_length=1, max_length=60)  # "Tue 9:30 AM"
+    why: str | None = Field(None, max_length=80)  # "one of your best hours"
+
+
+def _first_times(v: Any) -> Any:
+    return v[:MAX_POST_TIMES] if isinstance(v, list) else v
+
+
 class AppContext(BaseModel):
     name: str | None = None  # the user's name, when the app knows it
     voice: str
@@ -53,17 +68,23 @@ class AppContext(BaseModel):
     out_of_credits_message: str | None
     language: str = "en"
     kept_facts: list[KeptFact] = []  # the user's own words, offered by the conversation model when relevant
+    # The app's next free times to post, when it can schedule a draft (`/drafts` with `schedule_at`).
+    post_times: Annotated[list[PostTime], BeforeValidator(_first_times)] = []
 
 
 class SavedDraft(BaseModel):
     id: str
     edit_url: str | None
+    scheduled_at: str | None = None  # set only when the app put the draft on its schedule
+    schedule_note: str | None = None  # why it didn't, in the app's words
 
 
 class AppTools(Protocol):
     async def context(self) -> AppContext: ...
 
-    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft: ...
+    async def save_draft(
+        self, text: str, thread: list[str], media: list[dict], key: str, schedule_at: str | None = None
+    ) -> SavedDraft: ...
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None: ...
 
@@ -153,6 +174,7 @@ class _RestContext(BaseModel):
     recent_posts: list[str] = []
     patterns: list[str] = []
     kept_facts: list[KeptFact] = []
+    post_times: Annotated[list[PostTime], BeforeValidator(_first_times)] = []
     credits_left: float | None = None
     out_of_credits_message: str | None = None
 
@@ -163,6 +185,8 @@ class _RestContext(BaseModel):
 class _RestDraft(BaseModel):
     draft_id: str = Field(min_length=1)
     edit_url: str | None = None
+    scheduled_at: str | None = None
+    schedule_note: str | None = Field(None, max_length=300)
 
 
 class _RestOk(BaseModel):
@@ -182,12 +206,20 @@ class RestHttpTools:
     async def context(self) -> AppContext:
         return self._model(_RestContext, await self._call("context", {})).app_context()
 
-    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
-        """`text` is the first post, `thread` the posts after it; each picture as `{url, alt, mime}`."""
+    async def save_draft(
+        self, text: str, thread: list[str], media: list[dict], key: str, schedule_at: str | None = None
+    ) -> SavedDraft:
+        """`text` is the first post, `thread` the posts after it; each picture as `{url, alt, mime}`. With
+        `schedule_at`, the app also puts it on its schedule then, and says so in `scheduled_at`."""
         pictures = [{"url": m["url"], "alt": m.get("alt") or "", "mime": m.get("mime") or ""} for m in media]
-        body = {"text": text, "thread": list(thread), "media": pictures}
+        body: dict[str, Any] = {"text": text, "thread": list(thread), "media": pictures}
+        if schedule_at is not None:
+            body["schedule_at"] = schedule_at
         draft = self._model(_RestDraft, await self._call("drafts", body, key))
-        return SavedDraft(id=draft.draft_id, edit_url=draft.edit_url)
+        scheduled = draft.scheduled_at if schedule_at is not None else None
+        return SavedDraft(
+            id=draft.draft_id, edit_url=draft.edit_url, scheduled_at=scheduled, schedule_note=draft.schedule_note
+        )
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None:
         body: dict[str, Any] = {"facts": [f.text for f in facts]}
@@ -238,13 +270,17 @@ class McpHttpTools:
     async def context(self) -> AppContext:
         return self._model(AppContext, await self._call("context", {}))
 
-    async def save_draft(self, text: str, thread: list[str], media: list[dict], key: str) -> SavedDraft:
-        """`text` is the first post, `thread` the posts after it (left out for a single post)."""
+    async def save_draft(
+        self, text: str, thread: list[str], media: list[dict], key: str, schedule_at: str | None = None
+    ) -> SavedDraft:
+        """`text` is the first post, `thread` the posts after it (left out for a single post). MCP apps only save
+        drafts: `schedule_at` isn't sent, and the draft is never scheduled."""
         # MCP apps get each picture as `{url, alt}`, as before contract 1 added `mime`.
         args: dict[str, Any] = {"text": text, "media": [{k: v for k, v in m.items() if k != "mime"} for m in media]}
         if thread:
             args["thread"] = thread
-        return self._model(SavedDraft, await self._call("save_draft", args, key))
+        saved = self._model(SavedDraft, await self._call("save_draft", args, key))
+        return SavedDraft(id=saved.id, edit_url=saved.edit_url)
 
     async def save_material(self, facts: list[Fact], draft_id: str | None, key: str) -> None:
         args = {"facts": [f.model_dump() for f in facts], "draft_id": draft_id}

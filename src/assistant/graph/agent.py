@@ -40,7 +40,7 @@ from assistant.graph.reply_text import ReplyText
 from assistant.graph.state import ChatState
 from assistant.graph.turn import Turn
 from assistant.tools import AppContext, ToolError
-from assistant.writer import Draft, DraftResult, WriterDeps, fmt, revise_draft, write_drafts
+from assistant.writer import Draft, DraftResult, WriterDeps, fmt, image_allowed, revise_draft, write_drafts
 
 MAX_TOOL_ROUNDS = 4  # chat calls with tools in one message; then one more without
 CHAT_TOKENS = 1200
@@ -222,16 +222,39 @@ class AgentTurn:
         kinds = [w.kind for w in turn.pack.writes]
         if args.kind not in kinds:  # the app's own kinds only (tool_specs lists them)
             return f"error: invalid arguments (kind: must be one of {', '.join(kinds)}); nothing was done"
+        image, notes = self._picture(args.image_file_id, args.kind, turn)
+        post_at = args.post_at
+        if post_at is not None and post_at not in {t.at for t in self._post_times()}:
+            notes.append("post_at is not one of the app's free times, so the drafts have no time")
+            post_at = None
         turn.gate()
         writer = self._writer(turn, args.kind, set())
-        result = await write_drafts(writer, args.brief, args.kind, args.count, args.language)
-        return await self._shown(result, root=None)
+        result = await write_drafts(writer, args.brief, args.kind, args.count, args.language, image)
+        result.drafts = [d.model_copy(update={"post_at": post_at}) for d in result.drafts]
+        return await self._shown(result, root=None, notes=notes)
+
+    def _post_times(self):
+        return self.context.post_times if self.context else []
+
+    def _picture(self, file_id: str | None, kind: str, turn: Turn) -> tuple[str | None, list[str]]:
+        """The picture a draft of `kind` may carry, and what to tell the model when it can't carry the one asked."""
+        if file_id is None:
+            return None, []
+        spec = next(w for w in turn.pack.writes if w.kind == kind)
+        if not spec.may_carry_image:
+            return None, [f"{kind} can't carry a picture, so it has none"]
+        if not image_allowed(file_id, spec, self.state.get("readings", [])):
+            return None, [
+                f"image_file_id {file_id[:64]!r} is not an image the user shared in this chat, so it isn't attached"
+            ]
+        return file_id, []
 
     async def _revise(self, args: ReviseDraftArgs, turn: Turn) -> str:
         draft = next((d for d in self.drafts if d.id == args.draft_id), None)
         if draft is None:
             ids = ", ".join(d.id for d in self.drafts[-MAX_DRAFTS_SHOWN:]) or "none"
             return f"error: there is no draft {args.draft_id[:64]!r} in this chat; its drafts: {ids}"
+        image, notes = self._picture(args.image_file_id, draft.kind, turn) if args.image_file_id else (None, [])
         turn.gate()
         # Earlier versions of the same draft aren't repeats of it: "shorter" twice must not drop the second version.
         root = self.family.get(draft.id, draft.id)
@@ -239,12 +262,15 @@ class AgentTurn:
         # A tap on the draft's own buttons sends the app's (English) words: the new version keeps the draft's language.
         tapped = self.about() is not None and self.about().id == draft.id
         language = draft.language if tapped and draft.language else (args.language or draft.language)
-        result = await revise_draft(self._writer(turn, draft.kind, line), draft, args.instruction, language)
-        return await self._shown(result, root=root)
+        result = await revise_draft(self._writer(turn, draft.kind, line), draft, args.instruction, language, image)
+        return await self._shown(result, root=root, notes=notes)
 
-    async def _shown(self, result: DraftResult, root: str | None) -> str:
+    async def _shown(self, result: DraftResult, root: str | None, notes: list[str] | None = None) -> str:
         """Shows each new draft (a `draft` event) and tells the model what was written."""
         first = not self.drafts  # the chat had no draft before this call (review N3)
+        free = {t.at for t in self._post_times()}
+        # A revision keeps its draft's time only while the app still has it free.
+        result.drafts = [d if d.post_at in free else d.model_copy(update={"post_at": None}) for d in result.drafts]
         for d in result.drafts:
             self.drafts.append(d)
             self.written.add(d.id)
@@ -253,6 +279,11 @@ class AgentTurn:
             payload: dict = {"id": d.id, "kind": d.kind, "posts": d.posts}
             if d.image_file_id is not None:
                 payload["image_file_id"] = d.image_file_id
+            times = self._post_times()
+            if times:  # the app can schedule: the card offers its free times, the model's pick first
+                if d.post_at is not None:
+                    payload["post_at"] = d.post_at
+                payload["post_times"] = [{"at": t.at, "label": t.label} for t in times]
             # `told`: the facts the draft was written from, for the API to store with it. Never sent to the browser.
             payload["told"] = [f.model_dump() for f in self.facts if f.id in set(d.fact_ids)]
             await self.reply.emit("draft", payload)
@@ -272,7 +303,8 @@ class AgentTurn:
                 else " These are the chat's first drafts; never call them fresh takes, other versions or new ones."
             )
         out += "\n" + "\n".join(draft_block(d) for d in result.drafts)
-        return out + (f"\nnote: {result.note}" if result.note else "")
+        notes = [*(notes or []), *([result.note] if result.note else [])]
+        return out + "".join(f"\nnote: {n}" for n in notes)
 
     # ---- what the thread keeps ----
 

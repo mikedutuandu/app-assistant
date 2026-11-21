@@ -24,6 +24,7 @@ async def test_migrate_applies_once(pool):
         "006_demo_thread.sql",
         "007_remote_packs.sql",
         "008_settings.sql",
+        "009_post_times.sql",
     ]
     assert await migrate(pool) == []
 
@@ -85,6 +86,7 @@ async def test_pools_use_their_own_schema_and_migrate_creates_it(fresh_schema):
             "006_demo_thread.sql",
             "007_remote_packs.sql",
             "008_settings.sql",
+            "009_post_times.sql",
         ]
         async with pool.connection() as conn:
             cur = await conn.execute("select current_schema()")

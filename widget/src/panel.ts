@@ -1,5 +1,5 @@
 /** The button and the chat panel, in a shadow root. Server and user text only ever goes in through textContent. */
-import { ApiError, AuthLost, type BotApi, type BotEvent, type Draft } from "./api";
+import { type ActionBody, ApiError, AuthLost, type BotApi, type BotEvent, type Draft } from "./api";
 import { startRecording, type Recording } from "./recorder";
 import { CSS } from "./styles";
 
@@ -295,43 +295,103 @@ export function createPanel(opts: PanelOptions) {
     const shorter = h("button", { class: "btn ghost", type: "button", text: "Shorter", "aria-label": "Make this draft shorter" });
     const angle = h("button", { class: "btn ghost", type: "button", text: "Another angle", "aria-label": "Try another angle for this draft" });
     const err = h("div", { class: "small", role: "alert" });
-    const buttons = [add, shorter, angle];
+    const note = h("div", { class: "note" });
+
+    // The app's free times, when it can schedule (soonest first; ones already past are left out): the bot's pick is
+    // chosen, Schedule saves the draft and asks the app to post it then.
+    const labelOf = (at: string) => d.post_times?.find((t) => t.at === at)?.label ?? new Date(at).toLocaleString();
+    const times = (d.post_times ?? []).filter((t) => Date.parse(t.at) > Date.now());
+    let when: HTMLSelectElement | null = null;
+    let schedule: HTMLButtonElement | null = null;
+    if (times.length) {
+      when = h("select", { "aria-label": "Time to post" }, ...times.map((t) => h("option", { value: t.at, text: t.label })));
+      when.value = times.some((t) => t.at === d.post_at) ? d.post_at! : times[0].at;
+      schedule = h("button", { class: "btn", type: "button", text: "Schedule" });
+      add.classList.add("ghost");
+      const named = () => schedule!.setAttribute("aria-label", `Schedule: this draft for ${labelOf(when!.value)}`);
+      named();
+      when.addEventListener("change", named);
+    }
+
+    const buttons = [schedule, add, shorter, angle].filter((b): b is HTMLButtonElement => b !== null);
     let pending = false;
+    let finished = false;
     const sync = () => {
       for (const b of buttons) b.disabled = busy || signedOut;
-      if (pending || add.classList.contains("done")) add.disabled = true;
+      if (pending || finished) {
+        add.disabled = true;
+        if (schedule) schedule.disabled = true;
+      }
+      if (when) when.disabled = busy || signedOut || pending || finished;
     };
     syncers.add(sync);
-    const markAdded = (editUrl: string | null | undefined) => {
-      setAdd("Saved", "Saved: this draft");
-      add.classList.add("done");
-      add.disabled = true;
+    const editLink = (editUrl: string | null | undefined) => {
       const href = editUrl ? safeHref(editUrl) : null;
       if (href) row.append(h("a", { class: "btn ghost", href, "aria-label": "Edit this draft in the app", text: "Edit" }));
     };
-    add.addEventListener("click", async () => {
-      pending = true;
+    const markAdded = (editUrl: string | null | undefined) => {
+      finished = true;
+      schedule?.remove();
+      setAdd("Saved", "Saved: this draft");
+      add.classList.add("done");
       add.disabled = true;
-      setAdd("Saving…", "Saving: this draft");
+      if (when) when.disabled = true;
+      editLink(editUrl);
+    };
+    const markScheduled = (at: string, editUrl: string | null | undefined) => {
+      finished = true;
+      add.remove();
+      const text = `Scheduled for ${labelOf(at)}`;
+      if (!schedule) {
+        schedule = h("button", { class: "btn", type: "button" });
+        row.prepend(schedule);
+      }
+      schedule.textContent = text;
+      schedule.setAttribute("aria-label", `${text}: this draft`);
+      schedule.classList.add("done");
+      schedule.disabled = true;
+      if (when) when.disabled = true;
+      editLink(editUrl);
+    };
+    const save = async (scheduleAt: string | null) => {
+      pending = true;
+      sync();
+      const busyButton = scheduleAt ? schedule! : add;
+      const before = busyButton.textContent!;
+      busyButton.textContent = scheduleAt ? "Scheduling…" : "Saving…";
+      busyButton.setAttribute("aria-label", `${busyButton.textContent}: this draft`);
       err.textContent = "";
       try {
-        const r = await api.act(threadId!, { action_id: actionId, kind: "add_draft", draft_id: d.id });
+        const body: ActionBody = { action_id: actionId, kind: "add_draft", draft_id: d.id };
+        if (scheduleAt) body.schedule_at = scheduleAt;
+        const r = await api.act(threadId!, body);
         pending = false;
-        markAdded(r.edit_url);
+        if (r.scheduled_at) markScheduled(r.scheduled_at, r.edit_url);
+        else {
+          markAdded(r.edit_url);
+          if (scheduleAt) note.textContent = `Saved as a draft: ${r.schedule_note || "the app couldn't schedule it."}`;
+        }
         window.dispatchEvent(new CustomEvent("assistant:saved", { detail: { draft_id: r.draft_id } }));
       } catch (e) {
         pending = false;
-        setAdd("Save draft", "Save draft: this draft");
+        if (scheduleAt) {
+          busyButton.textContent = before;
+          schedule!.setAttribute("aria-label", `Schedule: this draft for ${labelOf(when!.value)}`);
+        } else setAdd("Save draft", "Save draft: this draft");
         sync();
         if (e instanceof AuthLost) stop(SIGN_IN);
         else err.textContent = errorText(e);
       }
-    });
+    };
+    add.addEventListener("click", () => void save(null));
+    schedule?.addEventListener("click", () => void save(when!.value));
     shorter.addEventListener("click", () => void sendTurn(SHORTER, [], d.id));
     angle.addEventListener("click", () => void sendTurn(ANOTHER_ANGLE, [], d.id));
-    row.prepend(add, shorter, angle);
-    el.append(row, err);
-    if (d.added) markAdded(d.edit_url);
+    row.prepend(...buttons);
+    if (when) el.append(h("label", { class: "when" }, "Post at ", when));
+    el.append(row, note, err);
+    if (d.added && d.scheduled_at) markScheduled(d.scheduled_at, d.edit_url);
+    else if (d.added) markAdded(d.edit_url);
     sync();
     list.append(el);
     scroll();

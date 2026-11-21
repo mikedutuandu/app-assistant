@@ -63,6 +63,7 @@ def make_app(setup: dict) -> FakeApp:
         done=setup.get("done", []),
         in_flight=setup.get("in_flight", []),
         workspace=WORKSPACE,
+        schedule_note=setup.get("schedule_note"),
     )
 
 
@@ -131,7 +132,9 @@ async def run_call(tools: RestHttpTools, call: dict):
         case "context":
             return (await tools.context()).model_dump()
         case "save_draft":
-            saved = await tools.save_draft(args["text"], args["thread"], args["media"], args["key"])
+            saved = await tools.save_draft(
+                args["text"], args["thread"], args["media"], args["key"], args.get("schedule_at")
+            )
             return saved.model_dump()
         case "save_material":
             facts = [Fact(text=text) for text in args["facts"]]

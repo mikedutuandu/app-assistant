@@ -23,7 +23,7 @@ from chat_api import (
     happy_script,
     raw_token,
 )
-from fakes import FakeLlm, FakeTools, Out, default_context, marker
+from fakes import FakeLlm, FakeTools, Out, Reply, call, default_context, marker
 from starlette.requests import Request
 
 from assistant.api import chat, turn
@@ -1280,3 +1280,80 @@ async def test_a_reloaded_thread_lists_each_messages_files(api: Api):
     r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
     users = [m for m in r.json()["messages"] if m["role"] == "user"]
     assert users[0]["files"] == [{"id": up["file_id"], "kind": "image"}]
+
+
+# ---- a time to post, and the schedule ----
+
+TIMES = [
+    {"at": "2026-11-24T02:30:00Z", "label": "Tue 9:30 AM", "why": "one of your best hours"},
+    {"at": "2026-11-25T12:00:00Z", "label": "Wed 7:00 PM"},
+]
+CHOICES = [{"at": t["at"], "label": t["label"]} for t in TIMES]
+
+
+def timed_script(post_at: str = TIMES[0]["at"]) -> dict:
+    write = [
+        call("save_facts", facts=[{"text": FACT}]),
+        call("write_drafts", brief="faster replies", kind="x_post", post_at=post_at),
+    ]
+    return {**happy_script(), "CONVERSE": [Reply(calls=write), REPLY]}
+
+
+async def timed_draft(api: Api) -> tuple[str, dict]:
+    api.tools._context = default_context(post_times=TIMES)
+    api.llm.script = timed_script()
+    events = await api.send(FACT)
+    return of(events, "thread")[0]["thread_id"], of(events, "draft")[0]
+
+
+async def test_a_timed_draft_is_shown_with_its_time_and_the_choices(api: Api):
+    tid, shown = await timed_draft(api)
+    assert shown["post_at"] == TIMES[0]["at"] and shown["post_times"] == CHOICES
+    body = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    [draft] = body["messages"][1]["drafts"]
+    assert draft["post_at"] == TIMES[0]["at"] and draft["post_times"] == CHOICES and "scheduled_at" not in draft
+
+
+async def test_schedule_sends_the_time_and_says_when(api: Api):
+    tid, shown = await timed_draft(api)
+    body = add_body("act-s", shown["id"]) | {"schedule_at": TIMES[1]["at"]}  # another free time, picked on the card
+    r = await api.act(tid, body)
+    assert r.status_code == 200
+    assert r.json() == {
+        "draft_id": "draft-1",
+        "edit_url": "https://app.example/drafts/draft-1",
+        "scheduled_at": TIMES[1]["at"],
+    }
+    assert api.tools.drafts[0]["schedule_at"] == TIMES[1]["at"]
+    read = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    [draft] = read["messages"][1]["drafts"]
+    assert draft["added"] is True and draft["scheduled_at"] == TIMES[1]["at"]
+
+
+async def test_a_time_the_app_could_not_take_is_saved_as_a_draft_with_its_note(api: Api):
+    tid, shown = await timed_draft(api)
+    api.tools.schedule_note = "That time is taken now."
+    r = await api.act(tid, add_body("act-n", shown["id"]) | {"schedule_at": TIMES[0]["at"]})
+    assert r.json() == {
+        "draft_id": "draft-1",
+        "edit_url": "https://app.example/drafts/draft-1",
+        "scheduled_at": None,
+        "schedule_note": "That time is taken now.",
+    }
+    read = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    [draft] = read["messages"][1]["drafts"]
+    assert draft["added"] is True and "scheduled_at" not in draft
+
+
+async def test_schedule_only_at_one_of_the_drafts_own_times(api: Api):
+    tid, shown = await timed_draft(api)
+    r = await api.act(tid, add_body("act-x", shown["id"]) | {"schedule_at": "2026-12-31T00:00:00Z"})
+    assert (r.status_code, r.json()["error"]) == (400, "invalid")
+    assert api.tools.drafts == []
+
+
+async def test_a_draft_without_times_cannot_be_scheduled(api: Api):
+    tid = await api.thread_row()
+    pid = await api.piece_row(tid)
+    r = await api.act(tid, add_body("act-y", pid) | {"schedule_at": TIMES[0]["at"]})
+    assert (r.status_code, r.json()["error"]) == (400, "invalid")

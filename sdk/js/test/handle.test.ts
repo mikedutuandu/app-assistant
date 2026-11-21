@@ -34,7 +34,10 @@ function fakeApp(setup: Scenario["setup"] = {}) {
       if (earlier) return earlier as { draft_id: string; edit_url: string | null };
       drafts.push({ ws, ...d });
       const id = `d_${drafts.length}`;
-      return { draft_id: id, edit_url: `${SITE}/drafts/${id}` };
+      const saved = { draft_id: id, edit_url: `${SITE}/drafts/${id}` };
+      if (d.schedule_at === undefined) return saved;
+      if (setup.schedule_note) return { ...saved, scheduled_at: null, schedule_note: setup.schedule_note };
+      return { ...saved, scheduled_at: d.schedule_at };
     },
     saveMaterial: async () => {},
     charge: async (_ws, cost, ref) => {
