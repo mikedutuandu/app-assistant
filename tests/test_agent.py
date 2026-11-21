@@ -536,6 +536,19 @@ async def test_the_cap_is_checked_before_a_drafting_tool():
     assert state["messages"][-1].content == "On it."
 
 
+async def test_tool_rounds_stop_while_the_cap_still_leaves_room_for_the_answer():
+    # Mike, 21 Nov 2026: four rounds of reads at about $0.025 reached HookPlaybook's $0.10 cap, so the answer call
+    # never ran and the message was only "That's as far as I can go". Tools stop being offered while one more round
+    # and the answer would no longer fit (the last call's cost twice), so the answer always gets its call.
+    looping = Out(Reply(calls=[call("revise_draft", draft_id="nope", instruction="x")]), cost=0.025)
+    answer = Out(Reply("Here's what I found."), cost=0.025)
+    llm = FakeLlm({"CONVERSE": [looping, looping, looping, answer]})
+    h = Harness(llm, pack=make_pack(cap=0.10))
+    state = await h.send("what works for me?")
+    assert [bool(c["tools"]) for c in llm.calls] == [True, True, True, False]
+    assert state["capped"] is False and h.text() == "Here's what I found."
+
+
 async def test_the_cap_is_checked_before_each_chat_call():
     llm = FakeLlm({"CONVERSE": [Out(Reply(calls=[save(FACT1)]), cost=0.06), "never"]})
     h = Harness(llm, pack=make_pack(cap=0.05))

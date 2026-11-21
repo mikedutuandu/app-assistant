@@ -4,7 +4,8 @@
 `run_tools` runs the calls it made: `save_facts` (confirmed facts, kept in the thread and saved through the app),
 `write_drafts` and `revise_draft` (the writer model and every check, in `assistant.writer`; each passing draft is a
 `draft` event). Their results go back to the model as `role: "tool"` messages and the graph returns to `call_model`,
-for at most `MAX_TOOL_ROUNDS` calls with tools; then one more call without tools makes it answer in text.
+for at most `MAX_TOOL_ROUNDS` calls with tools, and only while one more round and the answer fit under the message's
+cost cap; then one more call without tools makes it answer in text.
 
 `AgentTurn` holds what the rounds of one turn share and the thread doesn't keep: the messages with their tool calls
 and results, and the reply as shown so far (`reply_text.py`). The thread keeps only what `update()` returns: facts,
@@ -73,6 +74,7 @@ class AgentTurn:
     results: list[tuple[str, str]] = field(default_factory=list)  # (tool, result), this turn
     ids: set[str] = field(default_factory=set)  # the tool call ids sent back this turn
     asked: bool = False  # a change is waiting for the user's tap: one per message
+    last_cost: float = 0.0  # what the last chat call cost: tools stop while the answer still fits under the cap
 
     @classmethod
     def begin(cls, state: ChatState, turn: Turn) -> "AgentTurn":
@@ -97,7 +99,10 @@ class AgentTurn:
 
     async def call_model(self, turn: Turn) -> bool:
         """One chat call. True when it called tools, now in `pending` for `run_tools`."""
-        with_tools = self.rounds < MAX_TOOL_ROUNDS
+        # Tools while one more round and the answer still fit under the message's cap (the last call's cost twice),
+        # so the cap never takes the answer's own call: after that, the call answers from what was read.
+        room = turn.cost + 2 * self.last_cost <= turn.pack.message_usd_cap
+        with_tools = self.rounds < MAX_TOOL_ROUNDS and (self.rounds == 0 or room)
         self.messages[0] = {
             "role": "system",
             "content": system_prompt(
@@ -108,7 +113,9 @@ class AgentTurn:
             self.messages if with_tools else final_messages(self.messages[: self.start], self.reply.parts, self.results)
         )
         specs = self._specs(turn) if with_tools else []
+        before = turn.cost
         out = await turn.chat_tools(sent, specs, CHAT_TOKENS, self.reply.forward)
+        self.last_cost = turn.cost - before
         self.rounds += 1
         if not self.reply.said and out.text.strip():
             await self.reply.forward(out.text)  # text the stream never handed over
