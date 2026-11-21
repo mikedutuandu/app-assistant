@@ -30,7 +30,7 @@ def test_every_app_with_its_secret_is_kept(monkeypatch):
     monkeypatch.setenv("DEMO_SESSION_SECRET", "a" * 64)
     monkeypatch.setenv("HOOKPLAYBOOK_SESSION_SECRET", "b" * 64)
     local, registry = apps_with_secrets(load_packs(APPS, "http://localhost:8000"), [HOOKPLAYBOOK])
-    assert sorted(local) == ["demo", "hookplaybook"]
+    assert sorted(local) == ["demo"]  # HookPlaybook serves its own pack: no YAML of it on the bot
     assert registry == [HOOKPLAYBOOK]
 
 

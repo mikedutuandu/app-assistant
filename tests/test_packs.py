@@ -113,7 +113,10 @@ def test_tool_names_must_not_be_empty(tmp_path: Path):
 
 
 def test_pack_models_have_chat_and_writer():
-    packs = load_packs(Path("apps"), base_url="http://testserver")
+    packs = {
+        **load_packs(Path("apps"), base_url="http://testserver"),
+        **load_packs(Path("tests/packs"), "http://testserver"),
+    }
     for pack_id in ("hookplaybook", "demo"):
         m = packs[pack_id].models
         assert m.chat == "anthropic/claude-sonnet-5.5" and m.chat_reasoning == "low"
@@ -125,7 +128,7 @@ def test_pack_models_have_chat_and_writer():
 
 
 def test_x_thread_spec_loads():
-    pack = load_packs(Path("apps"), base_url="http://testserver")["hookplaybook"]
+    pack = load_packs(Path("tests/packs"), base_url="http://testserver")["hookplaybook"]
     assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
     post, thread = pack.writes
     assert (post.count, post.max_chars, post.max_posts, post.parts) == (1, 280, None, "one")

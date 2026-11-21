@@ -186,7 +186,7 @@ def load_suite(path: Path = CASES) -> Suite:
 
 
 def load_pack() -> AppPack:
-    return load_packs(ROOT / "apps", base_url="http://localhost")[PACK_ID]
+    return load_packs(ROOT / "tests" / "packs", base_url="http://localhost")[PACK_ID]  # a copy of its old pack
 
 
 # ---- what one turn showed ----
