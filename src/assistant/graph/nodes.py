@@ -1,18 +1,26 @@
-"""The graph's first two nodes, one async function each: `(state, turn) -> state update`. The third, `converse`,
-is the conversation agent (`agent.py`).
+"""The graph's four nodes, one async function each: `(state, turn) -> state update` (`build.py` wires them).
 
-The only app tool these reach is `context()`. Every model call (reading a file) first checks the message's cost cap.
+- `read_files` starts the turn: reads the message's files and links.
+- `load_context` gets the user's voice, topics and recent posts from the app (cached for 10 minutes).
+- `call_model` makes one call of the chat model; when it calls tools, the graph goes to
+- `run_tools`, which runs them and goes back to `call_model`, until the model answers in text.
+
+The last two share the turn's work through `agent.AgentTurn`. Every model call first checks the message's cost cap:
+reaching it ends the turn with the cap's line, keeping what the turn already did.
 """
 
 import re
 import time
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
 from assistant.checks import nfc
 from assistant.files.intake import UploadError
+from assistant.graph.agent import AgentTurn
+from assistant.graph.model_input import message_text
 from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
+from assistant.llm import LlmError
 
 CONTEXT_TTL = 600  # seconds the app's context is reused within a thread
 MAX_LINKS = 2  # links read from one message
@@ -29,16 +37,10 @@ _LINK = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _now = time.time
 
 
-def _content(message: BaseMessage) -> str:
-    if isinstance(message.content, str):
-        return message.content
-    return " ".join(p.get("text", "") for p in message.content if isinstance(p, dict))
-
-
 def _latest_user_text(state: ChatState) -> str:
     for m in reversed(state.get("messages", [])):
         if isinstance(m, HumanMessage):
-            return nfc(_content(m))
+            return nfc(message_text(m))
     return ""
 
 
@@ -57,7 +59,8 @@ def _links(text: str) -> list[str]:
 async def read_files(state: ChatState, t: Turn) -> dict:
     """Starts the turn: resets its work, reads this message's files and up to 2 links in its text."""
     t.cost = 0.0
-    update: dict = {"file_ids": [], "capped": False, "failed": False}
+    t.deps.agent = None  # the agent's work starts afresh in this turn's first call_model
+    update: dict = {"file_ids": [], "capped": False, "failed": False, "tools_pending": False}
     readings = list(state.get("readings", []))
     seen = {r.file_id for r in readings}
     jobs = [(f, False) for f in state.get("file_ids", [])] + [(u, True) for u in _links(_latest_user_text(state))]
@@ -96,3 +99,43 @@ async def load_context(state: ChatState, t: Turn) -> dict:
     )
     name = nfc(ctx.name or "").strip() or None
     return {"context": ctx, "context_at": _now(), "user_name": name}
+
+
+async def call_model(state: ChatState, turn: Turn) -> dict:
+    """One call of the chat model, its text streamed to the user. When it calls tools, `run_tools` runs them next;
+    otherwise the turn's reply is done."""
+    agent = turn.deps.agent
+    if agent is None:  # the turn's first call
+        await turn.emit("status", {"step": "thinking"})
+        agent = turn.deps.agent = AgentTurn.begin(state, turn)
+    try:
+        called_tools = await agent.call_model(turn)
+    except Capped:
+        await agent.reply.show_cap()
+        return agent.update(done=True, capped=True)
+    except LlmError as e:
+        return _failed(agent, e)
+    return agent.update(done=not called_tools)
+
+
+async def run_tools(state: ChatState, turn: Turn) -> dict:
+    """Runs the tools the chat model just called; the graph goes back to `call_model` with their results."""
+    agent: AgentTurn = turn.deps.agent
+    try:
+        await agent.run_tools(turn)
+    except Capped:
+        await agent.reply.show_cap()
+        return agent.update(done=True, capped=True)
+    except LlmError as e:
+        return _failed(agent, e)
+    return agent.update(done=False)
+
+
+def _failed(agent: AgentTurn, error: LlmError) -> dict:
+    """A model call failed. Before any tool ran, the turn fails as any failed call does (`bind` carries its cost).
+    After tools ran (drafts shown, facts saved in the app), their work is kept in the thread, so a later "shorter"
+    finds the draft and the facts aren't saved again, and the turn ends as failed."""
+    if not agent.results:
+        raise error
+    agent.reply.drop_round()  # what the failed call had started to say is not kept
+    return agent.update(done=True, failed=True)

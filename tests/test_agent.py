@@ -10,7 +10,9 @@ from langchain_core.messages import AIMessage
 
 from assistant.files.read import FileReading
 from assistant.graph import prompts
-from assistant.graph.agent import MAX_TOOL_ROUNDS, REPLY_RULE, TOOL_SPECS
+from assistant.graph.agent import MAX_TOOL_ROUNDS
+from assistant.graph.agent_tools import TOOL_SPECS
+from assistant.graph.model_input import REPLY_RULE
 from assistant.llm import LlmError, ToolCall
 from assistant.tools import ToolError
 from assistant.writer import NO_FACTS

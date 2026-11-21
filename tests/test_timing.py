@@ -86,7 +86,8 @@ async def test_turn_logs_one_timing_line(api: Api, timing_log):
     data = line(rec)
     assert data["outcome"] == "done" and data["app"] == "real"
     assert data["first_text_ms"] is not None
-    assert {s["name"] for s in data["step"]} == {"read_files", "load_context", "converse"}
+    # The graph's nodes, in order: the model called tools (write_drafts), then answered.
+    assert [s["name"] for s in data["step"]] == ["read_files", "load_context", "call_model", "run_tools", "call_model"]
     assert {m["name"] for m in data["model"]} >= {
         "chat/model",
         "writer/model",

@@ -1,9 +1,13 @@
-"""Wires the nodes into the bot's graph:
+"""Wires the nodes (`nodes.py`) into the bot's graph, one run per user message:
 
-read_files → load_context → converse → END
+    START → read_files → load_context → call_model ⇄ run_tools
+                ↓ (cost cap)                ↓ (no tools called: the reply is done)
+               END                         END
 
-`converse` is the conversation agent (`agent.py`). A turn reaching the message's cost cap while reading files ends
-there; one reaching it inside `converse` ends with what it already did.
+`call_model` calls the chat model; when it asks for tools, `run_tools` runs them and the graph goes back to
+`call_model` with their results, at most `agent.MAX_TOOL_ROUNDS` times before a last call without tools. The cost
+cap, a failed model call after tools ran, or a reply without tool calls ends the turn. The thread's state
+(`state.py`) is saved by the checkpointer after every node, keyed by `thread_id`.
 """
 
 from collections.abc import Awaitable, Callable
@@ -13,7 +17,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from assistant.files.read import FileReading, Meter
-from assistant.graph import agent, nodes
+from assistant.graph import nodes
 from assistant.graph.state import STATE_TYPES, ChatState
 from assistant.graph.turn import Deps, bind
 from assistant.llm import Llm
@@ -32,6 +36,14 @@ def serializer() -> JsonPlusSerializer:
 
 def _after_read(state: ChatState) -> str:
     return END if state.get("capped") else "load_context"
+
+
+def _after_model(state: ChatState) -> str:
+    return "run_tools" if state.get("tools_pending") else END
+
+
+def _after_tools(state: ChatState) -> str:
+    return END if state.get("capped") or state.get("failed") else "call_model"
 
 
 async def _no_cost(cost_usd: float, n: int) -> None:
@@ -54,10 +66,11 @@ def build_graph(
     `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise."""
     deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link, on_cost or _no_cost)
     graph = StateGraph(ChatState)
-    for node in (nodes.read_files, nodes.load_context, agent.converse):
+    for node in (nodes.read_files, nodes.load_context, nodes.call_model, nodes.run_tools):
         graph.add_node(node.__name__, bind(node, deps))
     graph.add_edge(START, "read_files")
     graph.add_conditional_edges("read_files", _after_read, ["load_context", END])
-    graph.add_edge("load_context", "converse")
-    graph.add_edge("converse", END)
+    graph.add_edge("load_context", "call_model")
+    graph.add_conditional_edges("call_model", _after_model, ["run_tools", END])
+    graph.add_conditional_edges("run_tools", _after_tools, ["call_model", END])
     return graph.compile(checkpointer=checkpointer)
