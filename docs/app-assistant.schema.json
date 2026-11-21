@@ -1,6 +1,52 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "Actions": {
+      "description": "What the app lets its assistant do, through its own MCP server (docs/integration.md, \"Actions\").",
+      "properties": {
+        "mcp_url": {
+          "description": "The app's MCP server (Streamable HTTP), on the app's own site; called with the user's token.",
+          "pattern": "^https?://[^/\\s]+",
+          "title": "Mcp Url",
+          "type": "string"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The tools the assistant may use; left out, every tool the server lists for the user.",
+          "title": "Tools"
+        },
+        "starters": {
+          "default": [],
+          "description": "One-tap messages shown on an empty chat.",
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Starters",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mcp_url"
+      ],
+      "title": "Actions",
+      "type": "object"
+    },
     "FileCaps": {
       "properties": {
         "image_mb": {
@@ -272,13 +318,25 @@
       "type": "string"
     },
     "writes": {
-      "description": "What the assistant may write.",
+      "default": [],
+      "description": "What the assistant may write (none: it only reads and acts).",
       "items": {
         "$ref": "#/$defs/WriteSpec"
       },
-      "minItems": 1,
       "title": "Writes",
       "type": "array"
+    },
+    "actions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Actions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What the assistant may do in the app, through its MCP server."
     },
     "models": {
       "$ref": "#/$defs/Models"
@@ -312,7 +370,6 @@
     "api_base",
     "allowed_origins",
     "guide",
-    "writes",
     "models",
     "message_usd_cap"
   ],

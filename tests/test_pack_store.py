@@ -122,7 +122,7 @@ def test_the_committed_json_schema_matches_the_model():
     committed = json.loads(SCHEMA_PATH.read_text())
     assert committed == pack_json_schema(), "run `uv run python scripts/pack_schema.py` and commit the file"
     assert committed["properties"]["contract"]["const"] == 1
-    assert {"contract", "id", "api_base", "writes", "models", "message_usd_cap"} <= set(committed["required"])
+    assert {"contract", "id", "api_base", "models", "message_usd_cap"} <= set(committed["required"])
 
 
 # ---- the registry ----

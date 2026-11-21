@@ -1,9 +1,9 @@
 /** The button and the chat panel, in a shadow root. Server and user text only ever goes in through textContent. */
-import { type ActionBody, ApiError, AuthLost, type BotApi, type BotEvent, type Draft } from "./api";
+import { type ActionBody, ApiError, AuthLost, type BotApi, type BotEvent, type Confirm, type Draft } from "./api";
 import { startRecording, type Recording } from "./recorder";
 import { CSS } from "./styles";
 
-export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread" | "fileLink">;
+export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread" | "fileLink"> & Partial<Pick<BotApi, "config">>;
 export interface PanelOptions {
   api: PanelApi;
   app: string;
@@ -27,7 +27,16 @@ const STEP_LABELS: Record<string, string> = {
   thinking: "Thinking…",
   writing: "Writing your posts…",
   checking: "Checking every number…",
+  reading_app: "Checking your app…",
 };
+/** What a change's card says once it is not waiting any more. */
+const CHANGE_STATES: Record<string, (result: string) => string> = {
+  done: (r) => (r ? `Done. ${r}` : "Done."),
+  failed: (r) => (r ? `Didn't work: ${r}` : "Didn't work."),
+  cancelled: () => "Cancelled.",
+  expired: () => "Too old to confirm now. Ask again.",
+};
+const RESULT_SHOWN = 240; // the app's answer under a done change, at most
 const SHORTER = "Make it shorter";
 const ANOTHER_ANGLE = "Try another angle";
 const CHECK_ICON =
@@ -224,6 +233,7 @@ export function createPanel(opts: PanelOptions) {
       loaded = true;
       const saved = store.get();
       if (saved) void restore(saved);
+      else void showStarters();
     }
   }
   function close() {
@@ -263,6 +273,7 @@ export function createPanel(opts: PanelOptions) {
         // In the order a turn shows them live: what it kept, its drafts, then its words.
         if (m.saved?.length) renderSaved(m.saved);
         for (const d of m.drafts ?? []) renderDraft(d);
+        for (const c of m.confirms ?? []) renderConfirm(c);
         if (m.text) addMsg("msg bot", m.text);
       }
     } catch (e) {
@@ -273,6 +284,80 @@ export function createPanel(opts: PanelOptions) {
         loaded = false; // a passing failure: try again next time the panel opens
       }
     }
+  }
+
+  // ---- the app's starters, before the first message ----
+  let startersEl: HTMLElement | null = null;
+  async function showStarters() {
+    if (!api.config) return;
+    let starters: string[] = [];
+    try {
+      starters = (await api.config()).starters ?? [];
+    } catch {
+      return; // no starters is fine: the chat works the same
+    }
+    if (!starters.length || threadId || list.children.length) return;
+    startersEl = h(
+      "div",
+      { class: "starters" },
+      ...starters.map((text) => {
+        const b = h("button", { class: "starter", type: "button", text });
+        b.addEventListener("click", () => void sendTurn(text, []));
+        return b;
+      }),
+    );
+    list.append(startersEl);
+  }
+  const dropStarters = () => {
+    startersEl?.remove();
+    startersEl = null;
+  };
+
+  // ---- a change waiting for the user's OK ----
+  function renderConfirm(c: Confirm) {
+    const el = h("div", { class: "confirm", role: "group", "aria-label": c.title });
+    el.append(h("p", { class: "title", text: c.title }));
+    if (c.lines?.length) el.append(h("ul", {}, ...c.lines.map((l) => h("li", { text: l }))));
+    const err = h("div", { class: "small", role: "alert" });
+    const showState = (state: string, result?: string | null) => {
+      row.remove();
+      el.querySelector(".state")?.remove();
+      const said = (CHANGE_STATES[state] ?? (() => ""))((result ?? "").slice(0, RESULT_SHOWN));
+      el.insertBefore(h("p", { class: `state ${state}`, text: said }), err);
+    };
+    const row = h("div", { class: "row" });
+    const yes = h("button", { class: "btn", type: "button", text: "Confirm", "aria-label": `Confirm: ${c.title}` });
+    const no = h("button", { class: "btn ghost", type: "button", text: "Cancel", "aria-label": `Cancel: ${c.title}` });
+    row.append(yes, no);
+    el.append(row, err);
+    let pending = false;
+    const sync = () => {
+      yes.disabled = no.disabled = pending || busy || signedOut;
+    };
+    syncers.add(sync);
+    const tap = async (kind: "confirm" | "cancel") => {
+      pending = true;
+      sync();
+      err.textContent = "";
+      try {
+        const r = await api.act(threadId!, { action_id: `confirm:${c.id}`, kind, pending_id: c.id });
+        if (r.state === "waiting" || r.state === "running") throw new Error("pending");
+        showState(r.state, r.result);
+        syncers.delete(sync);
+      } catch (e) {
+        pending = false;
+        sync();
+        if (e instanceof AuthLost) stop(SIGN_IN);
+        else if (e instanceof ApiError && e.status === 410) showState("expired");
+        else err.textContent = e instanceof Error && e.message === "pending" ? "Still working on it. Try again in a moment." : errorText(e);
+      }
+    };
+    yes.addEventListener("click", () => void tap("confirm"));
+    no.addEventListener("click", () => void tap("cancel"));
+    if (c.state && c.state !== "waiting" && c.state !== "running") showState(c.state, c.result);
+    sync();
+    list.append(el);
+    scroll();
   }
 
   // ---- drafts and saved lines ----
@@ -515,6 +600,7 @@ export function createPanel(opts: PanelOptions) {
   /** One turn. `draftId` is set when it is a Shorter or Another angle about that draft (then nothing typed is taken). */
   async function sendTurn(text: string, sent: Chip[], draftId?: string) {
     if (busy || signedOut) return;
+    dropStarters();
     const fromComposer = draftId === undefined;
     busy = true;
     refresh();
@@ -570,6 +656,11 @@ export function createPanel(opts: PanelOptions) {
           hideWorking();
           bubble = null;
           renderDraft(d);
+          break;
+        case "confirm":
+          hideWorking();
+          bubble = null;
+          renderConfirm(d);
           break;
         case "saved":
           hideWorking();

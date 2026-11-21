@@ -23,6 +23,7 @@ from chat_api import (
     happy_script,
     raw_token,
 )
+from chat_api import make_pack as chat_api_pack
 from fakes import FakeLlm, FakeTools, Out, Reply, call, default_context, marker
 from starlette.requests import Request
 
@@ -991,7 +992,7 @@ async def test_draft_not_stored_shows_it_fails_turn_and_charges_once(api: Api, m
     async def broken(*_args):
         raise RuntimeError("database went away")
 
-    def drafting_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
+    def drafting_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost, **_):
         class Graph:
             async def ainvoke(self, state, config):
                 await on_cost(0.001, 1)
@@ -1014,7 +1015,7 @@ async def test_a_draft_added_before_its_turn_ends_still_marks_its_facts_told(api
     shown, release = asyncio.Event(), asyncio.Event()
     told = {"id": "f1", "text": FACT, "numbers": [2.0], "source": "typed", "file_id": None}
 
-    def slow_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost):
+    def slow_graph(pack, llm, tools_factory, checkpointer, on_event, read_files, read_link, on_cost, **_):
         class Graph:
             async def ainvoke(self, state, config):
                 draft = {"id": "d1", "kind": "x_post", "posts": [LAUNCH, "and more"], "told": [told]}
@@ -1357,3 +1358,95 @@ async def test_a_draft_without_times_cannot_be_scheduled(api: Api):
     pid = await api.piece_row(tid)
     r = await api.act(tid, add_body("act-y", pid) | {"schedule_at": TIMES[0]["at"]})
     assert (r.status_code, r.json()["error"]) == (400, "invalid")
+
+
+# ---- the app's own tools: a change waits for the user's tap ----
+
+
+def acting(api: Api) -> None:
+    """The test app gets actions (its MCP server is api.actions)."""
+    from assistant.pack_store import PackStore
+    from assistant.packs import Actions
+
+    pack = chat_api_pack().model_copy(
+        update={"actions": Actions(mcp_url="https://app.example/mcp", starters=["How did I do?", "Plan my week"])}
+    )
+    api.app.state.packs = PackStore({"real": pack}, api.app.state.settings)
+
+
+def change_script() -> dict:
+    return {"CONVERSE": [Reply(calls=[call("move_item", id="i7", day="Friday")]), "Tap Confirm to move it."]}
+
+
+async def asked(api: Api) -> tuple[str, dict]:
+    acting(api)
+    api.llm.script = change_script()
+    events = await api.send("move my item to Friday")
+    return of(events, "thread")[0]["thread_id"], of(events, "confirm")[0]
+
+
+def tap(pending_id: str, kind: str = "confirm", action_id: str = "c1") -> dict:
+    return {"action_id": action_id, "kind": kind, "pending_id": pending_id}
+
+
+async def test_the_starters_come_from_the_pack(api: Api):
+    acting(api)
+    r = await api.client.get("/v1/chat/real/config", headers=api.headers())
+    assert r.json() == {"starters": ["How did I do?", "Plan my week"]}
+
+
+async def test_a_change_is_shown_kept_and_run_once_on_confirm(api: Api):
+    tid, card = await asked(api)
+    assert card["title"] == "Move an item" and card["lines"] == ["Id: i7", "Day: Friday"]
+    assert api.actions.calls == []  # nothing ran yet
+    read = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    [shown] = read["messages"][1]["confirms"]
+    assert shown["state"] == "waiting" and shown["id"] == card["id"]
+
+    api.actions.answers["move_item"] = "Moved to Friday."
+    first = await api.act(tid, tap(card["id"]))
+    again = await api.act(tid, tap(card["id"], action_id="c2"))
+    assert first.json() == again.json() == {"state": "done", "result": "Moved to Friday."}
+    assert api.actions.calls == [("move_item", {"id": "i7", "day": "Friday"}, f"confirm:{card['id']}")]
+    read = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    assert read["messages"][1]["confirms"][0]["state"] == "done"
+
+    # The next message's model call knows what became of it.
+    api.llm.script = {"CONVERSE": ["It's on Friday now."]}
+    await api.send("did it work?", thread=tid)
+    system = api.llm.calls[-1]["messages"][0]["content"]
+    assert '<data source="change" title="Move an item" state="done">Moved to Friday.</data>' in system
+
+
+async def test_cancel_drops_it_and_nothing_runs(api: Api):
+    tid, card = await asked(api)
+    r = await api.act(tid, tap(card["id"], kind="cancel"))
+    assert r.json() == {"state": "cancelled", "result": None}
+    assert (await api.act(tid, tap(card["id"], action_id="c3"))).json()["state"] == "cancelled"
+    assert api.actions.calls == []
+
+
+async def test_a_refused_change_is_failed_with_the_apps_words(api: Api):
+    from assistant.tools import ToolError
+
+    tid, card = await asked(api)
+    api.actions.answers["move_item"] = ToolError("refused", "That day is full.")
+    assert (await api.act(tid, tap(card["id"]))).json() == {"state": "failed", "result": "That day is full."}
+
+
+async def test_an_old_change_has_expired(api: Api):
+    tid, card = await asked(api)
+    async with api.pool.connection() as conn:
+        await conn.execute(
+            "update pending_actions set created_at = now() - interval '25 hours' where id = %s", (card["id"],)
+        )
+    r = await api.act(tid, tap(card["id"]))
+    assert (r.status_code, r.json()["error"]) == (410, "expired")
+    assert api.actions.calls == []
+
+
+async def test_another_workspaces_change_is_not_found(api: Api):
+    _tid, card = await asked(api)
+    other = await api.thread_row(workspace="ws2")
+    r = await api.act(other, tap(card["id"]), workspace="ws2")
+    assert (r.status_code, r.json()) == (404, {"error": "change"})

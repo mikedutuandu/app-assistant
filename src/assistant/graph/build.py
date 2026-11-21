@@ -16,6 +16,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from assistant.app_actions import AppActions
 from assistant.files.read import FileReading, Meter
 from assistant.graph import nodes
 from assistant.graph.state import STATE_TYPES, ChatState
@@ -59,12 +60,18 @@ def build_graph(
     read_files: Callable[[list[str], Meter], Awaitable[list[FileReading]]],
     read_link: Callable[[str], Awaitable[FileReading]],
     on_cost: Callable[[float, int], Awaitable[None]] | None = None,
+    actions_factory: Callable[[], AppActions | None] | None = None,
+    on_pending: Callable[[dict], Awaitable[str]] | None = None,
 ) -> CompiledStateGraph:
     """One graph per request (compiling is cheap). Invoke it with `{"messages": [HumanMessage(text)], "file_ids":
     [...], "draft_id": <the draft the message is about, or None>}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`.
 
-    `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise."""
+    `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise.
+    `actions_factory` reaches the app's MCP server (the pack's `actions`); `on_pending(change)` keeps a change waiting
+    for the user's tap and returns its id (`{"tool", "title", "arguments"}`)."""
     deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link, on_cost or _no_cost)
+    deps.actions_factory = actions_factory
+    deps.on_pending = on_pending
     graph = StateGraph(ChatState)
     for node in (nodes.read_files, nodes.load_context, nodes.call_model, nodes.run_tools):
         graph.add_node(node.__name__, bind(node, deps))

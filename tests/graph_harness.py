@@ -39,8 +39,11 @@ def make_pack(cap: float = 0.05) -> AppPack:
 
 
 class Harness:
-    def __init__(self, llm: FakeLlm, tools: FakeTools | None = None, pack: AppPack | None = None):
+    def __init__(self, llm: FakeLlm, tools: FakeTools | None = None, pack: AppPack | None = None, actions=None):
         self.llm = llm
+        self.actions = actions  # the app's own tools (fakes.FakeActions); the pack needs `actions` too
+        self.changes: list[dict] = []  # what the agent asked the user to confirm (on_pending)
+        self.changes_log: list[dict] = []  # sent as this turn's `changes`
         self.tools = tools or FakeTools()
         self.pack = pack or make_pack()
         self.saver = InMemorySaver(serde=serializer())
@@ -50,6 +53,10 @@ class Harness:
         self.links: dict[str, FileReading | Exception] = {}
         self.link_calls: list[str] = []
         self.costs: list[tuple[float, int]] = []
+
+    async def on_pending(self, change: dict) -> str:
+        self.changes.append(change)
+        return f"p{len(self.changes)}"
 
     async def on_cost(self, cost_usd: float, n: int) -> None:
         self.costs.append((cost_usd, n))
@@ -91,9 +98,16 @@ class Harness:
             self.read_files,
             self.read_link,
             self.on_cost,
+            actions_factory=(lambda: self.actions) if self.actions is not None else None,
+            on_pending=self.on_pending,
         )
         config = {"configurable": {"thread_id": thread_id(self.pack.id, "ws1", chat)}}
-        state = {"messages": [HumanMessage(text)], "file_ids": file_ids or [], "draft_id": draft_id}
+        state = {
+            "messages": [HumanMessage(text)],
+            "file_ids": file_ids or [],
+            "draft_id": draft_id,
+            "changes": list(self.changes_log),
+        }
         return await graph.ainvoke(state, config)
 
     def of(self, kind: str) -> list[dict]:

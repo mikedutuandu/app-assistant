@@ -138,6 +138,30 @@ class RegistryEntry(BaseModel):
         return secret_from_env(self.id, self.secret_env)
 
 
+class Actions(BaseModel):
+    """What the app lets its assistant do, through its own MCP server (docs/integration.md, "Actions")."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    mcp_url: str = Field(
+        pattern=r"^https?://[^/\s]+",
+        description="The app's MCP server (Streamable HTTP), on the app's own site; called with the user's token.",
+    )
+    tools: list[Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]] | None = Field(
+        None,
+        max_length=100,
+        description="The tools the assistant may use; left out, every tool the server lists for the user.",
+    )
+    starters: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(
+        [], max_length=6, description="One-tap messages shown on an empty chat."
+    )
+
+    @field_validator("mcp_url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        return http_url(value)
+
+
 class AppPack(BaseModel):
     """A pack as the bot uses it. The app is reached by exactly one of `mcp_url` (MCP, with its four tool names)
     and `api_base` (the four HTTPS endpoints of contract 1)."""
@@ -153,6 +177,7 @@ class AppPack(BaseModel):
     guide: str
     writes: list[WriteSpec]
     tools: dict[Literal["context", "save_draft", "save_material", "charge"], str] | None = None
+    actions: Actions | None = None
     models: Models
     files: FileCaps = FileCaps()
     message_usd_cap: float
@@ -197,7 +222,8 @@ class ServedPack(BaseModel):
         description="The origins the chat window runs on (scheme://host[:port])."
     )
     guide: str = Field(min_length=1, description="What a good story is in this app, for the conversation model.")
-    writes: list[WriteSpec] = Field(min_length=1, description="What the assistant may write.")
+    writes: list[WriteSpec] = Field([], description="What the assistant may write (none: it only reads and acts).")
+    actions: Actions | None = Field(None, description="What the assistant may do in the app, through its MCP server.")
     models: Models
     files: FileCaps = FileCaps()
     message_usd_cap: float = Field(gt=0, description="The most one message may spend, in USD (the bot caps it).")
@@ -206,6 +232,12 @@ class ServedPack(BaseModel):
     @classmethod
     def _api_base(cls, value: str) -> str:
         return http_url(value)
+
+    @model_validator(mode="after")
+    def _writes_or_acts(self) -> "ServedPack":
+        if not self.writes and self.actions is None:
+            raise ValueError("give the assistant something to do: writes, actions, or both")
+        return self
 
     @field_validator("allowed_origins")
     @classmethod
@@ -237,6 +269,11 @@ def load_packs(dir: Path, base_url: str = "") -> dict[str, AppPack]:
             raise PackError(f"{path}: expected a mapping at the top level")
         if "interview_guide" in raw:
             raise PackError(f"{path}: `interview_guide` is gone: rename it to `guide`")
+        actions = raw.get("actions")
+        if isinstance(actions, dict) and "{base}" in str(actions.get("mcp_url", "")):
+            if not base:
+                raise PackError(f"{path}: the pack uses {{base}} but public_base_url is empty")
+            raw = {**raw, "actions": {**actions, "mcp_url": str(actions["mcp_url"]).replace("{base}", base)}}
         try:
             pack = AppPack.model_validate(raw)
         except ValidationError as exc:

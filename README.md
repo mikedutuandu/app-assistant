@@ -4,9 +4,11 @@
 [![npm](https://img.shields.io/npm/v/@app-assistant/host)](https://www.npmjs.com/package/@app-assistant/host)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A writing assistant you add to your web app. It chats with your users like a person, asks one thing at a time about
-what they actually did, and turns it into a post or a thread in their voice, **never inventing a number**. Users can
-attach screenshots, PDFs and voice notes. Your app decides where a draft goes; the bot never publishes anything.
+An assistant you add to your web app. It chats with your users like a person, asks one thing at a time about what
+they actually did, and turns it into the writing your app is for, in their voice, **never inventing a number**. Users
+can attach screenshots, PDFs and voice notes. Give it your app's own actions through your MCP server and it also
+answers questions from the user's real data and does things for them, **each change only after they tap Confirm**.
+Your app decides where a draft goes; the bot never publishes anything by itself.
 
 It runs as its own service (FastAPI + LangGraph, Postgres, any S3-compatible bucket, models through OpenRouter), and
 your app talks to it through a small, versioned contract: one token, four HTTPS endpoints, and a JSON "pack" that
@@ -31,6 +33,8 @@ your page ── chat window (script tag or React) ──► app-assistant ─�
    only. Every number and claim in a draft is checked against what the user gave or a file showed: a draft that fails
    is rewritten once, then dropped.
 4. A draft reaches your app only when the user taps to save it. There is no tool that publishes.
+5. Optional actions: your pack points at your own MCP server. Tools marked read-only run at once; any other tool is
+   shown as a card and runs only when the user taps Confirm ([docs/integration.md](docs/integration.md#actions-optional-your-mcp-server)).
 
 ## Try it in two minutes (Docker)
 

@@ -11,7 +11,7 @@ export type { BotEvent } from "./bot";
 export type { AppContext, ChargeResult, DraftInput, HostOptions, SavedDraft } from "./handle";
 export type { Access, TokenClaims } from "./token";
 export { readEvents, signToken };
-export { verifyToken } from "./token";
+export { verifyAssistantToken, verifyToken } from "./token";
 
 export interface AssistantHost {
   /** Your routes' answer, or `null` when the request isn't for `{basePath}/*` or the pack: pass it on. */

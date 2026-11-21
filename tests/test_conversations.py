@@ -34,7 +34,7 @@ REQUIRE_RECORDINGS = os.environ.get("REQUIRE_CONVERSATION_RECORDINGS", "") == "1
 
 
 def test_about_twenty_cases_with_notes_and_rules():
-    assert 18 <= len(SUITE.cases) <= 25
+    assert 18 <= len(SUITE.cases) <= 30
     for case in SUITE.cases:
         assert case.expect and all(note.strip() for note in case.expect), case.name
         assert all(t.text.strip() or t.file for t in case.turns), case.name

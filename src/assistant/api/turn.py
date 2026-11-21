@@ -30,6 +30,7 @@ from assistant.checks import Fact
 from assistant.db import new_id
 from assistant.files.intake import FileRecord, UploadError
 from assistant.files.read import FileReading, Meter, read_file, read_link
+from assistant.graph.agent import confirm_lines
 from assistant.graph.build import build_graph, thread_id
 from assistant.limits import (
     DEMO_MESSAGES_PER_IP_DAY,
@@ -187,6 +188,50 @@ async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: 
         )
 
 
+PENDING_HOURS = 24  # a change not confirmed by then can't be any more
+
+
+async def _save_change(pool, t: TurnInput, chat_id: str, message_id: str, change: dict) -> str:
+    """Keeps a change the user is asked to confirm; its id is the card's."""
+    pending_id = new_id()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "insert into pending_actions (id, app, workspace, thread_id, message_id, tool, title, arguments, lines)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                pending_id,
+                t.session.app,
+                t.session.workspace,
+                chat_id,
+                message_id,
+                change["tool"],
+                change["title"],
+                Jsonb(change["arguments"]),
+                Jsonb(change.get("lines") or []),
+            ),
+        )
+    return pending_id
+
+
+async def changes_of(pool, session: Session, chat_id: str) -> list[dict]:
+    """The changes asked in a thread, oldest first, as the model reads them: `{title, state, result}`."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "select title, state, result, created_at < now() - %s from pending_actions"
+            " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
+            (timedelta(hours=PENDING_HOURS), session.app, session.workspace, chat_id),
+        )
+        rows = await cur.fetchall()
+    out = []
+    for title, state, result, old in rows[-20:]:
+        if state == "running":
+            state = "waiting"  # being run right now: not done yet
+        if state == "waiting" and old:
+            state = "expired"
+        out.append({"title": title, "state": state, "result": (result or "")[:500]})
+    return out
+
+
 async def _save_lines(pool, t: TurnInput, chat_id: str, message_id: str, saved: dict) -> None:
     async with pool.connection() as conn:
         await conn.execute(
@@ -321,6 +366,14 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
                 log.error("%s not stored message=%s error=%s", kind, message_id, type(e).__name__)
         await emit(kind, payload)
 
+    async def on_pending(change: dict) -> str:
+        return await _save_change(
+            state.pool, t, chat_id, message_id, {**change, "lines": confirm_lines(change["arguments"])}
+        )
+
+    actions = state.actions_for(t.pack, t.session) if t.pack.actions is not None else None
+    if actions is not None and hasattr(actions, "timer"):
+        actions.timer = timer
     on_cost, settle_charges = _cost_recorder(state, t, tools, message_id)
     graph = build_graph(
         t.pack,
@@ -331,6 +384,8 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         _file_reader(state, t, chat_id, timer),
         lambda url: read_link(url, state.http),
         on_cost,
+        actions_factory=(lambda: actions) if actions is not None else None,
+        on_pending=on_pending,
     )
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None
@@ -340,7 +395,8 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         # too, so a reload can show them with the message
         extra: dict = {"turn": message_id, **({"file_ids": list(t.file_ids)} if t.file_ids else {})}
         human = HumanMessage(t.text, additional_kwargs=extra)
-        inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id, "ask": t.ask}
+        changes = await changes_of(state.pool, t.session, chat_id) if actions is not None else []
+        inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id, "ask": t.ask, "changes": changes}
         final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
         capped = bool(final.get("capped"))

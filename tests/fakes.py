@@ -168,3 +168,42 @@ class FakeTools:
         if any(c["ref"] == ref for c in self.charges):  # the app charges once per ref, as HookPlaybook does
             return
         self.charges.append({"cost_usd": cost_usd, "ref": ref})
+
+
+class FakeActions:
+    """An app's MCP server as app_actions.AppActions: `tools` its list, `answers` what each tool returns (a str, an
+    ActionResult, or an Exception to raise). Records every call in `.calls`."""
+
+    def __init__(self, tools: list | None = None, answers: dict | None = None):
+        from assistant.app_actions import AppTool
+
+        self.tools = tools or [
+            AppTool("list_items", "List items", "The user's items, newest first.", OBJECT, True),
+            AppTool("get_stats", "Get stats", "The user's numbers for the last 7 days.", OBJECT, True),
+            AppTool(
+                "move_item",
+                "Move an item",
+                "Moves an item to another day.",
+                {"type": "object", "properties": {"id": {"type": "string"}, "day": {"type": "string"}}},
+                False,
+            ),
+        ]
+        self.answers = answers or {}
+        self.calls: list[tuple[str, dict, str | None]] = []
+        self.listed = 0
+
+    async def list_tools(self):
+        self.listed += 1
+        return list(self.tools)
+
+    async def call(self, name: str, arguments: dict, key: str | None = None):
+        from assistant.app_actions import ActionResult
+
+        self.calls.append((name, arguments, key))
+        got = self.answers.get(name, "ok")
+        if isinstance(got, Exception):
+            raise got
+        return got if isinstance(got, ActionResult) else ActionResult(got, False)
+
+
+OBJECT = {"type": "object", "properties": {}}

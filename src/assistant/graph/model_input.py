@@ -44,12 +44,19 @@ def draft_block(d: Draft, new: bool = False) -> str:
     return data("draft", text, id=d.id, kind=d.kind, **extra)
 
 
-def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: list[Draft], written: set[str]) -> str:
+def system_prompt(
+    pack: AppPack,
+    state: ChatState,
+    facts: list[Fact],
+    drafts: list[Draft],
+    written: set[str],
+    app_tools: bool = False,
+) -> str:
     """The rules and everything the model knows this turn. Rebuilt before every call: facts and drafts change as the
     tools run (`written` holds the ids of the drafts written in this message)."""
     ctx = state.get("context")
     parts = [
-        prompts.CONVERSE,
+        prompts.CONVERSE if pack.writes else prompts.ASSIST,
         f"App: {pack.name}",
         f"Language: {language_tag(ctx.language if ctx else '')}",
         f"The app's guide:\n{pack.guide.strip()}",
@@ -79,8 +86,16 @@ def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: li
         parts.append(
             "The same chat's other turns, answered by the app's own assistant, newest last:\n" + data("ask", turns)
         )
-    fact_lines = "\n".join(data("fact", f.text) for f in facts) or "none yet"
-    parts.append("Facts saved in this chat:\n" + fact_lines)
+    if app_tools:
+        parts.insert(1, prompts.APP_TOOLS)
+        changes = state.get("changes") or []
+        shown_changes = "\n".join(
+            data("change", c.get("result") or "", title=c.get("title", ""), state=c.get("state", "")) for c in changes
+        )
+        parts.append("Changes asked in this chat, oldest first:\n" + (shown_changes or "none yet"))
+    if pack.writes:
+        fact_lines = "\n".join(data("fact", f.text) for f in facts) or "none yet"
+        parts.append("Facts saved in this chat:\n" + fact_lines)
     readings = state.get("readings", [])
     if readings:
         blocks = []
@@ -88,6 +103,8 @@ def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: li
             text = r.text + (f"\nUnsure (not facts): {'; '.join(r.unsure)}" if r.unsure else "")
             blocks.append(data(r.kind, text, file_id=r.file_id))
         parts.append("Files and links they shared:\n" + "\n".join(blocks))
+    if not pack.writes:
+        return "\n\n".join(parts)
     recent_drafts = drafts[-MAX_DRAFTS_SHOWN:]
     shown = "\n".join(draft_block(d, new=d.id in written) for d in recent_drafts) or "none yet"
     if written and all(d.id in written for d in drafts):

@@ -77,6 +77,18 @@ saveDraft: async (ws, { text, thread, media, schedule_at }, key) => {
 },
 ```
 
+**Actions (optional).** To let the assistant read and do things in your app, point your pack's `actions.mcp_url` at
+your own MCP server (any official MCP SDK) and accept the assistant's token there:
+
+```ts
+import { verifyAssistantToken } from "@app-assistant/host/server";
+
+const user = await verifyAssistantToken(request, process.env.ASSISTANT_SECRET!, "shipnote");
+if (!user) return new Response(null, { status: 401 });
+// ... answer MCP for user.workspaceId. Mark read-only tools with annotations.readOnlyHint: true; any other tool
+// runs only after the user taps Confirm in the chat.
+```
+
 **`once.claim` must be atomic and must expire on its own** (at least 60 s; 2 minutes is a good choice). `release`
 runs when a request ends, but not when the request is killed mid-work (a function timeout, a redeploy): a claim with
 no expiry would then stay forever, and every repeat of that key would get 409 (the bot doesn't retry a 409, so that

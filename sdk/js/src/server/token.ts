@@ -111,3 +111,19 @@ export async function verifyToken(
   if (exp - iat > MAX_TTL_SECONDS) return null;
   return { workspaceId: sub };
 }
+
+/**
+ * The bot's token on a request to your own MCP server (the pack's `actions`): the assistant calls it as the signed-in
+ * user with `Authorization: Bearer <token>`, the same token the four endpoints get. Returns that user's workspace,
+ * or `null` for no token or any other token. Give the assistant only the tools you want it to have, as you would for
+ * a key; it runs a tool that isn't read-only only after the user taps Confirm in the chat.
+ */
+export async function verifyAssistantToken(
+  request: Request,
+  secret: string,
+  appId: string,
+): Promise<{ workspaceId: string } | null> {
+  const [scheme, token] = (request.headers.get("authorization") ?? "").split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) return null;
+  return verifyToken(secret, token, appId, "draft");
+}

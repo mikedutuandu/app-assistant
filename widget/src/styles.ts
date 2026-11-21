@@ -51,6 +51,14 @@ header h2 { margin: 0; font-size: 16px; }
 .btn.ghost { background: transparent; color: var(--a); }
 .btn.done { background: transparent; color: var(--ok); border-color: var(--ok); }
 .small { font-size: 13px; color: var(--bad); }
+.confirm { align-self: stretch; border: 1px solid var(--line); border-radius: var(--r); padding: 12px; }
+.confirm .title { margin: 0 0 6px; font-weight: 600; }
+.confirm ul { margin: 0 0 10px; padding-left: 18px; color: var(--muted); font-size: 14px; }
+.confirm .state { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.confirm .state.done { color: var(--ok); }
+.confirm .state.failed { color: var(--bad); }
+.starters { display: flex; flex-wrap: wrap; gap: 8px; align-self: stretch; }
+.starter { border: 1px solid var(--line); background: var(--soft); color: var(--ink); border-radius: 999px; padding: 7px 12px; font-size: 14px; min-height: 36px; text-align: left; }
 .draft .when { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; color: var(--muted); }
 .draft .when select { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font: inherit; color: inherit; background: var(--bg); }
 .draft .note { font-size: 13px; color: var(--muted); margin-top: 6px; }

@@ -240,6 +240,8 @@ class PackStore:
         # scheme, host and port), never another host, plain http for an https site, or an internal address.
         if _origin(served.api_base) != _origin(entry.origin):
             raise PackError(f"api_base must be on {entry.origin}, not {_origin(served.api_base)}")
+        if served.actions is not None and _origin(served.actions.mcp_url) != _origin(entry.origin):
+            raise PackError(f"actions.mcp_url must be on {entry.origin}, not {_origin(served.actions.mcp_url)}")
         try:
             return clamp_pack(served.app_pack(entry.secret_env, entry.site), self._settings)
         except ValidationError as e:  # the served shape is narrower than AppPack's: not expected
