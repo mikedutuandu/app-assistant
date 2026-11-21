@@ -28,9 +28,18 @@ browser ──POST /v1/chat/{app}/messages──► api/chat.py ──► api/tu
 4. If the model called tools, **`run_tools`** runs them and the graph goes back to `call_model` with their results.
    If it didn't, the reply is done.
 
-The tools are `save_facts` (keep what the user confirmed), `write_drafts` and `revise_draft` (the writer model writes,
-every draft is checked, and each one that passes appears under the reply). After 4 calls with tools, a last call
-without tools makes the model answer in text.
+The bot's own tools are `save_facts` (keep what the user confirmed), `write_drafts` and `revise_draft` (the writer
+model writes, every draft is checked, and each one that passes appears under the reply). When the app's pack has
+`actions`, the model also gets the app's MCP tools (`app_actions.py`, at most 40):
+
+- a **read** (`readOnlyHint`) runs at once, as the user, and its result goes back to the model as data (12,000
+  characters at most). If the tool names a card (`_meta.ui.resourceUri`), the app's page is sent to the browser as a
+  `view` event and drawn above the words that follow;
+- a **change** never runs in the turn: it is kept in `pending_actions` and shown as a Confirm card. The tap reaches
+  `api/chat.py` (`_confirm`), which runs the tool once.
+
+After 4 calls with tools, a last call without tools makes the model answer in text. A message's spend cap can stop
+the turn earlier; the answer then says so and offers **Continue**.
 
 ## What LangGraph does here, and what is plain Python
 
@@ -89,6 +98,7 @@ stream to the browser, and what the turn has spent. `graph/turn.py` (`bind`) ada
 4. `graph/agent.py`: one round of the conversation agent, and its three tools.
 5. `graph/agent_tools.py`, `graph/model_input.py`, `graph/prompts.py`: what the model is told.
 6. `writer.py`: how a draft is written and checked.
-7. `api/turn.py`: how a message becomes a turn, its events and its charges.
+7. `app_actions.py`: the app's MCP tools, its cards, and the Confirm cards.
+8. `api/turn.py`: how a message becomes a turn, its events and its charges.
 
 The contract with host apps is [integration.md](integration.md); packs are [packs.md](packs.md).

@@ -5,6 +5,23 @@ change to the bot. You serve one JSON file and four small HTTPS endpoints, and y
 signed-in user. The bot's tests check its side of this page against a fake app built only from it
 (`tests/contract/`).
 
+## At a glance: what your app does
+
+1. **Get registered.** Send the bot's owner your app id and site; you both keep one shared secret
+   ([The registry entry](#the-registry-entry-the-bot-owner-adds-it)).
+2. **Serve your pack** at `{site}/.well-known/app-assistant.json`: what the assistant is for in your app, what it may
+   write, which models, what it may spend ([Your pack](#your-pack-get-sitewell-knownapp-assistantjson)).
+3. **Answer four endpoints** the bot calls during a chat: `/context` (who the user is, credits left), `/drafts` (save
+   a draft the user tapped), `/material` (keep its facts), `/charge` (take a model call's cost from the user's credits)
+   ([Your four endpoints](#your-four-endpoints-the-bot--your-app)).
+4. **Sign a token** for the signed-in user in a session route, and **put the chat window** on a page
+   ([Tokens](#tokens), [The chat API](#the-chat-api-browser-or-your-server--the-bot)).
+5. Optional: **actions**, your MCP server, so the assistant reads the user's data and changes things after they tap
+   Confirm; and **cards**, your own UI for a read's result ([Actions](#actions-optional-your-mcp-server)).
+
+In JavaScript, [`@app-assistant/host`](../sdk/js/README.md) does 2, 3 and 4 from a few functions you write
+([Using the JS package](#using-the-js-package)). The rest of this page is the exact contract, for any language.
+
 ## Overview
 
 ```text
