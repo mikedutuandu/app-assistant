@@ -28,7 +28,7 @@ your page ── chat window (script tag or React) ──► app-assistant ─�
 3. A chat model holds the conversation and keeps what the user says as facts; a writer model drafts from those facts
    only. Every number and claim in a draft is checked against what the user gave or a file showed: a draft that fails
    is rewritten once, then dropped.
-4. A draft reaches your app only when the user taps **Add**. There is no tool that publishes.
+4. A draft reaches your app only when the user taps to save it. There is no tool that publishes.
 
 ## Try it in two minutes (Docker)
 
@@ -46,19 +46,27 @@ Open <http://localhost:8000/demo> for **Shipnote**, a demo app built on the same
 
 ## Add it to your app
 
-The whole contract is one page: **[docs/integration.md](docs/integration.md)** (version 1).
+There are two parts, and you need both: **the bot**, a service you run (it holds the conversation and calls the
+models), and **your app**, which tells the bot who the user is and keeps the drafts. The npm package is the second
+part; it does not replace the bot. The whole contract is one page: **[docs/integration.md](docs/integration.md)**
+(version 1).
 
-1. **Register the app** on your bot, in `apps/registry.yaml` (or the `APPS` variable), with its shared secret in an
-   environment variable (never in git):
+### Part 1: run the bot
 
-   ```yaml
-   apps:
-     - id: shipnote
-       site: https://shipnote.app
-       secret_env: SHIPNOTE_SESSION_SECRET
-   ```
+Deploy it (the button below, or Docker on your own server) and tell it about your app with three variables:
 
-2. **Serve the pack and the four endpoints.** The pack is JSON at `{site}/.well-known/app-assistant.json`; the
+```bash
+APP_ID=shipnote                     # your app's id, used in the tokens and the chat window
+APP_SITE=https://shipnote.app       # where your app serves its pack
+APP_SECRET=...                      # openssl rand -hex 32; your app keeps the same value
+```
+
+The bot only talks to apps its owner names this way, so a stranger's app can't spend your model credit. One bot can
+serve several apps: list them in `apps/registry.yaml` or `APPS` instead ([docs/integration.md](docs/integration.md#the-registry-entry-the-bot-owner-adds-it)).
+
+### Part 2: connect your app
+
+1. **Serve the pack and the four endpoints.** The pack is JSON at `{site}/.well-known/app-assistant.json`; the
    endpoints are `POST {api_base}/context`, `/drafts`, `/material` and `/charge`. In a JavaScript app,
    [`@app-assistant/host`](sdk/js/README.md) does both from four functions you write:
 
@@ -68,7 +76,8 @@ The whole contract is one page: **[docs/integration.md](docs/integration.md)** (
 
    In any other language, follow the contract; its scenarios (`tests/contract/scenarios.json`) check your app.
 
-3. **Put the chat window on a page**, with a session route that signs the token for the signed-in user:
+2. **Put the chat window on a page**, with a session route that signs the token for the signed-in user (with
+   `APP_SECRET`):
 
    ```tsx
    <AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />
@@ -84,7 +93,7 @@ A pack file kept on the bot, and apps reached over MCP instead of HTTPS: [docs/p
 
 ## Deploy
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant&project-name=app-assistant&repository-name=app-assistant&env=OPENROUTER_API_KEY,PUBLIC_BASE_URL,DEMO_SESSION_SECRET,CRON_SECRET,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY,S3_SECRET_KEY&envDescription=OpenRouter%20key,%20the%20bot%27s%20public%20URL,%20two%20secrets%20%28openssl%20rand%20-hex%2032%29,%20and%20a%20bucket%20for%20files&envLink=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant%2Fblob%2Fmain%2Fdocs%2FDEPLOY.md)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant&project-name=app-assistant&repository-name=app-assistant&env=OPENROUTER_API_KEY,PUBLIC_BASE_URL,APP_ID,APP_SITE,APP_SECRET,DEMO_SESSION_SECRET,CRON_SECRET,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY,S3_SECRET_KEY&envDescription=OpenRouter%20key,%20the%20bot%27s%20public%20URL,%20your%20app%27s%20id%20and%20site,%20three%20secrets%20%28openssl%20rand%20-hex%2032%29,%20and%20a%20bucket%20for%20files&envLink=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant%2Fblob%2Fmain%2Fdocs%2FDEPLOY.md)
 
 - **Vercel:** the button clones the repo into your account. Add Neon from the Vercel Marketplace for Postgres, and an
   S3-compatible bucket for files (Neon Object Storage, Cloudflare R2, S3).

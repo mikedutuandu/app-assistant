@@ -162,6 +162,32 @@ def test_apps_env_is_json(test_settings: Settings, monkeypatch: pytest.MonkeyPat
     assert settings.apps == [RegistryEntry(id="shop", site=SITE, secret_env="X")]
 
 
+# One app, no YAML (21 Nov 2026): most bots serve one app, so APP_ID and APP_SITE register it, with its secret in
+# APP_SECRET; the Deploy button asks for those three and nothing else about the app.
+def test_one_app_from_app_id_and_app_site(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ID", "shipnote")
+    monkeypatch.setenv("APP_SITE", "https://shipnote.app/")
+    settings = Settings(**{k: v for k, v in test_settings.model_dump().items() if k not in ("app_id", "app_site")})
+    assert settings.one_app == RegistryEntry(id="shipnote", site="https://shipnote.app", secret_env="APP_SECRET")
+    assert Settings(**test_settings.model_dump()).one_app is None
+
+
+@pytest.mark.parametrize("given", [{"app_id": "shipnote"}, {"app_site": "https://shipnote.app"}])
+def test_app_id_and_app_site_go_together(test_settings: Settings, given: dict):
+    with pytest.raises(ValidationError, match="APP_ID and APP_SITE go together"):
+        Settings(**{**test_settings.model_dump(), **given})
+
+
+def test_one_app_joins_the_registry_file(tmp_path: Path):
+    path = tmp_path / "registry.yaml"
+    path.write_text("apps:\n  - {id: shop, site: https://shop.example, secret_env: SHOP_SECRET}\n")
+    one = RegistryEntry(id="shipnote", site="https://shipnote.app", secret_env="APP_SECRET")
+    assert [e.id for e in load_registry(path, None, one)] == ["shop", "shipnote"]
+    assert load_registry(tmp_path / "missing.yaml", None, one) == [one]
+    with pytest.raises(PackError, match="duplicate app id 'shop'"):
+        load_registry(path, None, RegistryEntry(id="shop", site="https://x.example", secret_env="APP_SECRET"))
+
+
 def test_ceilings_from_env(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
     assert (test_settings.max_message_usd, test_settings.allowed_models, test_settings.max_app_daily_usd) == (
         0.25,

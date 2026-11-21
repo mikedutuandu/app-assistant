@@ -127,7 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
             return
         local = load_packs(settings.packs_dir, settings.public_base_url)
-        registry = load_registry(registry_path(settings.packs_dir), settings.apps)
+        registry = load_registry(registry_path(settings.packs_dir), settings.apps, settings.one_app)
         if not local and not registry:
             raise PackError(f"no app packs in {settings.packs_dir}")
         local, registry = apps_with_secrets(local, registry)  # an app without its secret is off, said in the log

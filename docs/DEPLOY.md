@@ -69,7 +69,8 @@ production database and bucket, so only deploy previews you trust.
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the bucket above |
 | `PUBLIC_BASE_URL` | the bot's address, no trailing slash: `https://<project>.vercel.app` when you deploy, your own domain later (then redeploy) |
 | `DEMO_SESSION_SECRET` | `openssl rand -hex 32` (the `/demo` page) |
-| `<APP>_SESSION_SECRET` | one per app you register (`apps/registry.yaml` or `APPS`), shared with that app |
+| `APP_ID`, `APP_SITE`, `APP_SECRET` | your app: its id, its site, and `openssl rand -hex 32`, shared with that app |
+| `<APP>_SESSION_SECRET` | only for more apps on the same bot: one per app in `apps/registry.yaml` or `APPS` |
 | `CRON_SECRET` | `openssl rand -hex 32`: Vercel Cron sends it to `/internal/cleanup`, which refuses everything else (off while unset) |
 | `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
 | `MAX_MESSAGE_USD`, `ALLOWED_MODELS`, `MAX_APP_DAILY_USD` | your ceilings over every app ([docs/integration.md](integration.md)) |
