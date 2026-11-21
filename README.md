@@ -4,15 +4,17 @@
 [![npm](https://img.shields.io/npm/v/@app-assistant/host)](https://www.npmjs.com/package/@app-assistant/host)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An assistant you add to your web app. It chats with your users like a person, asks one thing at a time about what
-they actually did, and turns it into the writing your app is for, in their voice, **never inventing a number**. Users
-can attach screenshots, PDFs and voice notes. Give it your app's own actions through your MCP server and it also
-answers questions from the user's real data and does things for them, **each change only after they tap Confirm**.
-Your app decides where a draft goes; the bot never publishes anything by itself.
+An AI assistant you add to your SaaS. It chats with your users like a person, answers from their real data in your
+app, and does things for them through your own **MCP server**, **each change only after they tap Confirm**
+(human-in-the-loop). A read can show its result as your own UI: an **MCP Apps** card, the same one Claude and ChatGPT
+draw. It also writes for your users (posts, changelogs, emails) from what they actually did, in their voice, **never
+inventing a number**, and they can attach screenshots, PDFs and voice notes. Your app decides where a draft goes; the
+bot never publishes anything by itself.
 
-It runs as its own service (FastAPI + LangGraph, Postgres, any S3-compatible bucket, models through OpenRouter), and
-your app talks to it through a small, versioned contract: one token, four HTTPS endpoints, and a JSON "pack" that
-describes what to write.
+It is a **LangGraph** agent in production: a FastAPI service with Postgres checkpoints, any S3-compatible bucket, and
+models through OpenRouter, running three real apps (below). Your app talks to it through a small, versioned contract:
+one token, four HTTPS endpoints, and a JSON "pack" that describes what the assistant is for. New to LangGraph? The
+[architecture guide](docs/ARCHITECTURE.md) walks through the graph, its state and checkpoints step by step.
 
 ## Used by
 
