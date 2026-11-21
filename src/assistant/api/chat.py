@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from assistant.api.deps import APP_DOWN, ApiError, bearer, client_ip, key_for, session_for, session_or_unavailable
-from assistant.api.turn import TurnInput, start, tool_failure
+from assistant.api.turn import PENDING_HOURS, TurnInput, start, tool_failure
 from assistant.auth import AuthError, Session, verify_delete_token
 from assistant.checks import Fact
 from assistant.db import new_id
@@ -254,7 +254,15 @@ class AddDraftIn(BaseModel):
     schedule_at: str | None = Field(None, max_length=40)  # one of the draft's free times: save and schedule it
 
 
-ActionIn = AddDraftIn
+class ConfirmIn(BaseModel):
+    """A tap on a change's card: Confirm runs the app's tool once, Cancel drops it."""
+
+    action_id: ActionId
+    kind: Literal["confirm", "cancel"]
+    pending_id: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+
+
+ActionIn = Annotated[AddDraftIn | ConfirmIn, Field(discriminator="kind")]
 
 _CLAIM = f"""
 insert into actions (id, app, workspace, thread_id, kind, result)
@@ -316,6 +324,8 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     if not await hit(state.pool, f"action:{session.app}:{session.workspace}", timedelta(hours=1), ACTIONS_PER_HOUR):
         raise ApiError(429, "limit", "You've done that a lot this hour. Try again a bit later.")
     await owned_thread(state.pool, session, thread_id)
+    if isinstance(body, ConfirmIn):
+        return await _confirm(state, pack, session, thread_id, body)
     stored = await _draft(state.pool, session, thread_id, body.draft_id)
     posts, image_file_id, facts = stored.posts, stored.image_file_id, stored.facts
     if body.schedule_at is not None and body.schedule_at not in stored.post_times:
@@ -378,6 +388,64 @@ async def act(thread_id: str, body: ActionIn, request: Request, auth: Auth) -> d
     return result
 
 
+async def _confirm(state, pack, session: Session, thread_id: str, body: ConfirmIn) -> dict:
+    """Runs (or drops) a change the user was asked to confirm, once: a repeat of the tap answers what happened."""
+    async with state.pool.connection() as conn:
+        cur = await conn.execute(
+            "select tool, arguments, state, result, created_at < now() - %s from pending_actions"
+            " where id = %s and app = %s and workspace = %s and thread_id = %s",
+            (timedelta(hours=PENDING_HOURS), body.pending_id, session.app, session.workspace, thread_id),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise ApiError(404, "change")
+    tool, arguments, current, result, expired = row
+    if current not in ("waiting", "running"):
+        return {"state": current, "result": result}
+    if expired:
+        raise ApiError(410, "expired", "That's too old to confirm now. Ask again.")
+    if body.kind == "cancel":
+        async with state.pool.connection() as conn:
+            await conn.execute(
+                "update pending_actions set state = 'cancelled', done_at = now() where id = %s and state = 'waiting'",
+                (body.pending_id,),
+            )
+        return {"state": "cancelled", "result": None}
+    actions = state.actions_for(pack, session) if pack.actions is not None else None
+    if actions is None:
+        raise ApiError(409, "no_actions", "This app's assistant can't make changes any more.")
+    # One run per change, whatever taps or retries come: the row moves from waiting to running before the call.
+    async with state.pool.connection() as conn:
+        cur = await conn.execute(
+            # A run cut off (a function timeout) may be tried again after 2 minutes: the app sees the same key.
+            "update pending_actions set state = 'running', done_at = now() where id = %s and (state = 'waiting'"
+            " or (state = 'running' and done_at < now() - interval '2 minutes')) returning 1",
+            (body.pending_id,),
+        )
+        if await cur.fetchone() is None:
+            raise ApiError(409, "pending", "Still working on that. Try again in a moment.")
+    key = f"confirm:{body.pending_id}"
+    try:
+        done = await actions.call(tool, arguments, key=key)
+        outcome, text = ("failed" if done.is_error else "done"), done.text
+    except ToolError as e:
+        outcome, text = "failed", e.user_message or APP_DOWN
+    async with state.pool.connection() as conn:
+        await conn.execute(
+            "update pending_actions set state = %s, result = %s, done_at = now() where id = %s",
+            (outcome, text[:4000], body.pending_id),
+        )
+    log.info("change app=%s thread=%s tool=%s outcome=%s", pack.id, thread_id, tool, outcome)
+    return {"state": outcome, "result": text[:4000]}
+
+
+@router.get("/config")
+async def config(request: Request, auth: Auth) -> dict:
+    """What the chat window shows before the first message: the app's starters."""
+    pack, _ = auth
+    return {"starters": list(pack.actions.starters) if pack.actions is not None else []}
+
+
 # ---- reads ----
 
 
@@ -438,6 +506,12 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             (session.app, session.workspace, thread_id, PENDING),
         )
         kinds = dict(await cur.fetchall())  # the thread's finished files: a message lists only those still here
+        cur = await conn.execute(
+            "select id, message_id, tool, title, lines, state, result, created_at < now() - %s from pending_actions"
+            " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
+            (timedelta(hours=PENDING_HOURS), session.app, session.workspace, thread_id),
+        )
+        change_rows = await cur.fetchall()
     # The turn's message id is the app's charge ref: it only groups rows here and never leaves the bot (the browser
     # first sees it in `done`, after the charge).
     drafts: dict[str, list[dict]] = {}
@@ -446,6 +520,13 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
     saved: dict[str, list[str]] = {}
     for turn_id, items in saved_rows:
         saved.setdefault(turn_id, []).extend(items)
+    confirms: dict[str, list[dict]] = {}
+    for cid, turn_id, tool, title, lines, current, result, old in change_rows:
+        current = "waiting" if current == "running" else current
+        current = "expired" if current == "waiting" and old else current
+        confirms.setdefault(turn_id, []).append(
+            {"id": cid, "tool": tool, "title": title, "lines": lines, "state": current, "result": result}
+        )
 
     out: list[dict] = []
     current: str | None = None
@@ -456,10 +537,16 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             msg["drafts"] = drafts.pop(current)
         if saved.get(current):
             msg["saved"] = saved.pop(current)
+        if confirms.get(current):
+            msg["confirms"] = confirms.pop(current)
 
     def close() -> None:
         """A turn that showed drafts or saved facts but said nothing still gets an assistant message to hold them."""
-        if current is not None and shown is None and (drafts.get(current) or saved.get(current)):
+        if (
+            current is not None
+            and shown is None
+            and (drafts.get(current) or saved.get(current) or confirms.get(current))
+        ):
             msg = {"role": "assistant", "text": ""}
             attach(msg)
             out.append(msg)

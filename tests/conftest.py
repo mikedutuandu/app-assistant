@@ -89,6 +89,7 @@ async def api(  # the chat API on a fresh schema, moto S3, FakeLlm and FakeTools
                 app.state.packs = PackStore({"real": make_pack(), "demo": make_pack("demo", demo=True)}, test_settings)
                 app.state.llm = api.llm
                 app.state.tools_for = lambda pack, session: api.tools
+                app.state.actions_for = lambda pack, session: api.actions if pack.actions is not None else None
                 yield api
     finally:
         await saver_pool.close()

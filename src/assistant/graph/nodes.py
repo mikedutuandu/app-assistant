@@ -9,18 +9,24 @@ The last two share the turn's work through `agent.AgentTurn`. Every model call f
 reaching it ends the turn with the cap's line, keeping what the turn already did.
 """
 
+import logging
 import re
 import time
 
 from langchain_core.messages import HumanMessage
 
+from assistant.app_actions import offered
 from assistant.checks import nfc
 from assistant.files.intake import UploadError
 from assistant.graph.agent import AgentTurn
+from assistant.graph.agent_tools import TOOLS
 from assistant.graph.model_input import message_text
 from assistant.graph.state import ChatState
 from assistant.graph.turn import CAP_TEXT, Capped, Turn
 from assistant.llm import LlmError
+from assistant.tools import ToolError
+
+log = logging.getLogger("assistant.graph")
 
 CONTEXT_TTL = 600  # seconds the app's context is reused within a thread
 MAX_LINKS = 2  # links read from one message
@@ -88,8 +94,25 @@ async def read_files(state: ChatState, t: Turn) -> dict:
     return {**update, "readings": readings}
 
 
+async def _load_app_tools(t: Turn) -> None:
+    """The app's tools for this turn. When its server can't be reached the turn goes on without them."""
+    factory = t.deps.actions_factory
+    actions = factory() if factory is not None and t.pack.actions is not None else None
+    if actions is None:
+        return
+    try:
+        tools = await actions.list_tools()
+    except ToolError as e:
+        log.warning("app %s: its tools could not be listed (%s)", t.pack.id, e.kind)
+        return
+    t.deps.app_actions = actions
+    t.deps.app_tools = offered(tools, t.pack, set(TOOLS))
+
+
 async def load_context(state: ChatState, t: Turn) -> dict:
-    """The app's context (voice, topics, recent posts), reused for 10 minutes within the thread."""
+    """The app's context (voice, topics, recent posts), reused for 10 minutes within the thread; and the app's tools
+    for this turn (its MCP server's list, as its pack allows), when it has actions."""
+    await _load_app_tools(t)
     if state.get("context") is not None and 0 <= _now() - state.get("context_at", 0.0) < CONTEXT_TTL:
         return {}
     ctx = await t.deps.tools_factory().context()

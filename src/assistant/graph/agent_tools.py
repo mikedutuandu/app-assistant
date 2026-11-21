@@ -210,9 +210,12 @@ class PreparedCall:
     problem: str | None  # set when the call is not run: the reason, which becomes its result
 
 
-def prepare_calls(calls: list[ToolCall], round_no: int, used_ids: set[str]) -> list[PreparedCall]:
+def prepare_calls(
+    calls: list[ToolCall], round_no: int, used_ids: set[str], names: tuple[str, ...] = TOOLS
+) -> list[PreparedCall]:
     """Each call with an id unique in this turn (one the model gave twice gets a new one; the results must pair
-    with their calls) and a name an API takes back; a call that can't be run carries why. Adds the ids to `used_ids`."""
+    with their calls) and a name an API takes back; a call that can't be run carries why (`names`: the tools offered
+    this turn). Adds the ids to `used_ids`."""
     out: list[PreparedCall] = []
     for i, c in enumerate(calls, 1):
         given = (c.id or "").strip()
@@ -222,9 +225,9 @@ def prepare_calls(calls: list[ToolCall], round_no: int, used_ids: set[str]) -> l
         if not given:
             problem = "error: the call had no id, so it wasn't run; call it again"
         elif not c.name:
-            problem = f"error: the call had no name; the tools are {', '.join(TOOLS)}"
-        elif c.name not in TOOLS:
-            problem = f"error: unknown tool {name!r}; the tools are {', '.join(TOOLS)}"
+            problem = f"error: the call had no name; the tools are {', '.join(names)}"
+        elif c.name not in names:
+            problem = f"error: unknown tool {name!r}; the tools are {', '.join(names)}"
         elif c.bad_arguments is not None:
             problem = "error: the arguments weren't valid JSON; nothing was done"
         id = given if given and given not in used_ids else f"bot_{round_no}_{i}"

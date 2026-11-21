@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from assistant.checks import nfc
 from assistant.graph.turn import CAP_TEXT
 
-BUBBLE_ENDS = ("status", "draft", "saved")  # events the widget shows outside a text bubble: the next text starts anew
+BUBBLE_ENDS = (
+    "status",
+    "draft",
+    "saved",
+    "confirm",
+)  # events the widget shows outside a text bubble: the next text starts anew
 
 
 def said_key(text: str) -> str:

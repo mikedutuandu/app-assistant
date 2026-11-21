@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import jwt
-from fakes import FakeLlm, FakeTools, Reply, call
+from fakes import FakeActions, FakeLlm, FakeTools, Reply, call
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
@@ -100,6 +100,7 @@ class Api:
         self.checkpointer = checkpointer
         self.llm = FakeLlm()
         self.tools = FakeTools()
+        self.actions = FakeActions()  # the app's own tools, for a pack with `actions`
 
     def headers(self, workspace: str = "ws1", app: str = "real", **extra: str) -> dict:
         token = mint_session(self.app.state.packs[app], workspace)

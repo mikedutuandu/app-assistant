@@ -13,6 +13,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from assistant.api import chat, deps, internal, turn
 from assistant.api import files as files_api
+from assistant.app_actions import actions_for
 from assistant.config import Settings, get_settings
 from assistant.db import close_pool, direct_url, migrate, open_pool, open_saver_pool
 from assistant.demo import api as demo_api
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.llm = Llm(settings.openrouter_api_key, http, referer=settings.public_base_url)
 
             app.state.tools_for = lambda pack, session: tools_for(pack, session, http)  # REST or MCP, by the pack
+            app.state.actions_for = lambda pack, session: actions_for(pack, session, http)  # the app's MCP, or None
             yield
             await turn.drain(
                 settings.shutdown_drain_seconds

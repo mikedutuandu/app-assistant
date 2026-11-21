@@ -43,6 +43,10 @@ class Deps:
     ]  # (cost of one finished call, its number in the turn); never raises
     calls: int = 0  # model calls whose cost has been reported this turn
     agent: Any = None  # the conversation agent's work this turn (agent.AgentTurn), shared by call_model and run_tools
+    actions_factory: Callable[[], Any] | None = None  # the app's actions (app_actions.AppActions), or None
+    on_pending: Callable[[dict], Awaitable[str]] | None = None  # keeps a change waiting for the user's tap
+    app_tools: list = field(default_factory=list)  # the app's tools offered this turn (app_actions.AppTool)
+    app_actions: Any = None  # the client that listed them, reused for this turn's calls
     timer: TurnTimer = field(default_factory=lambda: current.get() or TurnTimer())  # where this turn's time goes
 
 
