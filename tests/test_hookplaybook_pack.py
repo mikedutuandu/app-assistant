@@ -1,4 +1,4 @@
-"""HookPlaybook's pack (apps/hookplaybook.yaml): its values, its tokens as HookPlaybook mints them, its origin and its
+"""HookPlaybook's pack (a copy in tests/packs: HookPlaybook serves its own): its values, its tokens as HookPlaybook mints them, its origin and its
 workspace deletion. HookPlaybook's own side is its own (closed) code; these tests hold the bot to what it sends."""
 
 import base64
@@ -25,6 +25,8 @@ from assistant.tools import AppContext
 from assistant.tools import tools_for as real_tools_for
 
 APPS = Path("apps")
+# HookPlaybook serves its own pack (/.well-known/app-assistant.json); this copy of its old YAML is the tests' only.
+PACKS = Path("tests/packs")
 SITE = "https://hookplaybook.com"
 SECRET_ENV = "HOOKPLAYBOOK_SESSION_SECRET"
 # HookPlaybook's own test vector (from its token tests): secret "s", iat 1700000000, a draft
@@ -51,7 +53,7 @@ def hookplaybook_token(secret: str, sub: str, access: str, ttl: int = 3600, now:
 
 
 def pack():
-    return load_packs(APPS, base_url="http://testserver")["hookplaybook"]
+    return load_packs(PACKS, base_url="http://testserver")["hookplaybook"]
 
 
 # ---- the pack ----
@@ -94,7 +96,7 @@ def test_pack_values():
 
 def test_pack_never_names_create_draft():
     # HookPlaybook's public create_draft takes no pictures: the bot saves through save_draft only.
-    assert "create_draft" not in (APPS / "hookplaybook.yaml").read_text()
+    assert "create_draft" not in (PACKS / "hookplaybook.yaml").read_text()
     assert "create_draft" not in pack().tools.values()
     source = Path("src/assistant")
     for path in [*source.rglob("*.py"), *source.rglob("*.yaml")]:
@@ -285,7 +287,7 @@ def registry_entry() -> RegistryEntry:
 
 def served_pack() -> dict:
     """What HookPlaybook serves: the YAML's content as contract 1, reached by REST (no secret, no tool names)."""
-    raw = yaml.safe_load((APPS / "hookplaybook.yaml").read_text())
+    raw = yaml.safe_load((PACKS / "hookplaybook.yaml").read_text())
     for key in ("mcp_url", "tools", "secret_env"):
         raw.pop(key, None)
     return {**raw, "contract": 1, "api_base": f"{SITE}/api/assistant"}
@@ -308,7 +310,9 @@ def test_the_registry_lists_hookplaybook_with_its_secret_env():
 
 async def test_bucket_cors_origins_still_include_hookplaybook(test_settings):
     packs = PackStore(
-        load_packs(APPS, base_url="http://testserver"), test_settings, registry=load_registry(registry_path(APPS), None)
+        {**load_packs(APPS, base_url="http://testserver"), "hookplaybook": pack()},
+        test_settings,
+        registry=load_registry(registry_path(APPS), None),
     )
     assert SITE in packs.origins()
 

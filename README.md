@@ -169,7 +169,7 @@ uv run python scripts/converse_eval.py                                          
 | Path | What it is |
 |---|---|
 | `src/assistant/` | the service: chat API, LangGraph agent, tools, file intake, storage, the demo app |
-| `apps/` | `registry.yaml`: the apps that serve their own pack (HookPlaybook, StreakPlan, SiteSeed); packs kept on the bot (`demo.yaml`, and `hookplaybook.yaml`, a fallback used until HookPlaybook's own pack is fetched) |
+| `apps/` | `registry.yaml`: the apps that serve their own pack (HookPlaybook, StreakPlan, SiteSeed); a pack kept on the bot (`demo.yaml`, the demo app's) |
 | `widget/` | the chat window behind the script tag |
 | `sdk/js/` | `@app-assistant/host`: the contract for JavaScript apps, and the React chat window |
 | `docs/` | the contract, its JSON schema, deployment, packs |
