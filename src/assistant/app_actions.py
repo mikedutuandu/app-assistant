@@ -73,7 +73,7 @@ class AppView:
 
 @dataclass(frozen=True)
 class ActionResult:
-    text: str  # the result's text content, cut to RESULT_CHARS
+    text: str  # the result's text content, fitted to RESULT_CHARS (fit_answer)
     is_error: bool
     raw: dict | None = None  # the result as the app sent it (content, structuredContent), for a card; None if too big
 
@@ -204,6 +204,94 @@ def _tool(raw: Any) -> AppTool | None:
     )
 
 
+# ---- a long answer, fitted to what the model reads ----
+#
+# An app's answer is often JSON, and a list of records can run far past RESULT_CHARS (Ask SiteSeed, 21 Nov 2026: three
+# sites with their pages read were ~180,000 characters; cut at 12,000 the model never saw an id). Cutting the text
+# breaks the JSON and drops whatever comes last. Instead: long texts are shortened first, then long lists keep their
+# first items (the deepest first, so a list of sites keeps every site and trims each one's pages), and a note says what
+# was left out and how to see more.
+
+TEXT_STEPS = (2000, 500, 200, 80)  # long texts are shortened to these, in turn, until the answer fits
+NOTE_ROOM = 700  # kept free for the note
+SMALL_LIST_SHARE = 0.05  # a list under this share of the answer is not worth trimming
+CUT_NOTE = "\n(The answer was cut here: it was too long. Ask for less, or for one item.)"
+
+
+def _size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False))
+
+
+def _shorten_texts(value: Any, cap: int) -> tuple[Any, bool]:
+    if isinstance(value, str):
+        return (value[: cap - 1] + "…", True) if len(value) > cap else (value, False)
+    if isinstance(value, list):
+        pairs = [_shorten_texts(v, cap) for v in value]
+        return [v for v, _ in pairs], any(c for _, c in pairs)
+    if isinstance(value, dict):
+        pairs = {k: _shorten_texts(v, cap) for k, v in value.items()}
+        return {k: v for k, (v, _) in pairs.items()}, any(c for _, c in pairs.values())
+    return value, False
+
+
+def _lists_in(value: Any, path: str = "", depth: int = 0) -> list[tuple[int, int, str, list]]:
+    """Every list in the answer with more than one item: (depth, size, path, the list)."""
+    found: list[tuple[int, int, str, list]] = []
+    if isinstance(value, list):
+        if len(value) > 1:
+            found.append((depth, _size(value), path or "the list", value))
+        for item in value:
+            found += _lists_in(item, f"{path}[]", depth + 1)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            found += _lists_in(item, f"{path}.{key}" if path else str(key), depth + 1)
+    return found
+
+
+def fit_answer(text: str, limit: int = RESULT_CHARS) -> str:
+    """`text` within `limit` characters, for the model. JSON stays JSON, with a note of what was left out; anything
+    else is cut with a note."""
+    if len(text) <= limit:
+        return text
+    try:
+        value = json.loads(text)
+    except ValueError:
+        value = None
+    if not isinstance(value, (dict, list)):
+        return text[:limit] + CUT_NOTE
+    room = limit - NOTE_ROOM
+    shortened = 0
+    for cap in TEXT_STEPS:
+        if _size(value) <= room:
+            break
+        value, changed = _shorten_texts(value, cap)
+        shortened = cap if changed else shortened
+    totals: dict[str, int] = {}  # a trimmed list's path: how many it had
+    while _size(value) > room:
+        whole = _size(value)
+        lists = [x for x in _lists_in(value) if x[1] >= whole * SMALL_LIST_SHARE] or _lists_in(value)
+        if not lists:
+            break
+        _depth, _list_size, path, items = max(lists, key=lambda x: (x[0], x[1]))
+        totals[path] = max(totals.get(path, 0), len(items))
+        del items[max(1, len(items) // 2) :]
+    out = json.dumps(value, ensure_ascii=False)
+    if len(out) > room:
+        return out[:limit] + CUT_NOTE
+    told = []
+    if shortened:
+        told.append(f"long texts are shortened to {shortened} characters")
+    for path, total in totals.items():
+        shown = max((len(x[3]) for x in _lists_in(value) if x[2] == path), default=1)
+        told.append(f"{path}: showing {shown} of {total}")
+    return (
+        out
+        + "\n(The answer was too long to read whole, so it was shortened: "
+        + "; ".join(told)[: NOTE_ROOM - 200]
+        + ". To see more, ask again with a limit or skip, a filter, or for one item.)"
+    )
+
+
 def result_of(body: Any) -> ActionResult:
     """A `tools/call` result as text: its text contents joined (structured content as JSON when there are none)."""
     if not isinstance(body, dict):
@@ -213,8 +301,7 @@ def result_of(body: Any) -> ActionResult:
     if not text and body.get("structuredContent") is not None:
         text = json.dumps(body["structuredContent"], ensure_ascii=False)
     text = text or "(done, no text)"
-    if len(text) > RESULT_CHARS:
-        text = text[:RESULT_CHARS] + " (cut)"
+    text = fit_answer(text)
     raw = {k: body[k] for k in ("content", "structuredContent", "_meta") if k in body}
     too_big = len(json.dumps(raw, ensure_ascii=False).encode()) > VIEW_RESULT_BYTES
     return ActionResult(text, body.get("isError") is True, None if too_big else raw)

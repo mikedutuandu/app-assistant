@@ -323,7 +323,9 @@ Protocol), so the server is one you may already have; nothing here is specific t
    <token>`, the same token as your four endpoints. With the package: `verifyAssistantToken(request, secret, appId)`
    gives `{workspaceId}` or `null`. Show the assistant only the tools you want it to use, as you would for a key.
 3. **Mark your tools** with MCP's annotations. `readOnlyHint: true` runs at once (its result goes to the model as
-   your data, cut at 12,000 characters). Anything else may change something, so the bot never runs it by itself: it
+   your data, at most 12,000 characters: a longer JSON answer is shortened, long texts first, then long lists keep
+   their first items, and the model is told what was left out and to ask with a limit or for one item; so put each
+   record's id first, sort lists with the most useful first, and give a `limit`). Anything else may change something, so the bot never runs it by itself: it
    shows a card with the tool's `title` and the arguments, and runs the tool once, with `Idempotency-Key:
    confirm:<card id>`, when the user taps Confirm. A card not confirmed within 24 hours expires.
 4. **Point your pack at it**:
