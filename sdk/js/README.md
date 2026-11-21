@@ -141,12 +141,17 @@ import { AssistantChat } from "@app-assistant/host/react";
 <AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />;
 ```
 
-Optional props: `label` (the button, default "Write with AI"), `position` (`"left"`), and `scheduleLabel` (the word
-before a draft's time picker when your `context` sends `post_times`: "Post at", "Send at"; default "Publish at").
+It loads the bot's `widget.js` once per page; the widget draws its own floating open button and panel. Optional props:
 
-It loads the bot's `widget.js` once per page; the widget draws its own floating open button and panel. Optional:
-`label` (the button's words), `position` (`"left"` or `"right"`), and `children` for an open button of your own
-in the page (`className` styles it). `openAssistant()` opens the chat from anywhere.
+- `label`: the open button's words (default "Write with AI"; StreakPlan and SiteSeed use "Ask StreakPlan" and "Ask SiteSeed").
+- `position`: `"right"` (default) or `"left"`.
+- `scheduleLabel`: the word before a draft's time picker when your `context` sends `post_times` ("Post at", "Send
+  at"; default "Publish at").
+- `children` (styled with `className`): an open button of your own in the page, as well as the floating one.
+
+`openAssistant()` opens the chat from anywhere. Its look follows your CSS variables `--assistant-accent`,
+`--assistant-radius` and `--assistant-font`; `--assistant-bottom` lifts the open button above a bar of your own at the
+bottom of a phone's screen.
 
 Not on React? The same thing is one script tag:
 
@@ -172,6 +177,7 @@ The page runs in a frame with no origin of its own (`sandbox="allow-scripts"`), 
 only from the domains its resource declared (`_meta.ui.csp`). It gets `ui/initialize`, then the tool's input and
 result; it may set its height, open an http(s) link and send a message as the user. Calling the app's tools from a
 card isn't supported yet. Not on React: `mountAppView(container, view, options)` from `@app-assistant/host/view`.
+Both follow the device's light or dark setting; pass `theme: "light" | "dark"` to follow your app's instead.
 
 ## More on the server
 

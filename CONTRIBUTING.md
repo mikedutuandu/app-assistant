@@ -17,7 +17,7 @@ cp .env.example .env                                # then fill it in
 ```bash
 TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
 uv run ruff check . && uv run ruff format --check .
-(cd widget && npm ci && npm test)
+(cd widget && npm ci && npm test && npm run build)   # commit src/assistant/static/widget.js if it changed
 (cd sdk/js && npm ci && npm test && npm run typecheck)
 ```
 

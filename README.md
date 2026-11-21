@@ -14,7 +14,17 @@ It runs as its own service (FastAPI + LangGraph, Postgres, any S3-compatible buc
 your app talks to it through a small, versioned contract: one token, four HTTPS endpoints, and a JSON "pack" that
 describes what to write.
 
-**In production:** it is the "Write with HookPlaybook" page of [HookPlaybook](https://hookplaybook.com), an X growth app.
+## Used by
+
+Three apps run on it today, each a different way to use it:
+
+| App | What the assistant does there | Uses |
+|---|---|---|
+| [HookPlaybook](https://hookplaybook.com) (X growth) | **Ask HookPlaybook**, on its own page: writes X posts and threads from what the user did, in their voice; reads their posts, results and schedule, and changes or schedules a post after Confirm | `writes`, actions, cards, its own chat page (`botFetch`, `AppView`); paid from the user's credits |
+| [StreakPlan](https://streakplan.com) (daily Shorts) | **Ask StreakPlan**: plans videos, writes scripts, starts AI edits after Confirm | actions only (`writes: []`), a video card, the chat window; paid from the user's credit balance |
+| [SiteSeed](https://siteseed.ai) (SEO articles) | **Ask SiteSeed**: reads sites, the plan, articles and Google's numbers; plans, edits and publishes after Confirm | actions only, ten cards, the chat window; paid from the user's tokens |
+
+In each, every model call the bot makes is charged to the user through the app's `/charge`, at the app's own price.
 
 ## How it works
 
@@ -35,6 +45,8 @@ your page ── chat window (script tag or React) ──► app-assistant ─�
 4. A draft reaches your app only when the user taps to save it. There is no tool that publishes.
 5. Optional actions: your pack points at your own MCP server. Tools marked read-only run at once; any other tool is
    shown as a card and runs only when the user taps Confirm ([docs/integration.md](docs/integration.md#actions-optional-your-mcp-server)).
+6. Optional cards: a read tool can name a page of your own (MCP Apps), and the chat draws its result with it instead
+   of text. The same card shows in Claude and ChatGPT ([docs/integration.md](docs/integration.md#cards-show-a-read-as-your-own-ui-mcp-apps)).
 
 ## Try it in two minutes (Docker)
 
@@ -133,8 +145,9 @@ uv run ruff check . && uv run ruff format --check .
 (cd sdk/js && npm ci && npm test)      # @app-assistant/host
 ```
 
-The built `src/assistant/static/widget.js` is committed, so the server needs no Node; after changing `widget/`, run
-`npm run build` there. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
+The built `src/assistant/static/widget.js` is committed, so the server needs no Node. After changing `widget/` or the
+package's card code (`sdk/js/src/view`, which the widget bundles), run `npm run build` in `widget/`: CI fails when the
+committed build is stale. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
 
 **Conversation tests.** `tests/conversations/cases.yaml` holds about 20 real chats ("hi", "just write it", a screenshot
 with a number, Vietnamese, "say we have 10k users"...), each with notes a judge model decides and hard rules checked in
@@ -152,7 +165,7 @@ uv run python scripts/converse_eval.py                                          
 | Path | What it is |
 |---|---|
 | `src/assistant/` | the service: chat API, LangGraph agent, tools, file intake, storage, the demo app |
-| `apps/` | packs kept on the bot (`demo.yaml`; `hookplaybook.yaml`, a real one), and `registry.yaml`: the apps that serve their own pack |
+| `apps/` | `registry.yaml`: the apps that serve their own pack (HookPlaybook, StreakPlan, SiteSeed); packs kept on the bot (`demo.yaml`, and `hookplaybook.yaml`, a fallback used until HookPlaybook's own pack is fetched) |
 | `widget/` | the chat window behind the script tag |
 | `sdk/js/` | `@app-assistant/host`: the contract for JavaScript apps, and the React chat window |
 | `docs/` | the contract, its JSON schema, deployment, packs |
