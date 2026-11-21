@@ -5,10 +5,14 @@ Every model call goes through `Turn.chat_tools`, through the drafting tools (whi
 tool and each file read's model call; every call's cost (even a failed one's) is added and reported at once through
 `Deps.on_cost`, so a turn that is cut off has still recorded every call that ended. `bind` turns a node into a
 LangGraph node that keeps that cost in state.
+
+A node is written `async def node(state, turn) -> dict`: `state` is the thread (LangGraph's), `turn` this turn's view
+(its dependencies and what it has spent). `bind` adapts it to LangGraph's `node(state) -> dict`.
 """
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from assistant.files.read import FileReading, Meter
 from assistant.graph.state import ChatState
@@ -38,6 +42,7 @@ class Deps:
         [float, int], Awaitable[None]
     ]  # (cost of one finished call, its number in the turn); never raises
     calls: int = 0  # model calls whose cost has been reported this turn
+    agent: Any = None  # the conversation agent's work this turn (agent.AgentTurn), shared by call_model and run_tools
     timer: TurnTimer = field(default_factory=lambda: current.get() or TurnTimer())  # where this turn's time goes
 
 

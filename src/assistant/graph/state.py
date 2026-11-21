@@ -31,6 +31,7 @@ class ChatState(TypedDict, total=False):
     cost_usd: float
     capped: bool  # the message's cost cap stopped the turn
     failed: bool  # a model call failed after tools had run: the turn fails, keeping what they did
+    tools_pending: bool  # the chat model called tools: the graph goes to run_tools next
 
 
 # Types stored in checkpoints, for the checkpointer's msgpack allowlist.

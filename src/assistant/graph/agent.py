@@ -1,198 +1,49 @@
-"""The conversation agent: one chat model that talks with the user and writes posts through tools it chooses to call.
+"""The conversation agent's work in one turn, shared by the graph's `call_model` and `run_tools` nodes.
 
-`converse` streams the chat model's reply as `text` and runs the tools it calls: `save_facts` (confirmed facts, in
-clean sentences, kept in the thread and saved through the app), `write_drafts` and `revise_draft` (the writer model
-and every check, in `assistant.writer`; each passing draft is a `draft` event). Tool results go back to the model as
-`role: "tool"` messages, for at most `MAX_TOOL_ROUNDS` calls with tools; then one more call without tools makes it
-answer in text. A bad call (no id, no name, an unknown tool, arguments that aren't JSON or don't fit) never raises:
-its result tells the model what was wrong. Everything the user, their files, their app or the writer supplied
-reaches the model inside `<data>` blocks. The message's cost cap is checked before every chat call and before a
-drafting tool runs; reaching it ends the turn with the cap text, keeping what the turn already did. A model call
-that fails after tools ran ends the turn as `failed` (state), likewise keeping what they did.
+`call_model` makes one call of the chat model (streamed as `text`), offering the three tools (`agent_tools.py`).
+`run_tools` runs the calls it made: `save_facts` (confirmed facts, kept in the thread and saved through the app),
+`write_drafts` and `revise_draft` (the writer model and every check, in `assistant.writer`; each passing draft is a
+`draft` event). Their results go back to the model as `role: "tool"` messages and the graph returns to `call_model`,
+for at most `MAX_TOOL_ROUNDS` calls with tools; then one more call without tools makes it answer in text.
+
+`AgentTurn` holds what the rounds of one turn share and the thread doesn't keep: the messages with their tool calls
+and results, and the reply as shown so far (`reply_text.py`). The thread keeps only what `update()` returns: facts,
+drafts and the reply's text.
 """
 
 import json
-import re
 from dataclasses import dataclass, field
-from typing import Annotated, Literal
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel, BeforeValidator, Field, StrictInt, StringConstraints, ValidationError
+from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import ValidationError
 
 from assistant.checks import Fact, nfc, numbers_in, unsupported_numbers
 from assistant.db import new_id
-from assistant.graph import prompts
-from assistant.graph.prompts import data
-from assistant.graph.state import ChatState
-from assistant.graph.turn import CAP_TEXT, Capped, Turn
-from assistant.llm import LlmError, ToolCall, ToolTurn
-from assistant.tools import AppContext, ToolError
-from assistant.writer import (
-    Draft,
-    DraftResult,
-    WriterDeps,
-    clean_language,
-    fmt,
-    language_tag,
-    revise_draft,
-    write_drafts,
+from assistant.graph.agent_tools import (
+    TOOL_SPECS,
+    PreparedCall,
+    ReviseDraftArgs,
+    SaveFactsArgs,
+    WriteDraftsArgs,
+    invalid_arguments,
+    prepare_calls,
 )
+from assistant.graph.model_input import (
+    MAX_DRAFTS_SHOWN,
+    draft_block,
+    final_messages,
+    history,
+    message_text,
+    system_prompt,
+)
+from assistant.graph.reply_text import ReplyText
+from assistant.graph.state import ChatState
+from assistant.graph.turn import Turn
+from assistant.tools import AppContext, ToolError
+from assistant.writer import Draft, DraftResult, WriterDeps, fmt, revise_draft, write_drafts
 
 MAX_TOOL_ROUNDS = 4  # chat calls with tools in one message; then one more without
 CHAT_TOKENS = 1200
-MAX_MESSAGES = 20  # conversation messages shown to the model
-MAX_FACTS = 10  # facts in one save_facts call
-FACT_CHARS = 300
-MAX_RECENT = 5  # the user's recent posts shown to the chat model (the writer sees them all)
-MAX_DRAFTS_SHOWN = 10  # this thread's latest drafts in the system prompt
-# After the user's latest message, the rule the chat model most often slips on (live tests, 20 Nov 2026).
-REPLY_RULE = "(Your reply: at most one question, and it asks one thing.)"
-BUBBLE_ENDS = ("status", "draft", "saved")  # events the widget shows outside a text bubble: the next text starts anew
-
-TOOLS = ("write_drafts", "revise_draft", "save_facts")
-_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
-
-TOOL_SPECS: list[dict] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "write_drafts",
-            "description": (
-                "Write drafts for X from the facts saved in this chat, in the user's voice. Every draft is checked "
-                "before the user sees it; the user sees each one under your reply. Call it when there is a real "
-                "story, or when the user asks you to write: save what they told you first (save_facts, in the same "
-                "message)."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "brief": {"type": "string", "description": "What the post is about and its angle, in a sentence."},
-                    "kind": {
-                        "type": "string",
-                        "enum": ["x_post", "x_thread"],
-                        "description": "x_post for one post; x_thread only when the user asks for a thread.",
-                    },
-                    "count": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3,
-                        "description": "How many drafts: 1 unless the user asks for more.",
-                    },
-                    "language": {
-                        "type": "string",
-                        "description": (
-                            "The language to write in, as a short tag (en, vi, pt-BR): the one the user talks with you "
-                            "in, never the language of a button's text."
-                        ),
-                    },
-                },
-                "required": ["brief", "kind", "language"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "revise_draft",
-            "description": (
-                "Write a new version of one of this chat's drafts as the user asks (shorter, another angle, add a "
-                "detail). The new version is checked and shown under your reply."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "draft_id": {"type": "string", "description": "The id of the draft to change."},
-                    "instruction": {"type": "string", "description": "What to change, in a few words."},
-                    "language": {
-                        "type": "string",
-                        "description": (
-                            "The language to write in, as a short tag (en, vi, pt-BR): the one the user talks with you "
-                            "in, never the language of a button's text."
-                        ),
-                    },
-                },
-                "required": ["draft_id", "instruction", "language"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_facts",
-            "description": (
-                "Save facts the user confirmed or stated clearly, each as one short, clean sentence in their "
-                "language with their numbers exactly as given. Drafts are written only from saved facts."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "facts": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": MAX_FACTS,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "text": {"type": "string", "maxLength": FACT_CHARS},
-                                "file_id": {
-                                    "type": "string",
-                                    "description": "The file_id of the file or link it was read from, if any.",
-                                },
-                            },
-                            "required": ["text"],
-                        },
-                    }
-                },
-                "required": ["facts"],
-            },
-        },
-    },
-]
-
-
-# ---- the tools' arguments ----
-
-_Text = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
-
-
-# The draft's language: a tag the writer takes, else None and the writer uses the app's (never an error).
-_Language = Annotated[str | None, BeforeValidator(lambda v: clean_language(v) if isinstance(v, str) else None)]
-
-
-class _WriteArgs(BaseModel):
-    brief: Annotated[_Text, StringConstraints(max_length=2000)]
-    kind: Literal["x_post", "x_thread"]
-    count: StrictInt = Field(1, ge=1, le=3)
-    language: _Language = None
-
-
-class _ReviseArgs(BaseModel):
-    draft_id: _Text
-    instruction: Annotated[_Text, StringConstraints(max_length=500)]
-    language: _Language = None
-
-
-class _FactArg(BaseModel):
-    text: Annotated[_Text, StringConstraints(max_length=FACT_CHARS)]
-    file_id: Annotated[str, StringConstraints(strict=True)] | None = None
-
-
-class _SaveArgs(BaseModel):
-    facts: list[_FactArg] = Field(min_length=1, max_length=MAX_FACTS)
-
-
-def _invalid(e: ValidationError) -> str:
-    found = [f"{'.'.join(str(x) for x in err['loc']) or 'arguments'}: {err['msg']}" for err in e.errors()[:3]]
-    return f"error: invalid arguments ({'; '.join(found)}); nothing was done"
-
-
-# ---- helpers ----
-
-
-def _content(message: BaseMessage) -> str:
-    if isinstance(message.content, str):
-        return message.content
-    return " ".join(p.get("text", "") for p in message.content if isinstance(p, dict))
 
 
 def _key(text: str) -> str:
@@ -200,303 +51,106 @@ def _key(text: str) -> str:
     return " ".join(nfc(text).casefold().split()).strip(" .!?;:,")
 
 
-def _draft_block(d: Draft, new: bool = False) -> str:
-    if len(d.posts) == 1:
-        text = d.posts[0]
-    else:
-        text = "\n\n".join(f"({i}/{len(d.posts)}) {p}" for i, p in enumerate(d.posts, 1))
-    if new:  # written in this message: never an earlier draft (review N3)
-        return data("draft", text, id=d.id, kind=d.kind, written="just now, in this message")
-    return data("draft", text, id=d.id, kind=d.kind)
-
-
-def _said_key(text: str) -> str:
-    """How a reply's text is compared with an earlier round's: case and spacing aside."""
-    return " ".join(nfc(text).casefold().split())
-
-
-def _is_repeat(new: str, old: str) -> bool:
-    """The same words, or one a whole-word run inside the other that makes up most of it (>= 0.6 of its words)."""
-    a, b = re.findall(r"\w+", new), re.findall(r"\w+", old)
-    if a == b:
-        return True
-    short, long = (a, b) if len(a) <= len(b) else (b, a)
-    if not short or len(short) < 0.6 * len(long):
-        return False
-    return any(long[i : i + len(short)] == short for i in range(len(long) - len(short) + 1))
-
-
-def _after(text: str, key: str) -> str:
-    """What `text` says after its start, which reads as `key` (see `_said_key`)."""
-    for i in range(len(text) + 1):
-        if _said_key(text[:i]) == key:
-            return text[i:]
-    return ""
-
-
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 @dataclass
-class _Call:
-    """A tool call as sent back to the model: always an id and a well-formed name, with the arguments as JSON."""
-
-    id: str
-    name: str
-    arguments: str
-    problem: str | None  # set when the call is not run
-
-
-@dataclass
-class _Agent:
-    state: ChatState
-    t: Turn
+class AgentTurn:
+    state: ChatState  # the thread as the turn found it
+    reply: ReplyText
     facts: list[Fact] = field(default_factory=list)
     drafts: list[Draft] = field(default_factory=list)
-    family: dict[str, str] = field(default_factory=dict)
-    parts: list[str] = field(default_factory=list)  # what the model said, round by round
-    said: str = ""  # this round's text so far
+    family: dict[str, str] = field(default_factory=dict)  # a revised draft's id -> the first draft of its line
+    written: set[str] = field(default_factory=set)  # the ids of the drafts written in this message
+    messages: list[dict] = field(default_factory=list)  # this turn's chat messages, with tool calls and results
+    start: int = 0  # where this turn's tool messages begin in `messages`
+    rounds: int = 0  # chat calls made this turn
+    pending: list[PreparedCall] = field(default_factory=list)  # the last call's tool calls, waiting for run_tools
     results: list[tuple[str, str]] = field(default_factory=list)  # (tool, result), this turn
     ids: set[str] = field(default_factory=set)  # the tool call ids sent back this turn
-    in_bubble: bool = False  # the last thing shown was this turn's text: more text continues the same bubble
-    shown: str = ""  # this round's text as the user saw it (a repeat of an earlier round is never shown)
-    held: str = ""  # a later round's text, kept back until the round ends
-    written: set[str] = field(default_factory=set)  # the ids of the drafts written in this message
 
-    def __post_init__(self) -> None:
-        self.facts = list(self.state.get("facts", []))
-        self.drafts = list(self.state.get("drafts", []))
-        self.family = dict(self.state.get("draft_family", {}))
+    @classmethod
+    def begin(cls, state: ChatState, turn: Turn) -> "AgentTurn":
+        agent = cls(state=state, reply=ReplyText(turn.emit))
+        agent.facts = list(state.get("facts", []))
+        agent.drafts = list(state.get("drafts", []))
+        agent.family = dict(state.get("draft_family", {}))
+        agent.messages = [{"role": "system", "content": ""}, *history(state, agent.about())]
+        agent.start = len(agent.messages)
+        return agent
 
     @property
     def context(self) -> AppContext | None:
         return self.state.get("context")
 
-    # -- what the model is shown --
-
-    def _system(self) -> str:
-        ctx = self.context
-        parts = [
-            prompts.CONVERSE,
-            f"App: {self.t.pack.name}",
-            f"Language: {language_tag(ctx.language if ctx else '')}",
-            f"The app's guide:\n{self.t.pack.guide.strip()}",
-        ]
-        name = self.state.get("user_name")
-        if name:
-            parts.append("The user's name: " + data("context", name))
-        if ctx is not None:
-            recent = "\n".join(f"- {p}" for p in ctx.recent_posts[:MAX_RECENT]) or "none"
-            about = (
-                f"Voice: {ctx.voice}\nTopics: {', '.join(ctx.topics)}\nPatterns that work: {'; '.join(ctx.patterns)}\n"
-                f"Their latest posts:\n{recent}"
-            )
-            parts.append("About the user, from their app:\n" + data("context", about))
-            if ctx.kept_facts:
-                kept = "\n".join(data("kept", k.text, id=k.id) for k in ctx.kept_facts)
-                parts.append("Facts they kept in an earlier chat, not used in a post yet:\n" + kept)
-        ask = self.state.get("ask") or []
-        if ask:
-            turns = "\n".join(f"{role}: {text}" for role, text in ask)
-            parts.append(
-                "The same chat's other turns, answered by the app's own assistant, newest last:\n" + data("ask", turns)
-            )
-        facts = "\n".join(data("fact", f.text) for f in self.facts) or "none yet"
-        parts.append("Facts saved in this chat:\n" + facts)
-        readings = self.state.get("readings", [])
-        if readings:
-            blocks = []
-            for r in readings:
-                text = r.text + (f"\nUnsure (not facts): {'; '.join(r.unsure)}" if r.unsure else "")
-                blocks.append(data(r.kind, text, file_id=r.file_id))
-            parts.append("Files and links they shared:\n" + "\n".join(blocks))
-        recent = self.drafts[-MAX_DRAFTS_SHOWN:]
-        shown = "\n".join(_draft_block(d, new=d.id in self.written) for d in recent) or "none yet"
-        if self.written and all(d.id in self.written for d in self.drafts):
-            shown += (
-                "\n(There were no drafts before this message: the ones written just now are this chat's first, "
-                "never another version, a new take or a fresh one.)"
-            )
-        parts.append("Drafts in this chat, oldest first (the user sees each one with its buttons):\n" + shown)
-        return "\n\n".join(parts)
-
-    def _history(self) -> list[dict]:
-        messages = [m for m in self.state.get("messages", []) if isinstance(m, HumanMessage | AIMessage)]
-        messages = messages[-MAX_MESSAGES:]
-        while messages and not isinstance(messages[0], HumanMessage):
-            messages = messages[1:]  # the conversation shown starts with the user
-        last = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
-        out: list[dict] = []
-        for i, m in enumerate(messages):
-            text = nfc(_content(m)).strip()
-            if isinstance(m, AIMessage):
-                if text:
-                    out.append({"role": "assistant", "content": text})
-                continue
-            about = self._about() if i == last else None
-            if text:
-                content = data("user", text)
-            elif about is not None:
-                content = "(No message: the user tapped an action on the draft.)"
-            else:
-                content = "(No message: the user sent a file.)"
-            if i == last:
-                content = f"{content}\n{REPLY_RULE}"
-            if about is not None:
-                # Only a draft's buttons send a message about a draft. Their words are the app's (English), not the
-                # user's: the reply stays in the conversation's language.
-                written = f", written in {about.language}" if about.language else ""
-                content = (
-                    f"(The user tapped a button on draft {about.id}{written}. The button's words are the app's, not "
-                    f"the user's: keep replying in the language of the conversation.)\n{content}"
-                )
-            out.append({"role": "user", "content": content})
-        return out
-
-    def _about(self) -> Draft | None:
+    def about(self) -> Draft | None:
+        """The draft this message is about, when it came from one of the draft's buttons."""
         wanted = self.state.get("draft_id")
         return next((d for d in self.drafts if d.id == wanted), None) if wanted else None
 
-    # -- the loop --
+    # ---- one round: call the model, then (in run_tools) its tools ----
 
-    async def _emit(self, kind: str, payload: dict) -> None:
-        """Every event of the turn goes through here, so text knows whether it continues a bubble."""
-        if kind == "text":
-            self.in_bubble = True
-        elif kind in BUBBLE_ENDS:
-            self.in_bubble = False
-        await self.t.emit(kind, payload)
-
-    async def _forward(self, delta: str) -> None:
-        """Streams the first round's text. A later round's (after tools) is held until it ends: the model sometimes
-        says again what it said before the tools, and the user must never get the same words twice."""
-        if not delta:
-            return
-        self.said += delta  # what the model said, as its history keeps it
-        if self.parts:
-            self.held += delta
-            return
-        await self._show(delta)
-
-    async def _show(self, text: str) -> None:
-        if not self.shown and self.parts and self.in_bubble:  # an earlier round's text is still the last thing shown
-            await self._emit("text", {"delta": "\n\n"})  # a new paragraph; after a draft, a new bubble needs none
-        self.shown += text
-        await self._emit("text", {"delta": text})
-
-    async def _release(self) -> None:
-        """Shows a later round's held text, unless it repeats an earlier round's (the same words, case and spacing
-        aside, or one inside the other); text that only adds to an earlier round shows what it adds."""
-        held, self.held = self.held, ""
-        new = _said_key(held)
-        if not new:
-            return
-        for part in self.parts:
-            old = _said_key(part)
-            if new.startswith(old) and new != old:
-                held = _after(held, old)
-                new = _said_key(held)
-            if not new or new == old or _is_repeat(new, old):
-                return
-        await self._show(held.lstrip())
-
-    def _end_round(self) -> None:
-        if self.shown.strip():
-            self.parts.append(self.shown.strip())
-        self.said = self.shown = self.held = ""
-
-    async def run(self) -> None:
-        messages = [{"role": "system", "content": ""}, *self._history()]
-        start = len(messages)
-        for n in range(MAX_TOOL_ROUNDS + 1):
-            with_tools = n < MAX_TOOL_ROUNDS
-            messages[0] = {"role": "system", "content": self._system()}  # facts and drafts as they are now
-            sent = messages if with_tools else self._final(messages[:start])
-            turn: ToolTurn = await self.t.chat_tools(sent, TOOL_SPECS if with_tools else [], CHAT_TOKENS, self._forward)
-            if not self.said and turn.text.strip():
-                await self._forward(turn.text)  # text the stream never handed over
-            await self._release()
-            text = self.said.strip()
-            self._end_round()
-            if not with_tools or not turn.calls:
-                return  # calls in the answer without tools are never run
-            calls = self._prepare(turn.calls, n + 1)
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": text or None,
-                    "tool_calls": [
-                        {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
-                        for c in calls
-                    ],
-                }
-            )
-            for c in calls:
-                result = c.problem or await self._run(c)
-                self.results.append((c.name, result))
-                messages.append({"role": "tool", "tool_call_id": c.id, "content": result})
-
-    def _final(self, base: list[dict]) -> list[dict]:
-        """The last call has no tools, so it carries no tool messages (an API refuses those without tools): what the
-        model said and what its tools answered this turn come as plain messages."""
-        out = list(base)
-        if self.parts:
-            out.append({"role": "assistant", "content": "\n\n".join(self.parts)})
-        done = "\n".join(f"- {name}: {result}" for name, result in self.results)
-        out.append(
+    async def call_model(self, turn: Turn) -> bool:
+        """One chat call. True when it called tools, now in `pending` for `run_tools`."""
+        with_tools = self.rounds < MAX_TOOL_ROUNDS
+        self.messages[0] = {
+            "role": "system",
+            "content": system_prompt(turn.pack, self.state, self.facts, self.drafts, self.written),
+        }  # facts and drafts as they are now
+        sent = (
+            self.messages if with_tools else final_messages(self.messages[: self.start], self.reply.parts, self.results)
+        )
+        out = await turn.chat_tools(sent, TOOL_SPECS if with_tools else [], CHAT_TOKENS, self.reply.forward)
+        self.rounds += 1
+        if not self.reply.said and out.text.strip():
+            await self.reply.forward(out.text)  # text the stream never handed over
+        await self.reply.release()
+        text = self.reply.said.strip()
+        self.reply.end_round()
+        if not with_tools or not out.calls:
+            return False  # calls in the answer without tools are never run
+        self.pending = prepare_calls(out.calls, self.rounds, self.ids)
+        self.messages.append(
             {
-                "role": "user",
-                "content": "(Tools are no longer available for this message. What your tools answered:\n"
-                f"{done}\nNow answer the user in text.)",
+                "role": "assistant",
+                "content": text or None,
+                "tool_calls": [
+                    {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
+                    for c in self.pending
+                ],
             }
         )
-        return out
+        return True
 
-    def _prepare(self, calls: list[ToolCall], n: int) -> list[_Call]:
-        """Each call with an id unique in this turn (one the model gave twice gets a new one; the results must pair
-        with their calls) and a name an API takes back; a call that can't be run carries why."""
-        out: list[_Call] = []
-        for i, c in enumerate(calls, 1):
-            given = (c.id or "").strip()
-            name = c.name if _NAME.fullmatch(c.name or "") else "unnamed"
-            arguments = json.dumps(c.arguments) if c.bad_arguments is None else "{}"
-            problem = None
-            if not given:
-                problem = "error: the call had no id, so it wasn't run; call it again"
-            elif not c.name:
-                problem = f"error: the call had no name; the tools are {', '.join(TOOLS)}"
-            elif c.name not in TOOLS:
-                problem = f"error: unknown tool {name!r}; the tools are {', '.join(TOOLS)}"
-            elif c.bad_arguments is not None:
-                problem = "error: the arguments weren't valid JSON; nothing was done"
-            id = given if given and given not in self.ids else f"bot_{n}_{i}"
-            while id in self.ids:
-                id += "_"
-            self.ids.add(id)
-            out.append(_Call(id=id, name=name, arguments=arguments, problem=problem))
-        return out
+    async def run_tools(self, turn: Turn) -> None:
+        """Runs the pending calls in order; each result goes back to the model as a tool message."""
+        calls, self.pending = self.pending, []
+        for c in calls:
+            result = c.problem or await self._run(c, turn)
+            self.results.append((c.name, result))
+            self.messages.append({"role": "tool", "tool_call_id": c.id, "content": result})
 
-    async def _run(self, c: _Call) -> str:
+    async def _run(self, c: PreparedCall, turn: Turn) -> str:
         arguments = json.loads(c.arguments)
         try:
             if c.name == "save_facts":
-                return await self._save_facts(_SaveArgs.model_validate(arguments))
+                return await self._save_facts(SaveFactsArgs.model_validate(arguments), turn)
             if c.name == "write_drafts":
-                return await self._write(_WriteArgs.model_validate(arguments))
-            return await self._revise(_ReviseArgs.model_validate(arguments))
+                return await self._write(WriteDraftsArgs.model_validate(arguments), turn)
+            return await self._revise(ReviseDraftArgs.model_validate(arguments), turn)
         except ValidationError as e:
-            return _invalid(e)
+            return invalid_arguments(e)
 
-    # -- the tools --
+    # ---- the tools ----
 
     def _said_texts(self) -> list[str]:
         """What the user said and showed in this thread, and the facts they kept earlier (their own words)."""
-        said = [nfc(_content(m)) for m in self.state.get("messages", []) if isinstance(m, HumanMessage)]
+        said = [nfc(message_text(m)) for m in self.state.get("messages", []) if isinstance(m, HumanMessage)]
         kept = [k.text for k in self.context.kept_facts] if self.context else []
         return said + [r.text for r in self.state.get("readings", [])] + kept
 
-    async def _save_facts(self, args: _SaveArgs) -> str:
+    async def _save_facts(self, args: SaveFactsArgs, turn: Turn) -> str:
         readings = {r.file_id: r for r in self.state.get("readings", [])}
         kept = {_key(k.text): k for k in (self.context.kept_facts if self.context else [])}
         said = [Fact(numbers=numbers_in(t)) for t in self._said_texts()]
@@ -531,11 +185,11 @@ class _Agent:
         if new:
             self.facts.extend(new)
             try:
-                await self.t.deps.tools_factory().save_material(new, None, f"facts:{new_id()}")
+                await turn.deps.tools_factory().save_material(new, None, f"facts:{new_id()}")
             except ToolError:
                 result = f"kept {_plural(len(new), 'fact')} for this chat, but the app couldn't save them for later"
             else:
-                await self._emit("saved", {"kind": "facts", "items": [f.text for f in new]})
+                await self.reply.emit("saved", {"kind": "facts", "items": [f.text for f in new]})
                 result = f"saved {len(new)} facts"
         else:
             result = "nothing new to save" if not refused else "saved 0 facts"
@@ -543,48 +197,50 @@ class _Agent:
             result += "; not saved: " + "; ".join(refused)
         return result
 
-    def _writer(self, kind: str, exclude: set[str]) -> WriterDeps:
+    def _writer(self, turn: Turn, kind: str, exclude: set[str]) -> WriterDeps:
         """The writer's inputs. A draft must not repeat the user's published posts, nor this chat's drafts of the same
         kind: a thread retelling a post's news may reuse its sentences."""
         ctx = self.context
         mine = [p for d in self.drafts if d.kind == kind and d.id not in exclude for p in d.posts]
 
         async def status(step: str) -> None:
-            await self._emit("status", {"step": step})
+            await self.reply.emit("status", {"step": step})
 
         return WriterDeps(
-            pack=self.t.pack,
-            llm=self.t.llm,
+            pack=turn.pack,
+            llm=turn.llm,
             facts=list(self.facts),
             readings=list(self.state.get("readings", [])),
             context=ctx,
             recent=list(ctx.recent_posts if ctx else []),
             drafts=mine,
-            spend=self.t.spend,
+            spend=turn.spend,
             status=status,
         )
 
-    async def _write(self, args: _WriteArgs) -> str:
-        self.t.gate()
-        result = await write_drafts(self._writer(args.kind, set()), args.brief, args.kind, args.count, args.language)
+    async def _write(self, args: WriteDraftsArgs, turn: Turn) -> str:
+        turn.gate()
+        writer = self._writer(turn, args.kind, set())
+        result = await write_drafts(writer, args.brief, args.kind, args.count, args.language)
         return await self._shown(result, root=None)
 
-    async def _revise(self, args: _ReviseArgs) -> str:
+    async def _revise(self, args: ReviseDraftArgs, turn: Turn) -> str:
         draft = next((d for d in self.drafts if d.id == args.draft_id), None)
         if draft is None:
             ids = ", ".join(d.id for d in self.drafts[-MAX_DRAFTS_SHOWN:]) or "none"
             return f"error: there is no draft {args.draft_id[:64]!r} in this chat; its drafts: {ids}"
-        self.t.gate()
+        turn.gate()
         # Earlier versions of the same draft aren't repeats of it: "shorter" twice must not drop the second version.
         root = self.family.get(draft.id, draft.id)
         line = {d.id for d in self.drafts if self.family.get(d.id, d.id) == root}
         # A tap on the draft's own buttons sends the app's (English) words: the new version keeps the draft's language.
-        tapped = self._about() is not None and self._about().id == draft.id
+        tapped = self.about() is not None and self.about().id == draft.id
         language = draft.language if tapped and draft.language else (args.language or draft.language)
-        result = await revise_draft(self._writer(draft.kind, line), draft, args.instruction, language)
+        result = await revise_draft(self._writer(turn, draft.kind, line), draft, args.instruction, language)
         return await self._shown(result, root=root)
 
     async def _shown(self, result: DraftResult, root: str | None) -> str:
+        """Shows each new draft (a `draft` event) and tells the model what was written."""
         first = not self.drafts  # the chat had no draft before this call (review N3)
         for d in result.drafts:
             self.drafts.append(d)
@@ -596,7 +252,7 @@ class _Agent:
                 payload["image_file_id"] = d.image_file_id
             # `told`: the facts the draft was written from, for the API to store with it. Never sent to the browser.
             payload["told"] = [f.model_dump() for f in self.facts if f.id in set(d.fact_ids)]
-            await self._emit("draft", payload)
+            await self.reply.emit("draft", payload)
         if not result.drafts:
             return f"nothing written: {result.note or 'the writer returned nothing usable'}"
         n = len(result.drafts)
@@ -612,48 +268,27 @@ class _Agent:
                 if n == 1
                 else " These are the chat's first drafts; never call them fresh takes, other versions or new ones."
             )
-        out += "\n" + "\n".join(_draft_block(d) for d in result.drafts)
+        out += "\n" + "\n".join(draft_block(d) for d in result.drafts)
         return out + (f"\nnote: {result.note}" if result.note else "")
 
-    # -- the end --
+    # ---- what the thread keeps ----
 
-    async def capped(self) -> None:
-        self._end_round()
-        if self.parts and self.in_bubble:
-            await self._emit("text", {"delta": "\n\n"})
-        await self._emit("text", {"delta": CAP_TEXT})
-
-    def update(self, capped: bool = False, failed: bool = False) -> dict:
+    def update(self, done: bool, capped: bool = False, failed: bool = False) -> dict:
+        """The state update after a node. While the turn goes on, the facts and drafts so far; once it is `done`,
+        the reply's text too, and the turn's input is cleared."""
         out: dict = {
             "facts": self.facts,
             "drafts": self.drafts,
             "draft_family": self.family,
-            "draft_id": None,
-            "ask": [],
+            "tools_pending": bool(self.pending) and not done,
         }
-        if self.parts:
-            out["messages"] = [AIMessage(content="\n\n".join(self.parts))]
+        if done:
+            out["draft_id"] = None
+            out["ask"] = []
+            if self.reply.parts:
+                out["messages"] = [AIMessage(content=self.reply.reply)]
         if capped:
             out["capped"] = True
         if failed:
             out["failed"] = True
         return out
-
-
-async def converse(state: ChatState, t: Turn) -> dict:
-    """Replies to the user's message, running the tools the chat model calls (see the module's docstring)."""
-    await t.emit("status", {"step": "thinking"})
-    agent = _Agent(state, t)
-    try:
-        await agent.run()
-    except Capped:
-        await agent.capped()
-        return agent.update(capped=True)
-    except LlmError:
-        if not agent.results:
-            raise  # nothing happened yet: the turn fails as any failed call does (bind carries its cost)
-        # Tools already ran (drafts shown, facts saved in the app): keep their work in the thread, so a later
-        # "shorter" finds the draft and the facts aren't saved again, and let the turn end as failed.
-        agent.said = agent.shown = agent.held = ""  # what the failed call had started to say is not kept
-        return agent.update(failed=True)
-    return agent.update()

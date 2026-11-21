@@ -55,6 +55,7 @@ from assistant.files.intake import check_claim, finish_upload, start_upload
 from assistant.graph import agent
 from assistant.graph.build import serializer
 from assistant.graph.prompts import data
+from assistant.graph.reply_text import BUBBLE_ENDS
 from assistant.llm import Llm, LlmError, LlmResult, ToolCall, ToolTurn
 from assistant.packs import AppPack, load_packs
 from assistant.tools import AppContext
@@ -735,7 +736,7 @@ def reply_text(events: list[tuple[str, dict]]) -> str:
                 bubbles.append("")
                 open_ = True
             bubbles[-1] += delta
-        elif kind in agent.BUBBLE_ENDS:
+        elif kind in BUBBLE_ENDS:
             open_ = False
     return "\n\n".join(bubbles)
 

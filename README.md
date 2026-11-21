@@ -16,6 +16,8 @@ describes what to write.
 
 ## How it works
 
+The code, step by step and for someone new to LangGraph: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
 ```
 your page ── chat window (script tag or React) ──► app-assistant ──► OpenRouter (chat + writer models)
    │                                                     │
