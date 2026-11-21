@@ -1,9 +1,12 @@
 /** The button and the chat panel, in a shadow root. Server and user text only ever goes in through textContent. */
 import { type ActionBody, ApiError, AuthLost, type BotApi, type BotEvent, type Confirm, type Draft } from "./api";
 import { startRecording, type Recording } from "./recorder";
+import { icon, type IconName } from "./icons";
+import { renderMarkdown } from "./markdown";
 import { CSS } from "./styles";
 
-export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread" | "fileLink"> & Partial<Pick<BotApi, "config">>;
+export type PanelApi = Pick<BotApi, "send" | "upload" | "act" | "thread" | "fileLink"> &
+  Partial<Pick<BotApi, "config" | "threads">>;
 export interface PanelOptions {
   api: PanelApi;
   app: string;
@@ -39,8 +42,7 @@ const CHANGE_STATES: Record<string, (result: string) => string> = {
 const RESULT_SHOWN = 240; // the app's answer under a done change, at most
 const SHORTER = "Make it shorter";
 const ANOTHER_ANGLE = "Try another angle";
-const CHECK_ICON =
-  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHECK_ICON = icon("check", 14);
 const MAX_RECORD_MS = 5 * 60_000;
 
 type Child = Node | string | null | undefined | false;
@@ -126,25 +128,50 @@ export function createPanel(opts: PanelOptions) {
   const host = h("div", { id: "assistant-widget" });
   const root = host.attachShadow({ mode: "open" });
   const wrap = h("div", { class: opts.position === "left" ? "left" : "right" });
-  const launcher = h("button", { class: "launcher", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false", text: opts.label });
+  // An icon button: the icon is ours (a fixed string), its name is for screen readers and the tooltip.
+  const iconButton = (cls: string, name: IconName, label: string, size = 18) => {
+    const b = h("button", { class: `icon ${cls}`.trim(), type: "button", "aria-label": label, title: label });
+    b.innerHTML = icon(name, size);
+    return b;
+  };
+  const launcher = h("button", { class: "launcher", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false" });
+  launcher.innerHTML = icon("sparkle", 18);
+  launcher.append(h("span", { text: opts.label }));
   const list = h("div", { class: "list", role: "log", "aria-live": "polite", "aria-label": "Conversation" });
+  const history = h("div", { class: "history", hidden: true, "aria-label": "Past chats" });
   const status = h("div", { class: "status", "aria-live": "polite" });
   const chipsEl = h("div", { class: "chips" });
-  const input = h("textarea", { rows: 1, placeholder: "Tell me what you did…", "aria-label": "Your message", maxlength: 4000 });
+  const input = h("textarea", { rows: 1, placeholder: "Write a message…", "aria-label": "Your message", maxlength: 4000 });
   const fileInput = h("input", { type: "file", accept: "image/*,application/pdf,audio/*", hidden: true, tabindex: -1 });
   fileInput.multiple = true;
-  const attach = h("button", { class: "icon", type: "button", "aria-label": "Attach a file", text: "📎" });
-  const mic = h("button", { class: "icon mic", type: "button", "aria-label": "Hold to record a voice note", text: "🎤" });
-  const send = h("button", { class: "icon send", type: "button", "aria-label": "Send", text: "➤" });
-  const closeBtn = h("button", { class: "icon", type: "button", "aria-label": "Close", text: "✕" });
+  const attach = iconButton("", "paperclip", "Attach a file");
+  const mic = iconButton("mic", "mic", "Hold to record a voice note");
+  const send = iconButton("send", "send", "Send", 18);
+  const closeBtn = iconButton("", "close", "Close");
+  const newChatBtn = iconButton("", "newChat", "New chat");
+  const historyBtn = iconButton("", "history", "Past chats");
+  historyBtn.setAttribute("aria-expanded", "false");
+  if (!api.threads) historyBtn.hidden = true;
+  const title = h("h2", { text: opts.label });
   const panel = h(
     "div",
     { class: "panel", role: "dialog", "aria-label": opts.label, hidden: true },
-    h("header", {}, h("h2", { text: opts.label }), closeBtn),
+    h("header", {}, title, h("div", { class: "head-tools" }, newChatBtn, historyBtn, closeBtn)),
     list,
-    status,
-    chipsEl,
-    h("div", { class: "composer" }, attach, mic, input, send, fileInput),
+    history,
+    h(
+      "div",
+      { class: "foot" },
+      status,
+      h(
+        "div",
+        { class: "composer" },
+        chipsEl,
+        input,
+        h("div", { class: "tools" }, attach, mic, h("span", { class: "grow" }), send),
+        fileInput,
+      ),
+    ),
   );
   wrap.append(launcher, panel);
   root.append(h("style", { text: CSS }), wrap);
@@ -162,6 +189,61 @@ export function createPanel(opts: PanelOptions) {
   };
   const showError = (text: string) => addMsg("err", text);
 
+  // The assistant's words: no bubble, full width, drawn as the reader expects (markdown.ts: lists, bold, links), as
+  // they stream in. What it said as written is kept for Copy.
+  const said = new WeakMap<HTMLElement, string>();
+  const addBot = (text: string): HTMLElement => {
+    const m = h("div", { class: "msg bot" });
+    list.append(m);
+    setBot(m, text);
+    return m;
+  };
+  const setBot = (m: HTMLElement, text: string) => {
+    said.set(m, text);
+    m.replaceChildren(renderMarkdown(text));
+    scroll();
+  };
+  /** Copy, quietly under an answer once it is whole. */
+  function addActions(m: HTMLElement) {
+    const copy = iconButton("copy", "copy", "Copy", 16);
+    copy.addEventListener("click", () => {
+      const text = said.get(m) ?? m.textContent ?? "";
+      void navigator.clipboard?.writeText(text).then(
+        () => {
+          copy.innerHTML = icon("check", 16);
+          copy.setAttribute("aria-label", "Copied");
+          setTimeout(() => {
+            copy.innerHTML = icon("copy", 16);
+            copy.setAttribute("aria-label", "Copy");
+          }, 1500);
+        },
+        () => undefined,
+      );
+    });
+    m.after(h("div", { class: "acts" }, copy));
+  }
+
+  // A picture, full size over the chat; Escape or a tap closes it.
+  function viewImage(src: string, alt: string) {
+    const closeView = iconButton("view-close", "close", "Close picture", 20);
+    const img = h("img", { src, alt });
+    const view = h("div", { class: "viewer", role: "dialog", "aria-label": alt || "Picture" }, img, closeView);
+    const done = () => {
+      view.remove();
+      panel.removeEventListener("keydown", onKey, true);
+    };
+    const onKey = (e: Event) => {
+      if ((e as KeyboardEvent).key === "Escape") {
+        e.stopPropagation();
+        done();
+      }
+    };
+    view.addEventListener("click", done);
+    panel.addEventListener("keydown", onKey, true);
+    panel.append(view);
+    closeView.focus();
+  }
+
   // A user's message with what it sent (21 Nov 2026: a picture showed only until a reload, a voice note never played):
   // a picture as a small image, a voice note as a player, anything else as a link that opens it; then the words.
   function addUserMsg(text: string, files: { name: string; kind: string; src?: string }[]): HTMLElement {
@@ -177,15 +259,24 @@ export function createPanel(opts: PanelOptions) {
     return m;
   }
   function fileView(kind: string, name: string, src?: string): HTMLElement {
-    if (kind === "image") return h("img", { alt: name, ...(src ? { src } : {}) });
+    if (kind === "image") {
+      const img = h("img", { alt: name, ...(src ? { src } : {}) });
+      const b = h("button", { class: "thumb", type: "button", "aria-label": `Open ${name}` }, img);
+      b.addEventListener("click", () => img.src && viewImage(img.src, name));
+      return b;
+    }
     if (kind === "voice") return h("audio", { controls: "", preload: "metadata", "aria-label": name, ...(src ? { src } : {}) });
-    return h("a", { class: "file", target: "_blank", rel: "noreferrer", text: `📎 ${name}`, ...(src ? { href: src } : {}) });
+    const a = h("a", { class: "file", target: "_blank", rel: "noreferrer", ...(src ? { href: src } : {}) });
+    a.innerHTML = icon("file", 16);
+    a.append(h("span", { text: name }));
+    return a;
   }
   function setFileSrc(msg: HTMLElement, i: number, url: string) {
     const box = msg.querySelector(`.sent[data-i="${i}"]`);
     const el = box?.firstElementChild;
     if (!el) return;
     if (el.tagName === "A") el.setAttribute("href", url);
+    else if (el.tagName === "BUTTON") el.querySelector("img")?.setAttribute("src", url);
     else el.setAttribute("src", url);
   }
 
@@ -244,6 +335,75 @@ export function createPanel(opts: PanelOptions) {
   }
   launcher.addEventListener("click", open);
   closeBtn.addEventListener("click", close);
+
+  // ---- a new chat, and the past ones ----
+  /** An empty chat on screen (the thread is kept by the bot; Past chats opens it again). */
+  function clearChat() {
+    list.replaceChildren();
+    syncers.clear();
+    startersEl = null;
+    continueEl = null;
+    working = null;
+    status.textContent = "";
+  }
+  function newChat() {
+    if (busy) return;
+    showList();
+    clearChat();
+    threadId = null;
+    store.set(null);
+    void showStarters();
+    input.focus();
+  }
+  newChatBtn.addEventListener("click", newChat);
+
+  function showList() {
+    history.hidden = true;
+    list.hidden = false;
+    historyBtn.setAttribute("aria-expanded", "false");
+  }
+  async function showHistory() {
+    if (!api.threads) return;
+    if (!history.hidden) return showList();
+    historyBtn.setAttribute("aria-expanded", "true");
+    list.hidden = true;
+    history.hidden = false;
+    history.replaceChildren(h("p", { class: "quiet", text: "Loading your chats…" }));
+    try {
+      const threads = await api.threads();
+      if (!threads.length) {
+        history.replaceChildren(h("p", { class: "quiet", text: "No past chats yet." }));
+        return;
+      }
+      history.replaceChildren(
+        ...threads.map((t) => {
+          const when = new Date(t.updated_at);
+          const b = h(
+            "button",
+            { class: `past${t.id === threadId ? " current" : ""}`, type: "button" },
+            h("span", { class: "past-title", text: t.title || "Chat" }),
+            h("span", {
+              class: "past-when",
+              text: Number.isNaN(when.getTime()) ? "" : when.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+            }),
+          );
+          b.addEventListener("click", () => {
+            if (busy) return;
+            showList();
+            if (t.id === threadId) return;
+            clearChat();
+            void restore(t.id);
+          });
+          return b;
+        }),
+      );
+    } catch (e) {
+      if (e instanceof AuthLost) return stop(SIGN_IN);
+      history.replaceChildren(h("p", { class: "quiet", text: errorText(e) }));
+    }
+  }
+  historyBtn.addEventListener("click", () => void showHistory());
+
   panel.addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Escape") {
       e.stopPropagation();
@@ -270,11 +430,12 @@ export function createPanel(opts: PanelOptions) {
           });
           continue;
         }
-        // In the order a turn shows them live: what it kept, its drafts, then its words.
+        // In the order a turn shows them live: what it kept, its drafts, its words, then a change it asked for (the
+        // card comes after the words that explain it).
         if (m.saved?.length) renderSaved(m.saved);
         for (const d of m.drafts ?? []) renderDraft(d);
+        if (m.text) addActions(addBot(m.text));
         for (const c of m.confirms ?? []) renderConfirm(c);
-        if (m.text) addMsg("msg bot", m.text);
       }
       const last = t.messages[t.messages.length - 1];
       if (last?.role === "assistant" && last.capped) showContinue();
@@ -301,12 +462,17 @@ export function createPanel(opts: PanelOptions) {
     if (!starters.length || threadId || list.children.length) return;
     startersEl = h(
       "div",
-      { class: "starters" },
-      ...starters.map((text) => {
-        const b = h("button", { class: "starter", type: "button", text });
-        b.addEventListener("click", () => void sendTurn(text, []));
-        return b;
-      }),
+      { class: "empty" },
+      h("p", { class: "hello", text: "What can I help with?" }),
+      h(
+        "div",
+        { class: "starters" },
+        ...starters.map((text) => {
+          const b = h("button", { class: "starter", type: "button", text });
+          b.addEventListener("click", () => void sendTurn(text, []));
+          return b;
+        }),
+      ),
     );
     list.append(startersEl);
   }
@@ -519,7 +685,7 @@ export function createPanel(opts: PanelOptions) {
   function addFile(file: File) {
     const bar = h("progress", { max: 1, value: 0, "aria-label": `Uploading ${file.name}` });
     const note = h("span", { class: "msg-bad" });
-    const x = h("button", { class: "icon x", type: "button", "aria-label": `Remove ${file.name}`, text: "✕" });
+    const x = iconButton("x", "close", `Remove ${file.name}`, 14);
     const el = h("span", { class: "chip" }, h("span", { class: "name", text: file.name }), bar, note, x);
     const chip: Chip = { file, state: "uploading", el, bar, note };
     chips.push(chip);
@@ -617,6 +783,7 @@ export function createPanel(opts: PanelOptions) {
   /** One turn. `draftId` is set when it is a Shorter or Another angle about that draft (then nothing typed is taken). */
   async function sendTurn(text: string, sent: Chip[], draftId?: string) {
     if (busy || signedOut) return;
+    showList();
     dropStarters();
     dropContinue();
     const fromComposer = draftId === undefined;
@@ -646,6 +813,7 @@ export function createPanel(opts: PanelOptions) {
     workingLabel.textContent = STEP_LABELS.thinking;
     showWorking();
     let bubble: HTMLElement | null = null;
+    const spoken: HTMLElement[] = []; // this turn's answers: Copy under each once the turn ends
     const onEvent = (e: BotEvent) => {
       accept();
       const d = e.data;
@@ -665,9 +833,11 @@ export function createPanel(opts: PanelOptions) {
           const delta = bubble ? String(d.delta ?? "") : String(d.delta ?? "").replace(/^\s+/, "");
           if (!delta) break;
           hideWorking();
-          if (!bubble) bubble = addMsg("msg bot", "");
-          bubble.textContent += delta;
-          scroll();
+          if (!bubble) {
+            bubble = addBot("");
+            spoken.push(bubble);
+          }
+          setBot(bubble, (said.get(bubble) ?? "") + delta);
           break;
         }
         case "draft":
@@ -705,6 +875,7 @@ export function createPanel(opts: PanelOptions) {
       else showError(errorText(e));
     } finally {
       hideWorking();
+      for (const m of spoken) if (m.isConnected) addActions(m);
       busy = false;
       refresh();
       if (!signedOut) input.focus();

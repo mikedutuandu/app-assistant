@@ -423,7 +423,9 @@ describe("panel", () => {
       expect($$(".bot")).toHaveLength(1); // blank lines alone open no bubble
       h.emit({ event: "text", data: { delta: "Here's a first go." } });
       h.emit({ event: "text", data: { delta: "\n\nWant it shorter" } });
-      expect($$(".bot").map((b) => b.textContent)).toEqual(["Love it.", "Here's a first go.\n\nWant it shorter"]);
+      // The second answer's paragraphs, drawn as paragraphs as they stream in.
+      const paras = (b: Element) => Array.from(b.querySelectorAll("p")).map((p) => p.textContent);
+      expect($$(".bot").map(paras)).toEqual([["Love it."], ["Here's a first go.", "Want it shorter"]]);
       h.finish();
     });
 
@@ -715,6 +717,51 @@ describe("the app's own tools", () => {
     const { $$, flush } = setup({ thread } as any);
     await flush();
     expect($$(".continue")).toHaveLength(1);
+  });
+
+  // Mike, 21 Nov 2026 ("refer Claude chat"): lists and bold drawn, Copy under a whole answer, New chat and Past chats.
+  it("draws an answer's list and bold, and offers Copy once the turn ends", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on(thr);
+      on({ event: "text", data: { delta: "You have **9** videos:\n- 5 in Day 1–5\n- 1 intro" } } as BotEvent);
+      expect($$(".acts")).toHaveLength(0); // not while it streams
+      on({ event: "done", data: { message_id: "m1", cost_usd: 0.01 } } as BotEvent);
+    });
+    const { $, $$, say, flush } = setup({ send } as any);
+    await say("how many videos?");
+    expect($(".bot strong").textContent).toBe("9");
+    expect(Array.from($(".bot").querySelectorAll("li")).map((l) => l.textContent)).toEqual(["5 in Day 1–5", "1 intro"]);
+    ($(".acts .copy") as HTMLButtonElement).click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith("You have **9** videos:\n- 5 in Day 1–5\n- 1 intro");
+    vi.unstubAllGlobals();
+  });
+
+  it("New chat empties the window and starts a new thread; Past chats opens an old one", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async (id: string) => ({ messages: [{ role: "assistant", text: id === "t1" ? "Old one." : "Older." }] }));
+    const threads = vi.fn(async () => [
+      { id: "t1", title: "This week", updated_at: "2026-11-21T08:00:00Z" },
+      { id: "t0", title: "Last week", updated_at: "2026-11-14T08:00:00Z" },
+    ]);
+    const { $, $$, p, flush } = setup({ thread, threads } as any);
+    await flush();
+    expect($(".bot").textContent).toBe("Old one.");
+    (p.root.querySelector('[aria-label="New chat"]') as HTMLButtonElement).click();
+    await flush();
+    expect($$(".bot")).toHaveLength(0);
+    expect(sessionStorage.getItem("assistant:thread:demo")).toBeNull();
+    (p.root.querySelector('[aria-label="Past chats"]') as HTMLButtonElement).click();
+    await flush();
+    const past = $$(".past");
+    expect(past.map((b) => b.querySelector(".past-title")!.textContent)).toEqual(["This week", "Last week"]);
+    past[1].click();
+    await flush();
+    expect(thread).toHaveBeenLastCalledWith("t0");
+    expect($(".bot").textContent).toBe("Older.");
+    expect(($(".history") as HTMLElement).hidden).toBe(true);
   });
 
   it("says it is checking the app while a read runs", async () => {
