@@ -93,6 +93,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `draft` | `{id, kind, posts, image_file_id?, post_at?, post_times?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); `image_file_id` a picture the user sent that goes with it; `post_times` your free times when you sent some, `post_at` the bot's pick; show it with an Add button (and Schedule with `post_times`) |
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `confirm` | `{id, tool, title, lines}`: a change waiting for the user's tap (see Actions); show `title`, the `lines`, and Confirm / Cancel |
+| `view` | `{id, tool, html, input, result, csp?, prefers_border?}`: one of your tool's cards (MCP Apps, see Actions); draw `html` in a sandboxed frame given `input` and `result` (`AppView` / `mountAppView` in the package), before the words that follow |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
 | `done` | `{message_id, cost_usd, capped?}`: `capped: true` when the pack's `message_usd_cap` cut the answer short (its last line says so). Offer a **Continue** button that sends `Continue`: the next message goes on from what this one read. A thread read marks such an answer `capped: true` too |
 
@@ -329,6 +330,28 @@ Protocol), so the server is one you may already have; nothing here is specific t
 The chat API's actions take a card's tap: `{"action_id", "kind": "confirm" | "cancel", "pending_id": <the card's
 id>}` answers `{"state": "done" | "failed" | "cancelled", "result"}` (a repeat answers the same; 410 `expired`).
 A thread read back lists each message's `confirms` with their `state`.
+
+### Cards: show a read as your own UI (MCP Apps)
+
+A read can show the user its result as a card your app draws, as Claude and ChatGPT show them: the
+[MCP Apps](https://modelcontextprotocol.io/seps/1865-mcp-apps-interactive-user-interfaces-for-mcp) extension, so the
+same card works in any MCP Apps host. The bot declares the extension (`io.modelcontextprotocol/ui`) when it connects.
+
+1. **Name the card on the tool**: `"_meta": {"ui": {"resourceUri": "ui://cards/posts"}}`. A tool whose
+   `_meta.ui.visibility` leaves out `"model"` is never offered to the model.
+2. **Serve it** from `resources/read`: one entry with that `uri`, `mimeType: "text/html;profile=mcp-app"` and the page
+   in `text` (300 KB at most). Optional `_meta.ui.csp.resourceDomains` (https domains its pictures, fonts and scripts
+   load from), `connectDomains`, and `prefersBorder`.
+3. **Return the data** as `structuredContent` (with a short text in `content` for the model). The page gets it over
+   `postMessage`: it sends `ui/initialize`, then `ui/notifications/initialized`, and receives
+   `ui/notifications/tool-input` and `ui/notifications/tool-result`. It may send `ui/notifications/size-changed`,
+   `ui/open-link` (http(s)) and `ui/message` (sent as the user's message). Calling your tools from a card is not
+   supported here yet.
+
+The bot reads your page once every 5 minutes, shows at most 6 cards in a message, and keeps each with the thread (a
+thread read lists a message's `views`). The model is told the user sees the card, so its words point to it instead
+of listing it again. The page runs with no origin of its own (`sandbox="allow-scripts"`) under a policy made only
+from the domains you declared: it can't reach the page around it.
 
 ## The registry entry (the bot owner adds it)
 

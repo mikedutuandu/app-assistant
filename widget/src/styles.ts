@@ -91,6 +91,9 @@ header h2 { margin: 0; flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
 .viewer .icon { position: absolute; top: 10px; right: 10px; color: #fff; }
 .viewer .icon:hover { background: rgba(255,255,255,.14); color: #fff; }
 
+/* An app's card (MCP Apps): its own page, in a frame as wide as the answer */
+.view { align-self: stretch; }
+.view.framed { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 /* Cards: a draft, a change waiting for the user's OK */
 .draft, .confirm { align-self: stretch; border: 1px solid var(--line); border-radius: var(--r); padding: 14px;
   background: var(--bg); box-shadow: 0 1px 2px rgba(0,0,0,.04); }

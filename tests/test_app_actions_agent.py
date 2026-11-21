@@ -180,3 +180,39 @@ async def test_a_message_that_was_not_cut_short_carries_nothing():
     assert state["capped"] is False and state.get("carried", []) == []
     await h.send("ok")
     assert "Cut short" not in system_of(llm.calls[-1]) and "posts: 10" not in system_of(llm.calls[-1])
+
+
+# ---- MCP Apps: a read whose tool has a card is shown as one ----
+
+
+def card_actions(answer: str = "posts: 10") -> FakeActions:
+    from assistant.app_actions import ActionResult, AppTool
+
+    raw = {"content": [{"type": "text", "text": answer}], "structuredContent": {"posts": [{"views": 79}]}}
+    posts = AppTool("list_posts", "List posts", "The user's posts.", {"type": "object"}, True, "ui://cards/posts")
+    return FakeActions(tools=[posts], answers={"list_posts": ActionResult(answer, False, raw)})
+
+
+async def test_a_read_with_a_card_shows_it_before_the_words_and_the_model_is_told():
+    llm = FakeLlm({"CONVERSE": [Reply("Let me look.", [call("list_posts", limit=3)]), "That one did best."]})
+    h = Harness(llm, pack=acting_pack(writes=False), actions=card_actions())
+    await h.send("show my latest posts")
+    [read] = h.views
+    assert read == {
+        "tool": "list_posts",
+        "uri": "ui://cards/posts",
+        "input": {"limit": 3},
+        "result": {"content": [{"type": "text", "text": "posts: 10"}], "structuredContent": {"posts": [{"views": 79}]}},
+    }
+    kinds = [k for k, _ in h.events if k in ("text", "view")]
+    assert kinds.index("view") < len(kinds) - 1 and kinds[-1] == "text"  # the words after the card
+    assert "sees this answer as a card" in told(llm)
+    assert "posts: 10" in told(llm)  # the model still reads the data
+
+
+async def test_a_read_whose_card_cant_be_shown_is_words_only():
+    llm = FakeLlm({"CONVERSE": [Reply(calls=[call("list_posts")]), "10 posts."]})
+    h = Harness(llm, pack=acting_pack(writes=False), actions=card_actions())
+    h.view_shown = False
+    await h.send("posts?")
+    assert h.of("view") == [] and "card" not in told(llm)

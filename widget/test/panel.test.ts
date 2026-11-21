@@ -764,6 +764,36 @@ describe("the app's own tools", () => {
     expect(($(".history") as HTMLElement).hidden).toBe(true);
   });
 
+  // MCP Apps (Mike, 21 Nov 2026: "show the data as SuperX does"): an app's card in a sandboxed frame, before the words.
+  it("draws an app's card in a sandboxed frame before the words, live and after a reload", async () => {
+    const view = { id: "v1", tool: "list_posts", html: "<p>card</p>", input: {}, result: { content: [] } };
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on(thr);
+      on({ event: "view", data: view } as BotEvent);
+      on({ event: "text", data: { delta: "That one did best." } } as BotEvent);
+    });
+    const { $, $$, say } = setup({ send } as any);
+    await say("show my posts");
+    const frame = $(".view iframe") as HTMLIFrameElement;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.srcdoc).toContain("<p>card</p>");
+    const order = $$(".view, .msg.bot").map((e) => (e.classList.contains("view") ? "view" : "bot"));
+    expect(order).toEqual(["view", "bot"]);
+
+    document.body.innerHTML = "";
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({
+      messages: [
+        { role: "user", text: "show my posts" },
+        { role: "assistant", text: "That one did best.", views: [view] },
+      ],
+    }));
+    const again = setup({ thread } as any);
+    await again.flush();
+    expect(again.$$(".view iframe")).toHaveLength(1);
+    expect(again.$$(".view, .msg.bot").map((e) => e.className)).toEqual(["view framed", "msg bot"]);
+  });
+
   it("says it is checking the app while a read runs", async () => {
     let release!: () => void;
     const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {

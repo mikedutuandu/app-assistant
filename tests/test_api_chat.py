@@ -1462,3 +1462,36 @@ async def test_another_workspaces_change_is_not_found(api: Api):
     other = await api.thread_row(workspace="ws2")
     r = await api.act(other, tap(card["id"]), workspace="ws2")
     assert (r.status_code, r.json()) == (404, {"error": "change"})
+
+
+# ---- MCP Apps: a read's card (Mike, 21 Nov 2026: "show the data as SuperX does, not only text") ----
+
+
+async def test_a_reads_card_is_sent_kept_read_back_and_deleted_with_the_workspace(api: Api):
+    from assistant.app_actions import ActionResult, AppTool, AppView
+
+    acting(api)
+    raw = {"content": [{"type": "text", "text": "posts: 1"}], "structuredContent": {"posts": [{"text": "hi"}]}}
+    api.actions.tools.append(
+        AppTool("list_posts", "List posts", "Posts.", {"type": "object"}, True, "ui://cards/posts")
+    )
+    api.actions.answers["list_posts"] = ActionResult("posts: 1", False, raw)
+    api.actions.pages["ui://cards/posts"] = AppView("<p>card</p>", {"resourceDomains": ["https://pbs.example"]}, True)
+    api.llm.script = {"CONVERSE": [Reply(calls=[call("list_posts")]), "That's your latest."]}
+    events = await api.send("show my latest post")
+    [view] = of(events, "view")
+    assert view["tool"] == "list_posts" and view["html"] == "<p>card</p>" and view["result"] == raw
+    assert view["csp"] == {"resourceDomains": ["https://pbs.example"]} and view["prefers_border"] is True
+    tid = of(events, "thread")[0]["thread_id"]
+    read = (await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())).json()
+    [kept] = read["messages"][1]["views"]
+    assert kept == view
+
+    # A change asked in the same chat goes with the workspace too (pending_actions follows its thread).
+    api.llm.script = change_script()
+    await api.send("move my item to Friday", thread=tid)
+    token = raw_token("real", "ws1", "delete")
+    r = await api.client.delete("/v1/apps/real/workspaces/ws1", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    for table in ["app_views", "pending_actions"]:
+        assert await api.count(table) == 0, table

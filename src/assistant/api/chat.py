@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from assistant.api.deps import APP_DOWN, ApiError, bearer, client_ip, key_for, session_for, session_or_unavailable
-from assistant.api.turn import PENDING_HOURS, TurnInput, start, tool_failure
+from assistant.api.turn import PENDING_HOURS, TurnInput, start, tool_failure, view_event
 from assistant.auth import AuthError, Session, verify_delete_token
 from assistant.checks import Fact
 from assistant.db import new_id
@@ -515,6 +515,12 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             (timedelta(hours=PENDING_HOURS), session.app, session.workspace, thread_id),
         )
         change_rows = await cur.fetchall()
+        cur = await conn.execute(
+            "select id, message_id, tool, html, csp, prefers_border, input, result from app_views"
+            " where app = %s and workspace = %s and thread_id = %s order by created_at, id",
+            (session.app, session.workspace, thread_id),
+        )
+        view_rows = await cur.fetchall()
     # The turn's message id is the app's charge ref: it only groups rows here and never leaves the bot (the browser
     # first sees it in `done`, after the charge).
     drafts: dict[str, list[dict]] = {}
@@ -531,6 +537,10 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             {"id": cid, "tool": tool, "title": title, "lines": lines, "state": current, "result": result}
         )
 
+    views: dict[str, list[dict]] = {}
+    for vid, turn_id, tool, html, csp, border, input_, result in view_rows:
+        views.setdefault(turn_id, []).append(view_event(vid, tool, html, csp, border, input_, result))
+
     out: list[dict] = []
     current: str | None = None
     shown: dict | None = None  # the current turn's assistant message, once there is one
@@ -542,13 +552,15 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             msg["saved"] = saved.pop(current)
         if confirms.get(current):
             msg["confirms"] = confirms.pop(current)
+        if views.get(current):
+            msg["views"] = views.pop(current)
 
     def close() -> None:
         """A turn that showed drafts or saved facts but said nothing still gets an assistant message to hold them."""
         if (
             current is not None
             and shown is None
-            and (drafts.get(current) or saved.get(current) or confirms.get(current))
+            and (drafts.get(current) or saved.get(current) or confirms.get(current) or views.get(current))
         ):
             msg = {"role": "assistant", "text": ""}
             attach(msg)
