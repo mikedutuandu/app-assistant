@@ -34,7 +34,8 @@ model writes, every draft is checked, and each one that passes appears under the
 `find_app_tools`, which finds the rest by what the user asked for and keeps them offered for the chat):
 
 - a **read** (`readOnlyHint`) runs at once, as the user, and its result goes back to the model as data (12,000
-  characters at most). If the tool names a card (`_meta.ui.resourceUri`), the app's page is sent to the browser as a
+  characters at most: `fit_answer` shortens a longer JSON answer as JSON, long texts first and then the deepest long
+  lists, with a note of what was left out). If the tool names a card (`_meta.ui.resourceUri`), the app's page is sent to the browser as a
   `view` event and drawn above the words that follow;
 - a **change** never runs in the turn: it is kept in `pending_actions` and shown as a Confirm card. The tap reaches
   `api/chat.py` (`_confirm`), which runs the tool once.

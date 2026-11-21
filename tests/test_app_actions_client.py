@@ -125,7 +125,8 @@ async def test_results_are_text_cut_long_and_error_results_marked():
         long = await actions.call("get_stats", {})
         bad = await actions.call("move_item", {})
         structured = await actions.call("plain", {})
-    assert long.text.endswith(" (cut)") and len(long.text) == RESULT_CHARS + len(" (cut)")
+    # Not JSON: cut, and the model is told (a JSON answer is shortened instead: test_fit_answer.py).
+    assert long.text.startswith("x" * RESULT_CHARS) and long.text.endswith("Ask for less, or for one item.)")
     assert (bad.text, bad.is_error) == ("No such item.", True)
     assert structured.text == '{"ok": 1}'
 
