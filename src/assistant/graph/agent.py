@@ -19,7 +19,17 @@ from dataclasses import dataclass, field
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import ValidationError
 
-from assistant.app_actions import ActionResult, AppTool, tool_spec
+from assistant.app_actions import (
+    FIND_TOOL,
+    LOADED_KEEP,
+    UP_FRONT_TOOLS,
+    ActionResult,
+    AppTool,
+    find_spec,
+    find_tools,
+    found_text,
+    tool_spec,
+)
 from assistant.checks import Fact, nfc, numbers_in, unsupported_numbers
 from assistant.db import new_id
 from assistant.graph.agent_tools import (
@@ -79,6 +89,7 @@ class AgentTurn:
     asked: bool = False  # a change is waiting for the user's tap: one per message
     last_cost: float = 0.0  # what the last chat call cost: tools stop while the answer still fits under the cap
     carried: list[tuple[str, str]] = field(default_factory=list)  # what the last message read before its cap
+    loaded: list[str] = field(default_factory=list)  # app tools found with find_app_tools in this chat, oldest first
 
     @classmethod
     def begin(cls, state: ChatState, turn: Turn) -> "AgentTurn":
@@ -87,6 +98,7 @@ class AgentTurn:
         agent.drafts = list(state.get("drafts", []))
         agent.family = dict(state.get("draft_family", {}))
         agent.carried = list(state.get("carried") or [])
+        agent.loaded = list(state.get("app_tools_loaded") or [])
         agent.messages = [{"role": "system", "content": ""}, *history(state, agent.about())]
         agent.start = len(agent.messages)
         return agent
@@ -150,20 +162,45 @@ class AgentTurn:
             self.results.append((c.name, result))
             self.messages.append({"role": "tool", "tool_call_id": c.id, "content": result})
 
+    def _offered(self, turn: Turn) -> list[AppTool]:
+        """The app's tools the model sees now: all of them when they are few; else the first UP_FRONT_TOOLS, in the
+        app's order, and those found with find_app_tools in this chat."""
+        tools = turn.deps.app_tools
+        if len(tools) <= UP_FRONT_TOOLS:
+            return list(tools)
+        found = set(self.loaded)
+        return [t for i, t in enumerate(tools) if i < UP_FRONT_TOOLS or t.name in found]
+
+    def _more(self, turn: Turn) -> int:
+        """How many of the app's tools the model doesn't see now (find_app_tools is offered while there are any)."""
+        return len(turn.deps.app_tools) - len(self._offered(turn))
+
     def _app_tools(self, turn: Turn) -> dict[str, AppTool]:
-        return {t.name: t for t in turn.deps.app_tools}
+        return {t.name: t for t in self._offered(turn)}
 
     def _names(self, turn: Turn) -> tuple[str, ...]:
         own = TOOLS if turn.pack.writes else ()
-        return (*own, *self._app_tools(turn))
+        finder = (FIND_TOOL,) if self._more(turn) else ()
+        return (*own, *self._app_tools(turn), *finder)
 
     def _specs(self, turn: Turn) -> list[dict]:
-        """The bot's own tools when the app writes, then the app's own tools."""
+        """The bot's own tools when the app writes, then the app's own tools, then the finder when there are more."""
         own = tool_specs(turn.pack) if turn.pack.writes else []
-        return [*own, *(tool_spec(t) for t in turn.deps.app_tools)]
+        more = self._more(turn)
+        return [*own, *(tool_spec(t) for t in self._offered(turn)), *([find_spec(more)] if more else [])]
+
+    def _find(self, arguments: dict, turn: Turn) -> str:
+        """find_app_tools: the app's tools that match what the user wants, offered from the next step on."""
+        query = arguments.get("query") if isinstance(arguments.get("query"), str) else ""
+        found = find_tools(turn.deps.app_tools, query, set(self._app_tools(turn)))
+        self.loaded = [n for n in self.loaded if n not in {t.name for t in found}] + [t.name for t in found]
+        self.loaded = self.loaded[-LOADED_KEEP:]
+        return found_text(found)
 
     async def _run(self, c: PreparedCall, turn: Turn) -> str:
         arguments = json.loads(c.arguments)
+        if c.name == FIND_TOOL:
+            return self._find(arguments if isinstance(arguments, dict) else {}, turn)
         app_tool = self._app_tools(turn).get(c.name)
         if app_tool is not None:
             return await self._app_call(app_tool, arguments if isinstance(arguments, dict) else {}, turn)
@@ -402,6 +439,7 @@ class AgentTurn:
             "drafts": self.drafts,
             "draft_family": self.family,
             "tools_pending": bool(self.pending) and not done,
+            "app_tools_loaded": self.loaded,
         }
         if done:
             out["draft_id"] = None

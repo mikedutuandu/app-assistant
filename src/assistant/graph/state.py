@@ -20,6 +20,7 @@ class ChatState(TypedDict, total=False):
     user_name: str | None  # from the app's context, when it knows it
     context: AppContext | None
     context_at: float  # when `context` was loaded (epoch seconds)
+    app_tools_loaded: list[str]  # the app's tools found with find_app_tools in this chat, offered from then on
 
     # This turn's input
     file_ids: list[str]

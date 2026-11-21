@@ -337,8 +337,12 @@ Protocol), so the server is one you may already have; nothing here is specific t
 ```
 
 - `mcp_url` must be on your site's own origin, like `api_base`.
-- `tools` (optional): the ones the assistant may use; left out, every tool your server lists for the user. A tool
-  with the name of one of the bot's own (`write_drafts`, `revise_draft`, `save_facts`) is left out. At most 40.
+- `tools` (optional): the ones the assistant may use, in the order it should see them, most used first; left out,
+  every tool your server lists for the user, in its order. A tool with the name of one of the bot's own (`write_drafts`, `revise_draft`, `save_facts`, `find_app_tools`)
+  is left out. At most 100, so the assistant can do everything your UI does. The model sees the first 20 at once;
+  past 20 it also gets `find_app_tools`, which searches the rest by what the user asked for (their names, titles and
+  descriptions) and offers what it finds for the rest of the chat. So put the tools people use most first, and give
+  every tool a plain title and description: that is how the rest are found.
 - `starters` (optional, at most 6): one-tap messages the chat window shows on an empty chat (`GET
   /v1/chat/{app}/config` answers them).
 - `writes` may be `[]` when the assistant only reads and acts; your four endpoints still give it the user's

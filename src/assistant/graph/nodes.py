@@ -15,7 +15,7 @@ import time
 
 from langchain_core.messages import HumanMessage
 
-from assistant.app_actions import offered
+from assistant.app_actions import FIND_TOOL, offered
 from assistant.checks import nfc
 from assistant.files.intake import UploadError
 from assistant.graph.agent import AgentTurn
@@ -106,7 +106,7 @@ async def _load_app_tools(t: Turn) -> None:
         log.warning("app %s: its tools could not be listed (%s)", t.pack.id, e.kind)
         return
     t.deps.app_actions = actions
-    t.deps.app_tools = offered(tools, t.pack, set(TOOLS))
+    t.deps.app_tools = offered(tools, t.pack, {*TOOLS, FIND_TOOL})
 
 
 async def load_context(state: ChatState, t: Turn) -> dict:

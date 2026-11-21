@@ -32,7 +32,14 @@ from assistant.tools import ToolError, _headers, _post, _raise_for_status
 log = logging.getLogger("assistant.actions")
 
 PROTOCOL_VERSION = "2025-06-18"
-MAX_TOOLS = 40  # an app's tools offered to the model
+MAX_TOOLS = 100  # an app's tools the bot keeps (as many as a pack may name)
+# The model is shown at most this many of an app's tools at once, in the app's order, with `find_app_tools` to load
+# the rest by what the user asks for: every tool's description costs tokens on every call, so an app can offer all it
+# does without each message paying for all of it (21 Nov 2026).
+UP_FRONT_TOOLS = 20
+FIND_TOOL = "find_app_tools"
+FOUND_MAX = 8  # tools one search loads
+LOADED_KEEP = 16  # tools found earlier in a chat, kept offered (the most recent)
 RESULT_CHARS = 12_000  # a tool's result as the model reads it
 DESCRIPTION_CHARS = 1_000
 LIST_TTL_SECONDS = 300  # an app's tool list is asked again after this
@@ -81,7 +88,8 @@ class AppActions(Protocol):
 
 def offered(tools: list[AppTool], pack: AppPack, reserved: set[str]) -> list[AppTool]:
     """The app's tools the model is offered: those the pack allows (all, when it names none), never one that has the
-    name of one of the bot's own tools, at most MAX_TOOLS, in the app's order."""
+    name of one of the bot's own tools, at most MAX_TOOLS: in the pack's order when it names them (most used first:
+    the model sees the first UP_FRONT_TOOLS at once), else in the server's."""
     allowed = set(pack.actions.tools) if pack.actions and pack.actions.tools is not None else None
     out: list[AppTool] = []
     for tool in tools:
@@ -91,7 +99,74 @@ def offered(tools: list[AppTool], pack: AppPack, reserved: set[str]) -> list[App
             log.warning("app %s: tool %r has the name of one of the bot's own, left out", pack.id, tool.name)
             continue
         out.append(tool)
+    if pack.actions and pack.actions.tools is not None:
+        order = {name: i for i, name in enumerate(pack.actions.tools)}
+        out.sort(key=lambda t: order[t.name])
     return out[:MAX_TOOLS]
+
+
+_WORD = re.compile(r"[a-z0-9]+")
+_STOP = {"a", "an", "the", "my", "of", "to", "for", "and", "or", "in", "on", "it", "its", "this", "that", "me", "i"}
+
+
+def _words(text: str) -> set[str]:
+    out = set()
+    for w in _WORD.findall(text.lower()):
+        if w in _STOP:
+            continue
+        out.add(w)
+        if len(w) > 3 and w.endswith("s"):
+            out.add(w[:-1])  # keywords -> keyword
+    return out
+
+
+def find_tools(tools: list[AppTool], query: str, offered_now: set[str]) -> list[AppTool]:
+    """The app's tools that best match what the user wants, not offered already, best first: a word of the query in
+    the tool's name counts 3, in its title 2, in its description 1. Ties keep the app's order."""
+    wanted = _words(query)
+    if not wanted:
+        return []
+    scored = []
+    for i, tool in enumerate(tools):
+        if tool.name in offered_now:
+            continue
+        name, title, about = _words(tool.name.replace("_", " ")), _words(tool.title), _words(tool.description)
+        score = sum(3 * (w in name) + 2 * (w in title) + (w in about) for w in wanted)
+        if score:
+            scored.append((-score, i, tool))
+    return [tool for _, _, tool in sorted(scored)[:FOUND_MAX]]
+
+
+def find_spec(more: int) -> dict:
+    """`find_app_tools`, as the model is told about it, when the app has `more` tools than it was shown."""
+    return {
+        "type": "function",
+        "function": {
+            "name": FIND_TOOL,
+            "description": (
+                f"The app has {more} more tools than the ones listed here. When the user wants something none of "
+                "these does, search them by what the user wants, in a few words (like 'delete an article' or "
+                "'search console'). The tools found can be called from your next step."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "What the user wants to do or see."}},
+                "required": ["query"],
+            },
+        },
+    }
+
+
+def found_text(tools: list[AppTool]) -> str:
+    """What a search found, for the model."""
+    if not tools:
+        return "No tool matched: the app may have no tool for that here. Say so, or try other words once."
+    lines = [
+        f"- {t.name} ({'reads' if t.read_only else 'changes something: runs only after the user taps OK'}): "
+        f"{t.title}. {t.description}"[:300]
+        for t in tools
+    ]
+    return "Found, and you can call them now:\n" + "\n".join(lines)
 
 
 def tool_spec(tool: AppTool) -> dict:

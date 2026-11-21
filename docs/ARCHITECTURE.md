@@ -30,7 +30,8 @@ browser ──POST /v1/chat/{app}/messages──► api/chat.py ──► api/tu
 
 The bot's own tools are `save_facts` (keep what the user confirmed), `write_drafts` and `revise_draft` (the writer
 model writes, every draft is checked, and each one that passes appears under the reply). When the app's pack has
-`actions`, the model also gets the app's MCP tools (`app_actions.py`, at most 40):
+`actions`, the model also gets the app's MCP tools (`app_actions.py`: up to 100; the first 20 at once, and past 20
+`find_app_tools`, which finds the rest by what the user asked for and keeps them offered for the chat):
 
 - a **read** (`readOnlyHint`) runs at once, as the user, and its result goes back to the model as data (12,000
   characters at most). If the tool names a card (`_meta.ui.resourceUri`), the app's page is sent to the browser as a

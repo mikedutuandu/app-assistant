@@ -1,7 +1,7 @@
 """The app's own tools in a conversation (the pack's `actions`): a read runs at once and its answer reaches the model
 as the app's data; a change waits for the user's tap on a card; nothing here names any app or platform."""
 
-from fakes import FakeActions, FakeLlm, Out, Reply, call
+from fakes import OBJECT, FakeActions, FakeLlm, Out, Reply, call
 from graph_harness import CAP_TEXT, Harness, make_pack, system_of, tool_results
 
 from assistant.app_actions import ActionResult
@@ -216,3 +216,91 @@ async def test_a_read_whose_card_cant_be_shown_is_words_only():
     h.view_shown = False
     await h.send("posts?")
     assert h.of("view") == [] and "card" not in told(llm)
+
+
+# An app with more tools than the model is shown at once (21 Nov 2026, Mike: "the user can do anything just by
+# chatting"): the first UP_FRONT_TOOLS are offered, with find_app_tools to load the rest by what the user wants.
+
+
+def many_tools(n: int = 30):
+    from assistant.app_actions import AppTool
+
+    reads = [AppTool(f"read_{i}", f"Read thing {i}", f"Reads thing number {i}.", OBJECT, True) for i in range(n - 2)]
+    return [
+        *reads,
+        AppTool("delete_article", "Delete an article", "Deletes one article from the site for good.", OBJECT, False),
+        AppTool("list_keywords", "List keywords", "The site's keywords with volume and difficulty.", OBJECT, True),
+    ]
+
+
+async def test_past_the_first_tools_the_model_gets_a_finder_instead_of_the_rest():
+    from assistant.app_actions import FIND_TOOL, UP_FRONT_TOOLS
+
+    llm = FakeLlm({"CONVERSE": ["Hi!"]})
+    await Harness(llm, pack=acting_pack(writes=False), actions=FakeActions(tools=many_tools())).send("hi")
+    offered = names(llm)
+    assert offered[:UP_FRONT_TOOLS] == [f"read_{i}" for i in range(UP_FRONT_TOOLS)]
+    assert offered[-1] == FIND_TOOL and "delete_article" not in offered and len(offered) == UP_FRONT_TOOLS + 1
+    finder = llm.calls[0]["tools"][-1]["function"]
+    assert "10 more" in finder["description"]
+
+
+async def test_a_found_tool_is_offered_next_and_runs_as_any_other_a_change_after_confirm():
+    from assistant.app_actions import FIND_TOOL
+
+    actions = FakeActions(tools=many_tools())
+    llm = FakeLlm(
+        {
+            "CONVERSE": [
+                Reply(calls=[call(FIND_TOOL, query="delete an article")]),
+                Reply(calls=[call("delete_article", id="a1")]),
+                "Tap Confirm to delete it.",
+            ]
+        }
+    )
+    h = Harness(llm, pack=acting_pack(writes=False), actions=actions)
+    await h.send("delete my article about grinders")
+    found = tool_results(llm.calls[1])[-1]["content"]
+    assert "delete_article" in found and "changes" in found
+    assert "delete_article" in names(llm, 1)
+    assert actions.calls == []  # a change still waits for the tap
+    assert h.changes == [{"tool": "delete_article", "title": "Delete an article", "arguments": {"id": "a1"}}]
+
+
+async def test_a_found_tool_stays_offered_for_the_rest_of_the_chat():
+    from assistant.app_actions import FIND_TOOL
+
+    llm = FakeLlm({"CONVERSE": [Reply(calls=[call(FIND_TOOL, query="keywords")]), "Here they are.", "Sure."]})
+    h = Harness(llm, pack=acting_pack(writes=False), actions=FakeActions(tools=many_tools()))
+    await h.send("show my keywords")
+    await h.send("and the hard ones?")
+    assert "list_keywords" in names(llm, 2)
+
+
+async def test_nothing_found_says_so_and_a_tool_never_found_cant_be_called():
+    from assistant.app_actions import FIND_TOOL
+
+    actions = FakeActions(tools=many_tools())
+    llm = FakeLlm(
+        {
+            "CONVERSE": [
+                Reply(calls=[call(FIND_TOOL, query="zebra polka")]),
+                Reply(calls=[call("delete_article", id="a1")]),
+                "I can't do that here.",
+            ]
+        }
+    )
+    h = Harness(llm, pack=acting_pack(writes=False), actions=actions)
+    await h.send("dance")
+    assert "no tool" in tool_results(llm.calls[1])[-1]["content"].lower()
+    assert h.changes == [] and actions.calls == []
+
+
+def test_finding_ranks_by_the_users_words_in_name_title_and_description():
+    from assistant.app_actions import find_tools
+
+    tools = many_tools()
+    assert [t.name for t in find_tools(tools, "delete article", set())][:1] == ["delete_article"]
+    assert [t.name for t in find_tools(tools, "keyword difficulty", set())][:1] == ["list_keywords"]
+    assert find_tools(tools, "delete article", {"delete_article"})[:1] != [tools[-2]]
+    assert find_tools(tools, "", set()) == []
