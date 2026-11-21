@@ -1239,3 +1239,31 @@ async def test_status_steps_come_in_order_before_the_draft(api: Api):
     assert steps == ["thinking", "writing", "checking"]
     assert max(i for i, (k, _) in enumerate(events) if k == "status") < kinds_of(events).index("draft")
     assert events[-1][0] == "done"
+
+
+# A file the user sent, shown back in the host app's chat (HookPlaybook's Write with me, 21 Nov 2026: a message's
+# pictures were never shown): a 5-minute link, for the user's own finished file in that thread only.
+async def test_a_sent_file_has_a_short_lived_link_for_its_own_thread(api: Api):
+    up = (await api.upload(PNG)).json()
+    r = await api.client.get(f"/v1/chat/real/threads/{up['thread_id']}/files/{up['file_id']}", headers=api.headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mime"] == "image/png"
+    assert body["kind"] == "image"
+    assert body["url"].startswith("http")
+
+
+async def test_a_file_link_is_404_for_another_thread_workspace_or_an_unfinished_upload(api: Api):
+    up = (await api.upload(PNG)).json()
+    other = await api.thread_row()
+    for thread, workspace in [(other, "ws1"), (up["thread_id"], "ws2")]:
+        r = await api.client.get(
+            f"/v1/chat/real/threads/{thread}/files/{up['file_id']}", headers=api.headers(workspace)
+        )
+        assert r.status_code == 404, (thread, workspace)
+    pending = (await api.start_upload(len(PNG))).json()
+    r = await api.client.get(
+        f"/v1/chat/real/threads/{pending['thread_id']}/files/{pending['upload_id']}", headers=api.headers()
+    )
+    assert r.status_code == 404
+    assert r.json() == {"error": "file"}

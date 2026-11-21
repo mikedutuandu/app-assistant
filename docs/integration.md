@@ -114,6 +114,9 @@ or 502 with `{error, message}`.
 - `GET /v1/chat/{app}/threads`: the user's last 30 chats, `[{id, title, updated_at}]`.
 - `GET /v1/chat/{app}/threads/{id}`: `{"messages": [...]}`, each assistant message with its `drafts`
   (`id, kind, posts, added, edit_url`) and `saved` lines, so a reload shows what the stream did.
+- `GET /v1/chat/{app}/threads/{id}/files/{file_id}`: a file the user sent in that chat, to show it back (a thumbnail
+  in your chat): `{"url", "mime", "kind"}`, the `url` living 5 minutes. Another chat's, another workspace's or an
+  unfinished upload is a 404 `file`.
 - `DELETE /v1/chat/{app}/threads/{id}`: removes one chat with its files; `{"deleted": true}`.
 - `DELETE /v1/apps/{app}/workspaces/{workspace}` (server to server, a token with `access: "delete"` whose `sub` is
   that workspace): removes everything the bot keeps for it; `{"deleted_threads": n}`. Call it when a user deletes
