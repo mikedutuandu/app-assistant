@@ -141,8 +141,15 @@ export function checkPack(pack: object, appId: string): void {
   if (!isStrings(p.allowed_origins) || !p.allowed_origins.every((o) => /^https?:\/\/[^/\s]+\/?$/.test(o)))
     fail("needs allowed_origins, a list of scheme://host[:port]");
   if (!isText(p.guide)) fail("needs a guide");
-  if (!Array.isArray(p.writes) || p.writes.length === 0 || !p.writes.every(isObject))
-    fail("needs writes, at least one");
+  // What the assistant writes (none in an app where it only reads and acts), and the app's own MCP server
+  // (`actions`): one of the two at least, as the bot checks.
+  const writes: unknown = p.writes ?? [];
+  if (!Array.isArray(writes) || !writes.every(isObject)) fail("needs writes to be a list");
+  if (p.actions !== undefined) {
+    const mcpUrl = isObject(p.actions) ? (p.actions as Record<string, unknown>).mcp_url : undefined;
+    if (typeof mcpUrl !== "string" || !/^https?:\/\/[^/\s]+/.test(mcpUrl)) fail("needs actions.mcp_url, an http(s) URL");
+  }
+  if ((writes as unknown[]).length === 0 && p.actions === undefined) fail("needs writes or actions, at least one");
   if (!isObject(p.models)) fail("needs models");
   if (typeof p.message_usd_cap !== "number" || !(p.message_usd_cap > 0)) fail("needs message_usd_cap, above 0");
 }

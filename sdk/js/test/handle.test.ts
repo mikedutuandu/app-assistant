@@ -132,11 +132,23 @@ describe("handle", () => {
     ["no allowed_origins", { ...PACK, allowed_origins: undefined }],
     ["no name", { ...PACK, name: "" }],
     ["no guide", { ...PACK, guide: undefined }],
-    ["no writes", { ...PACK, writes: [] }],
+    ["no writes and no actions", { ...PACK, writes: [] }],
+    ["actions without an mcp_url", { ...PACK, writes: [], actions: { tools: ["a"] } }],
+    ["actions with an mcp_url that isn't a URL", { ...PACK, writes: [], actions: { mcp_url: "/mcp" } }],
     ["no models", { ...PACK, models: undefined }],
     ["no message_usd_cap", { ...PACK, message_usd_cap: 0 }],
   ])("refuses a pack with %s when it is created", (_name, pack) => {
     expect(() => createAssistantHost({ ...fakeApp().opts, pack })).toThrow(/pack/);
+  });
+
+  it("takes a pack that only reads and acts: no writes, its own MCP server as actions", async () => {
+    const pack = { ...PACK, writes: [], actions: { mcp_url: `${SITE}/api/v1/mcp`, starters: ["Plan my week"] } };
+    const host = createAssistantHost({ ...fakeApp().opts, pack });
+    const res = (await host.handle(new Request(`${SITE}/.well-known/app-assistant.json`)))!;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ writes: [], actions: { mcp_url: `${SITE}/api/v1/mcp` } });
+    const { writes: _writes, ...withoutWrites } = pack;
+    expect(() => createAssistantHost({ ...fakeApp().opts, pack: withoutWrites })).not.toThrow();
   });
 
   it("answers 405 for another method on its routes", async () => {
