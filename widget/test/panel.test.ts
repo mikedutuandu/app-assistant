@@ -38,6 +38,33 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("panel", () => {
+  // Mike, 21 Nov 2026: typing "c" in Ask StreakPlan opened the board's New video dialog. The page's shortcuts saw the
+  // key with the widget's host element as its target (a shadow root hides the textarea), so "not while typing" missed.
+  it("keys typed in the chat stay in the chat: the page's shortcuts never see them, Enter still sends", async () => {
+    const seen: string[] = [];
+    const onWindow = (e: Event) => seen.push(`window:${(e as KeyboardEvent).key}`);
+    const onDocument = (e: Event) => seen.push(`document:${(e as KeyboardEvent).key}`);
+    window.addEventListener("keydown", onWindow);
+    document.addEventListener("keydown", onDocument);
+    window.addEventListener("keyup", onWindow);
+    try {
+      const { $, api, flush } = setup();
+      const box = $("textarea") as HTMLTextAreaElement;
+      for (const type of ["keydown", "keypress", "keyup"])
+        box.dispatchEvent(new KeyboardEvent(type, { key: "c", bubbles: true, composed: true }));
+      expect(seen).toEqual([]);
+      box.value = "hello";
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true, cancelable: true }));
+      await flush();
+      expect(api.send).toHaveBeenCalledTimes(1);
+      expect(seen).toEqual([]);
+    } finally {
+      window.removeEventListener("keydown", onWindow);
+      document.removeEventListener("keydown", onDocument);
+      window.removeEventListener("keyup", onWindow);
+    }
+  });
+
   it("streams text, shows transcript, and dispatches assistant:note", async () => {
     const notes: string[] = [];
     window.addEventListener("assistant:note", (e) => notes.push((e as CustomEvent).detail.text));
