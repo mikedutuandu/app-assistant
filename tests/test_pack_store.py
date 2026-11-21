@@ -152,8 +152,8 @@ def test_registry_refuses_duplicates_and_bad_sites(tmp_path: Path):
         load_registry(path, None)
 
 
-def test_the_committed_registry_lists_hookplaybook_and_streakplan():
-    assert [e.id for e in load_registry(Path("apps/registry.yaml"), None)] == ["hookplaybook", "streakplan"]
+def test_the_committed_registry_lists_hookplaybook_streakplan_and_siteseed():
+    assert [e.id for e in load_registry(Path("apps/registry.yaml"), None)] == ["hookplaybook", "streakplan", "siteseed"]
 
 
 def test_apps_env_is_json(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):

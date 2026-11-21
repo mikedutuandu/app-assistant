@@ -5,3 +5,4 @@
 apps:
   - {id: hookplaybook, site: https://hookplaybook.com, secret_env: HOOKPLAYBOOK_SESSION_SECRET}
   - {id: streakplan, site: https://streakplan.com, secret_env: STREAKPLAN_SESSION_SECRET}
+  - {id: siteseed, site: https://siteseed.ai, secret_env: SITESEED_SESSION_SECRET}
