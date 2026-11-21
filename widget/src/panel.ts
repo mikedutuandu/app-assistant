@@ -565,8 +565,11 @@ export function createPanel(opts: PanelOptions) {
   const syncers = new Set<() => void>(); // each draft's buttons follow the panel: off while a turn runs
   function renderDraft(d: Draft) {
     const el = h("div", { class: "draft" });
-    const img = d.image_file_id ? imageUrls.get(d.image_file_id) : undefined;
-    if (img) el.append(h("img", { src: img, alt: "" }));
+    // Its pictures, in order (a draft from before several has `image_file_id` alone).
+    const ids = d.image_file_ids?.length ? d.image_file_ids : d.image_file_id ? [d.image_file_id] : [];
+    const pics = ids.map((id) => imageUrls.get(id)).filter((src): src is string => !!src);
+    if (pics.length === 1) el.append(h("img", { src: pics[0], alt: "" }));
+    else if (pics.length > 1) el.append(h("div", { class: "pics" }, ...pics.map((src) => h("img", { src, alt: "" }))));
     const posts = d.posts ?? [];
     if (posts.length > 1) el.append(h("ol", { class: "posts" }, ...posts.map((p) => h("li", { class: "post", text: p }))));
     else el.append(h("p", { class: "post", text: posts[0] ?? "" }));

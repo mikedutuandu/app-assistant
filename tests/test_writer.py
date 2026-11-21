@@ -274,7 +274,8 @@ async def test_every_draft_carries_the_picture_it_is_given():
         {"DRAFT_WRITER": [drafts([POST], ["Solo founders: replies come back in 2 minutes."])], "CLAIM_CHECK": [OK, OK]}
     )
     w, _ = deps(llm, readings=[reading], recent=[])
-    result = await write_drafts(w, "launch", "x_post", 2, image_file_id="img1")
+    result = await write_drafts(w, "launch", "x_post", 2, image_file_ids=["img1"])
+    assert [d.image_file_ids for d in result.drafts] == [["img1"], ["img1"]]
     assert [d.image_file_id for d in result.drafts] == ["img1", "img1"]
     assert "image_file_id" not in prompt(llm.calls[0])  # the writer never picks the picture
 

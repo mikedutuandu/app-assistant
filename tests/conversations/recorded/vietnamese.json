@@ -1,6 +1,6 @@
 {
   "case": "vietnamese",
-  "recorded_at": "2026-11-21T06:01:24+00:00",
+  "recorded_at": "2026-11-21T14:43:03+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,28 +27,30 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Chào Mike! Tuần này bạn ra mắt tính năng tự động lên lịch đăng bài cho X. Nó giúp ích cho ai là chính?",
+      "reply": "Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X, nghe hay đấy. Tính năng này giúp ai là chính?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.008786
+      "cost_usd": 0.009096,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply \"Chào Mike! Tuần này bạn ra mắt tính năng tự động lên lịch đăng bài cho X. Nó giúp ích cho ai là chính?\" is entirely in natural Vietnamese, matching Mike's language.",
+      "why": "The reply \"Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X, nghe hay đấy. Tính năng này giúp ai là chính?\" is all Vietnamese and reads naturally.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "It restates the news cleanly: \"Tuần này bạn ra mắt tính năng tự động lên lịch đăng bài cho X\" (this week you launched the auto-scheduling feature for X).",
+      "why": "It restates \"Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X\", which accurately repeats that Mike launched an auto-scheduling feature for X this week.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "It asks exactly one question (\"Nó giúp ích cho ai là chính?\") and contains no post or draft.",
+      "why": "It asks one question, \"Tính năng này giúp ai là chính?\", and includes no post or draft.",
       "holds": true
     }
   ],
@@ -65,8 +67,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "1dc86f79ef66553b",
         "messages": [
           {
@@ -76,9 +78,9 @@
         ]
       },
       "response": {
-        "text": "Chào Mike! Tuần này bạn ra mắt tính năng tự động lên lịch đăng bài cho X. Nó giúp ích cho ai là chính?",
+        "text": "Chào Mike! Tuần này bạn vừa ra mắt tính năng tự động lên lịch đăng bài cho X, nghe hay đấy. Tính năng này giúp ai là chính?",
         "calls": [],
-        "cost_usd": 0.008786,
+        "cost_usd": 0.009096,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

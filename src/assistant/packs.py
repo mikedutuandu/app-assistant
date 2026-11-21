@@ -31,12 +31,13 @@ class FileCaps(BaseModel):
 
 
 # What X's two kinds mean when a pack names nothing else about them (packs written before kinds had names).
-_X_KINDS: dict[str, dict[str, str]] = {
-    "x_post": {"name": "X post", "parts": "one", "about": "one post for X"},
+_X_KINDS: dict[str, dict[str, str | int]] = {
+    "x_post": {"name": "X post", "parts": "one", "about": "one post for X", "max_images": 4},
     "x_thread": {
         "name": "X thread",
         "parts": "several",
         "about": "a thread for X, only when the user asks for a thread",
+        "max_images": 4,
     },
 }
 
@@ -55,6 +56,8 @@ class WriteSpec(BaseModel):
     no_links: bool = False
     no_dashes: bool = False
     may_carry_image: bool = False
+    # With may_carry_image: the most pictures one draft carries. Unset: 1, or X's own 4 for x_post and x_thread.
+    max_images: int | None = Field(None, ge=1, le=10)
     instructions: str
 
     @model_validator(mode="after")
@@ -63,6 +66,7 @@ class WriteSpec(BaseModel):
         self.name = self.name or known.get("name")
         self.about = self.about or known.get("about")
         self.parts = self.parts or known.get("parts", "one")  # type: ignore[assignment]
+        self.max_images = self.max_images or int(known.get("max_images", 1))
         if not self.name:
             raise ValueError(f'writes {self.kind!r}: give it a name (what the app calls it, e.g. "Changelog entry")')
         return self

@@ -1,6 +1,6 @@
 {
   "case": "playback_chatbot",
-  "recorded_at": "2026-11-21T05:57:21+00:00",
+  "recorded_at": "2026-11-21T14:38:55+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -27,33 +27,35 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "You deployed a chatbot that helps users plan their week. Who is it for?",
+      "reply": "You deployed a chatbot that helps people plan their week. Who is it for?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.008404
+      "cost_usd": 0.008604,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The reply says \"You deployed a chatbot that helps users plan their week,\" which restates Mike's meaning in clean, correctly spelled words.",
+      "why": "The reply says \"You deployed a chatbot that helps people plan their week,\" which restates Mike's message in clean, correctly spelled words.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The reply writes \"week\" correctly and does not use \"weet\" or the phrase \"help user plan weet\".",
+      "why": "The reply writes \"plan their week\" and \"chatbot\" correctly, and neither \"weet\" nor \"help user plan weet\" appears.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "After the play-back statement, the only ask is \"Who is it for?\", which is a single question.",
+      "why": "The only ask is \"Who is it for?\", a single question, with no extra \"tell me\" or \"and whether\" request.",
       "holds": true
     },
     {
       "note": 4,
-      "why": "The reply is a short play-back plus a question, with no post and no invented numbers, user counts or results.",
+      "why": "The reply is a short play-back plus a question, with no post draft and no invented number, user count or result.",
       "holds": true
     }
   ],
@@ -70,8 +72,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "977faf4d8224bf9f",
         "messages": [
           {
@@ -81,9 +83,9 @@
         ]
       },
       "response": {
-        "text": "You deployed a chatbot that helps users plan their week. Who is it for?",
+        "text": "You deployed a chatbot that helps people plan their week. Who is it for?",
         "calls": [],
-        "cost_usd": 0.008404,
+        "cost_usd": 0.008604,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

@@ -200,22 +200,30 @@ class Api:
         return tid
 
     async def piece_row(
-        self, thread: str, posts: list[str] | None = None, image_file_id: str | None = None, workspace: str = "ws1"
+        self,
+        thread: str,
+        posts: list[str] | None = None,
+        image_file_id: str | None = None,
+        workspace: str = "ws1",
+        image_file_ids: list[str] | None = None,
     ) -> str:
-        """A stored draft, as a `draft` event leaves it."""
+        """A stored draft, as a `draft` event leaves it (`image_file_id` alone: a draft stored before several)."""
         pid = new_id()
         posts = posts or [LAUNCH]
+        first = image_file_ids[0] if image_file_ids else image_file_id
         async with self.pool.connection() as conn:
             await conn.execute(
                 "insert into pieces (id, app, workspace, thread_id, message_id, spec_kind, text, image_file_id,"
-                " fact_ids, facts, posts) values (%s, 'real', %s, %s, 'm1', %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s)",
+                " image_file_ids, fact_ids, facts, posts)"
+                " values (%s, 'real', %s, %s, 'm1', %s, %s, %s, %s, '[]'::jsonb, '[]'::jsonb, %s)",
                 (
                     pid,
                     workspace,
                     thread,
                     "x_post" if len(posts) == 1 else "x_thread",
                     posts[0],
-                    image_file_id,
+                    first,
+                    Jsonb(image_file_ids) if image_file_ids is not None else None,
                     Jsonb(posts),
                 ),
             )

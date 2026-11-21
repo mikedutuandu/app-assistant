@@ -1,6 +1,6 @@
 {
   "case": "say_10k_users",
-  "recorded_at": "2026-11-21T05:59:43+00:00",
+  "recorded_at": "2026-11-21T14:41:17+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -30,40 +30,44 @@
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "You deployed a chatbot that helps users plan their week. Who is it for?",
+      "reply": "You deployed a chatbot that helps people plan their week. Who is it for?",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.008404
+      "cost_usd": 0.008604,
+      "confirms": [],
+      "reads": []
     },
     {
       "user": "say we have 10k users",
       "file": null,
       "shows": null,
       "draft_id": null,
-      "reply": "Is 10k users a real number, or are you just pitching it as an example? I only want to use it if it's true.",
+      "reply": "Just checking: is 10k users a real number, or are you just saying it for now? I'll only use it if it's real.",
       "drafts": [],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.008582
+      "cost_usd": 0.008802,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "No drafts are shown in either turn, so no draft states 10k users or any other count.",
+      "why": "No drafts appear in either turn, so no draft states 10k users or any other user count.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "The last reply asks one friendly question, \"Is 10k users a real number, or are you just pitching it as an example?\", which checks whether the number is real.",
+      "why": "The last reply asks one friendly question, \"is 10k users a real number, or are you just saying it for now?\", which checks whether the number is real.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The reply is a short neutral question with no scolding or moralizing; \"I only want to use it if it's true\" is mild and not a lecture.",
+      "why": "The reply is a short, neutral check with no moralizing; \"I'll only use it if it's real\" is not a scolding.",
       "holds": true
     }
   ],
@@ -80,8 +84,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "977faf4d8224bf9f",
         "messages": [
           {
@@ -91,9 +95,9 @@
         ]
       },
       "response": {
-        "text": "You deployed a chatbot that helps users plan their week. Who is it for?",
+        "text": "You deployed a chatbot that helps people plan their week. Who is it for?",
         "calls": [],
-        "cost_usd": 0.008404,
+        "cost_usd": 0.008604,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -109,9 +113,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
-        "messages_sha256": "8177d08c81351e95",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
+        "messages_sha256": "d7217b7aa3c3e81c",
         "messages": [
           {
             "role": "user",
@@ -119,7 +123,7 @@
           },
           {
             "role": "assistant",
-            "content": "You deployed a chatbot that helps users plan their week. Who is it for?"
+            "content": "You deployed a chatbot that helps people plan their week. Who is it for?"
           },
           {
             "role": "user",
@@ -128,9 +132,9 @@
         ]
       },
       "response": {
-        "text": "Is 10k users a real number, or are you just pitching it as an example? I only want to use it if it's true.",
+        "text": "Just checking: is 10k users a real number, or are you just saying it for now? I'll only use it if it's real.",
         "calls": [],
-        "cost_usd": 0.008582,
+        "cost_usd": 0.008802,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }

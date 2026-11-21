@@ -51,7 +51,7 @@ def harness(*replies, tools: FakeTools | None = None, pack=None, writer=None) ->
 
 
 async def test_a_picture_the_user_sent_goes_on_the_post_without_a_fact_from_it():
-    h, _ = harness({"image_file_id": "img1"})
+    h, _ = harness({"image_file_ids": ["img1"]})
     await h.send("here's our new office, post it with this photo", file_ids=["img1"])
     [draft] = h.of("draft")
     assert draft["image_file_id"] == "img1"
@@ -65,7 +65,7 @@ async def test_no_picture_unless_the_model_names_one():
 
 
 async def test_a_file_that_is_not_a_shared_image_is_not_attached_and_the_model_is_told():
-    h, llm = harness({"image_file_id": "nope"})
+    h, llm = harness({"image_file_ids": ["nope"]})
     await h.send("post about our new office", file_ids=["img1"])
     [draft] = h.of("draft")
     assert "image_file_id" not in draft
@@ -76,7 +76,7 @@ async def test_a_kind_without_pictures_carries_none():
     rules = {"max_chars": 280, "no_links": True, "no_dashes": True, "may_carry_image": False}
     pack = make_pack()
     pack.writes = [WriteSpec(kind="x_post", instructions="A short post.", **rules)]
-    h, llm = harness({"image_file_id": "img1"}, pack=pack)
+    h, llm = harness({"image_file_ids": ["img1"]}, pack=pack)
     await h.send("post it with this photo", file_ids=["img1"])
     [draft] = h.of("draft")
     assert "image_file_id" not in draft
@@ -84,7 +84,7 @@ async def test_a_kind_without_pictures_carries_none():
 
 
 async def test_the_writer_is_not_asked_to_pick_an_image():
-    h, llm = harness({"image_file_id": "img1"})
+    h, llm = harness({"image_file_ids": ["img1"]})
     await h.send("post it with this photo", file_ids=["img1"])
     writer = next(c for c in llm.calls if c["name"] == "DRAFT_WRITER")
     assert all("image_file_id" not in m["content"] for m in writer["messages"])
@@ -95,7 +95,7 @@ def revise(draft_id: str, **extra) -> Reply:
 
 
 async def test_a_revision_keeps_the_picture():
-    h, llm = harness({"image_file_id": "img1"}, writer=[written(POST), written("New office!")])
+    h, llm = harness({"image_file_ids": ["img1"]}, writer=[written(POST), written("New office!")])
     await h.send("post it with this photo", file_ids=["img1"])
     [first] = h.of("draft")
     llm.add("CONVERSE", revise(first["id"]), "Shorter.")
@@ -108,10 +108,41 @@ async def test_revise_draft_can_add_the_picture():
     h, llm = harness({}, writer=[written(POST), written("New office!")])
     await h.send("post about our new office", file_ids=["img1"])
     [first] = h.of("draft")
-    llm.add("CONVERSE", revise(first["id"], image_file_id="img1"), "Done.")
+    llm.add("CONVERSE", revise(first["id"], image_file_ids=["img1"]), "Done.")
     await h.send("yes add my photo")
     [second] = h.of("draft")
     assert second["image_file_id"] == "img1"
+
+
+# Mike, 21 Nov 2026: "the bot can't make a tweet with multiple images". Several pictures go on one post, in the order
+# the model gives, up to the kind's most (X takes 4).
+SHOTS = [FileReading(file_id=f"img{i}", kind="image", text=f"Screenshot {i}.") for i in range(2, 7)]
+
+
+def several(pack=None, *ids: str):
+    h, llm = harness({"image_file_ids": list(ids)}, pack=pack)
+    for shot in SHOTS:
+        h.files[shot.file_id] = shot
+    return h, llm
+
+
+async def test_several_pictures_go_on_one_post_in_order():
+    h, _ = several(None, "img3", "img1", "img2")
+    await h.send("post it with these screenshots", file_ids=["img1", "img2", "img3"])
+    [draft] = h.of("draft")
+    assert draft["image_file_ids"] == ["img3", "img1", "img2"]
+    assert draft["image_file_id"] == "img3"  # a widget from before several shows the first
+
+
+async def test_past_the_kinds_most_the_first_ones_go_and_the_model_is_told():
+    rules = {"max_chars": 280, "no_links": True, "no_dashes": True, "may_carry_image": True, "max_images": 4}
+    pack = make_pack()
+    pack.writes = [WriteSpec(kind="x_post", instructions="A short post.", **rules)]
+    h, llm = several(pack, "img1", "img2", "img3", "img4", "img5", "img6")
+    await h.send("post it with all six", file_ids=["img1", "img2", "img3", "img4", "img5", "img6"])
+    [draft] = h.of("draft")
+    assert draft["image_file_ids"] == ["img1", "img2", "img3", "img4"]
+    assert "at most 4 pictures" in told(llm)
 
 
 # ---- the time ----

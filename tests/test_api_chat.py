@@ -825,6 +825,31 @@ async def test_add_draft_marks_facts_told(api: Api):
     assert [f.text for f in material["facts"]] == [FACT]
 
 
+async def test_add_draft_sends_every_picture_of_the_draft_in_order(api: Api):
+    """Mike, 21 Nov 2026: "the bot can't make a tweet with multiple images". A draft may carry several pictures."""
+    first = (await api.upload(PNG)).json()
+    tid = first["thread_id"]
+    second = (await api.upload(PNG, thread=tid)).json()
+    pid = await api.piece_row(tid, image_file_ids=[second["file_id"], first["file_id"]])
+    r = await api.act(tid, add_body("a-imgs", pid))
+    assert r.status_code == 200
+    urls = [m["url"] for m in api.tools.drafts[0]["media"]]
+    assert len(urls) == 2
+    assert second["file_id"] in urls[0] and first["file_id"] in urls[1]
+    # A reloaded chat shows the draft with its pictures; an older widget still shows the first.
+    from assistant.api.chat import _draft_out
+
+    async with api.pool.connection() as conn:
+        cur = await conn.execute(
+            "select id, message_id, spec_kind, posts, text, image_file_id, added_draft_id, edit_url, post_at,"
+            " post_times, scheduled_at, image_file_ids from pieces where id = %s",
+            (pid,),
+        )
+        shown = _draft_out(await cur.fetchone())
+    assert shown["image_file_ids"] == [second["file_id"], first["file_id"]]
+    assert shown["image_file_id"] == second["file_id"]
+
+
 async def test_add_draft_sends_a_signed_image_url(api: Api):
     up = (await api.upload(PNG)).json()
     pid = await api.piece_row(up["thread_id"], image_file_id=up["file_id"])
@@ -1059,7 +1084,7 @@ async def test_the_draft_event_sent_to_the_browser_has_no_fact_fields(api: Api):
     api.llm.script = happy_script()
     events = await api.send(FACT)
     [shown] = of(events, "draft")
-    assert set(shown) <= {"id", "kind", "posts", "image_file_id"}
+    assert set(shown) <= {"id", "kind", "posts", "image_file_id", "image_file_ids"}
     assert FACT not in json.dumps(shown)
 
 
@@ -1428,6 +1453,57 @@ async def test_a_change_is_shown_kept_and_run_once_on_confirm(api: Api):
     await api.send("did it work?", thread=tid)
     system = api.llm.calls[-1]["messages"][0]["content"]
     assert '<data source="change" title="Move an item" state="done">Moved to Friday.</data>' in system
+
+
+# A picture the user sent, on a change (Mike, 21 Nov 2026: "put this screenshot on my scheduled post" ended in a new
+# post to swap in by hand). The model names it `file:<file_id>`; the card says what it is; when the user taps Confirm
+# the app gets a short-lived link to it, the same kind a saved draft's picture gets.
+
+
+def picture_tool(api: Api) -> None:
+    from assistant.app_actions import AppTool
+
+    media = {"type": "array", "items": {"type": "object", "properties": {"url": {"type": "string"}}}}
+    schema = {"type": "object", "properties": {"id": {"type": "string"}, "media": media}}
+    api.actions.tools.append(AppTool("update_post", "Change a post", "Changes a post.", schema, False))
+
+
+async def test_a_picture_the_user_sent_goes_with_a_confirmed_change_as_a_short_lived_link(api: Api):
+    acting(api)
+    picture_tool(api)
+    up = (await api.upload(PNG)).json()
+    tid, fid = up["thread_id"], up["file_id"]
+    api.llm.script = {
+        "CONVERSE": [Reply(calls=[call("update_post", id="p1", media=[{"url": f"file:{fid}"}])]), "Tap Confirm."]
+    }
+    api.llm.add("IMAGE_READER", {"text": "a screenshot of the chat", "unsure": []})
+    events = await api.send("put this screenshot on my scheduled post", thread=tid, file_ids=[fid])
+    [card] = of(events, "confirm")
+    assert not any("file:" in line for line in card["lines"])  # the card says what it is, not our id
+    assert any("picture you sent" in line for line in card["lines"])
+    assert api.actions.calls == []
+    assert (await api.act(tid, tap(card["id"]))).json()["state"] == "done"
+    [(name, arguments, _key)] = api.actions.calls
+    [picture] = arguments["media"]
+    assert name == "update_post" and arguments["id"] == "p1"
+    assert f"real/ws1/{tid}/{fid}" in picture["url"] and picture["url"].startswith("http")
+
+
+async def test_a_file_that_isnt_in_the_chat_never_reaches_a_change(api: Api):
+    acting(api)
+    picture_tool(api)
+    tid = await api.thread_row()
+    other = (await api.upload(PNG)).json()  # another chat's picture
+    api.llm.script = {
+        "CONVERSE": [
+            Reply(calls=[call("update_post", id="p1", media=[{"url": f"file:{other['file_id']}"}])]),
+            "I can't use that picture.",
+        ]
+    }
+    events = await api.send("use that picture", thread=tid)
+    assert of(events, "confirm") == []
+    assert "isn't a file the user sent in this chat" in str(api.llm.calls[-1]["messages"])
+    assert api.actions.calls == []
 
 
 async def test_cancel_drops_it_and_nothing_runs(api: Api):

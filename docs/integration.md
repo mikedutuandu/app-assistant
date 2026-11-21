@@ -107,7 +107,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `text` | `{delta}`: the reply, piece by piece |
 | `transcript` | `{file_id, text}`: what a voice note said |
 | `note` | `{text}`: a short line about what the bot did |
-| `draft` | `{id, kind, posts, image_file_id?, post_at?, post_times?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); `image_file_id` a picture the user sent that goes with it; `post_times` your free times when you sent some, `post_at` the bot's pick; show it with an Add button (and Schedule with `post_times`) |
+| `draft` | `{id, kind, posts, image_file_ids?, image_file_id?, post_at?, post_times?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); `image_file_ids` the pictures the user sent that go with it, in order (`image_file_id` is the first, for a widget from before several); `post_times` your free times when you sent some, `post_at` the bot's pick; show it with an Add button (and Schedule with `post_times`) |
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `confirm` | `{id, tool, title, lines}`: a change waiting for the user's tap (see Actions); show `title`, the `lines`, and Confirm / Cancel |
 | `view` | `{id, tool, html, input, result, csp?, prefers_border?}`: one of your tool's cards (MCP Apps, see Actions); draw `html` in a sandboxed frame given `input` and `result` (`AppView` / `mountAppView` in the package), before the words that follow |
@@ -211,7 +211,7 @@ only saved.
 ```
 
 `text` is the first post, `thread` the posts after it (`[]` for a single post), `media` the pictures for the first
-post (`[]` for none). Save the draft for the token's workspace and answer `{"draft_id": "d_123", "edit_url":
+post, in order (`[]` for none; up to the kind's `max_images`). Save the draft for the token's workspace and answer `{"draft_id": "d_123", "edit_url":
 "https://shipnote.app/drafts/d_123"}` (`edit_url` may be `null`). Never publish it: the user does that in your app.
 
 **Scheduled.** When the user tapped Schedule, the body also has `"schedule_at": "2026-11-24T02:30:00Z"` (one of your
@@ -289,7 +289,7 @@ keeps the last good copy, so your chats keep working while this route is down. T
   "guide": "A good story is one change a user can feel, with one number from the user.",
   "writes": [
     {"kind": "changelog_entry", "name": "Changelog entry", "about": "an entry for the public changelog; the default",
-     "max_chars": 600, "no_links": true, "may_carry_image": true,
+     "max_chars": 600, "no_links": true, "may_carry_image": true, "max_images": 2,
      "instructions": "A title line, then what changed and who it helps, in the user's voice."},
     {"kind": "x_thread", "count": 1, "max_posts": 4, "max_chars": 280, "instructions": "A short thread."}
   ],
@@ -327,7 +327,10 @@ Protocol), so the server is one you may already have; nothing here is specific t
    their first items, and the model is told what was left out and to ask with a limit or for one item; so put each
    record's id first, sort lists with the most useful first, and give a `limit`). Anything else may change something, so the bot never runs it by itself: it
    shows a card with the tool's `title` and the arguments, and runs the tool once, with `Idempotency-Key:
-   confirm:<card id>`, when the user taps Confirm. A card not confirmed within 24 hours expires.
+   confirm:<card id>`, when the user taps Confirm. A card not confirmed within 24 hours expires. A tool that takes a
+   picture or a file by its address (a `url` argument) gets the user's own: a file they sent in the chat is given
+   as a signed link to the bot's storage, valid for 5 minutes, exactly as a draft's `media` (see Pictures above:
+   fetch it at once, only from the bot's storage host). The card shows it as their picture.
 4. **Point your pack at it**:
 
 ```json

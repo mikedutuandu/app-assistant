@@ -1,6 +1,6 @@
 {
   "case": "give_me_3",
-  "recorded_at": "2026-11-21T06:01:21+00:00",
+  "recorded_at": "2026-11-21T14:44:14+00:00",
   "models": {
     "chat": "anthropic/claude-sonnet-5.5",
     "writer": "anthropic/claude-sonnet-5.5",
@@ -36,7 +36,7 @@
           "id": "4BF6BA14000008",
           "kind": "x_post",
           "posts": [
-            "Replies used to take 2 hours. Now they go out in 2 minutes.\n\nAuto reply shipped last week, and 40 founders on the beta use it every day."
+            "Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day."
           ]
         }
       ],
@@ -47,7 +47,9 @@
       ],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0254107
+      "cost_usd": 0.0258099,
+      "confirms": [],
+      "reads": []
     },
     {
       "user": "give me 3",
@@ -60,44 +62,46 @@
           "id": "4BF6BA14000010",
           "kind": "x_post",
           "posts": [
-            "40 founders on the beta use auto reply every day. It's the feature I shipped last week."
+            "40 founders on the beta use auto reply every day.\n\nWe shipped it last week."
           ]
         },
         {
           "id": "4BF6BA14000011",
           "kind": "x_post",
           "posts": [
-            "2 hours vs 2 minutes. That's how long a reply takes now. Auto reply is live."
+            "2 hours vs 2 minutes. That's how long a reply takes to go out now. We shipped auto reply last week."
           ]
         },
         {
           "id": "4BF6BA14000012",
           "kind": "x_post",
           "posts": [
-            "Building in public update: we shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day."
+            "We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours."
           ]
         }
       ],
       "saved": [],
       "ended": "done",
       "failure": null,
-      "cost_usd": 0.0272622
+      "cost_usd": 0.0333822,
+      "confirms": [],
+      "reads": []
     }
   ],
   "verdicts": [
     {
       "note": 1,
-      "why": "The three drafts open with \"40 founders on the beta use auto reply every day.\", \"2 hours vs 2 minutes.\" and \"Building in public update: we shipped auto reply last week.\", so each first line leads with a different point (founders, speed, launch).",
+      "why": "The first lines are \"40 founders on the beta use auto reply every day.\", \"2 hours vs 2 minutes.\" and \"We shipped auto reply last week.\", so they lead with the founders, the speed and the launch.",
       "holds": true
     },
     {
       "note": 2,
-      "why": "Every draft sticks to auto reply, 2 minutes vs 2 hours, 40 beta founders daily and last week's ship, and adds no new facts or claims.",
+      "why": "All three drafts only use auto reply, 2 minutes vs 2 hours, 40 beta founders using it daily and the launch last week, with nothing invented.",
       "holds": true
     },
     {
       "note": 3,
-      "why": "The last reply, \"Here are three more takes, Mike. Which one sounds most like you?\", is short and quotes nothing from the drafts.",
+      "why": "The reply \"Here are three more takes, Mike. Which one sounds most like you?\" is short and quotes none of the draft text.",
       "holds": true
     }
   ],
@@ -114,8 +118,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "45e1b28ff0bc03dc",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "af74e58fafe09302",
         "messages_sha256": "c20c9afd40588120",
         "messages": [
           {
@@ -128,7 +132,7 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_01HfAh9t93CU3cb7ns1VbN3x",
+            "id": "toolu_01Fd7VVoT4r7PFkUeSkNYHzS",
             "name": "save_facts",
             "arguments": {
               "facts": [
@@ -146,7 +150,7 @@
             "bad_arguments": null
           },
           {
-            "id": "toolu_01KhFwEaQ5rvyX1obKhW17F7",
+            "id": "toolu_01LXt3oiLpYhXvqe6awCtsPp",
             "name": "write_drafts",
             "arguments": {
               "brief": "Shipped auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 beta founders use it every day.",
@@ -156,7 +160,7 @@
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.010692,
+        "cost_usd": 0.010892,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -183,7 +187,7 @@
           "drafts": [
             {
               "posts": [
-                "Replies used to take 2 hours. Now they go out in 2 minutes.\n\nAuto reply shipped last week, and 40 founders on the beta use it every day."
+                "Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day."
               ],
               "fact_ids": [
                 "F1",
@@ -206,11 +210,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "89ea13ae6a26b3f0",
+        "messages_sha256": "e9c12435cea9098b",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Replies used to take 2 hours. Now they go out in 2 minutes.\n\nAuto reply shipped last week, and 40 founders on the beta use it every day.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>"
           }
         ]
       },
@@ -218,7 +222,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 8.27e-05
+        "cost_usd": 7.79e-05
       }
     },
     {
@@ -233,9 +237,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "b1a7f65b85b23dac",
-        "messages_sha256": "6846971283395eb0",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "faa9abd879e1665d",
+        "messages_sha256": "dda5a2ce8a31de12",
         "messages": [
           {
             "role": "user",
@@ -255,14 +259,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"4BF6BA14000008\" kind=\"x_post\">Replies used to take 2 hours. Now they go out in 2 minutes.\n\nAuto reply shipped last week, and 40 founders on the beta use it every day.</data>"
+            "content": "wrote 1 draft in en; the user already sees it under your reply. Answer in one short sentence in en; don't repeat or describe the draft. This is the chat's first draft; never call it a fresh take, another version or a new one.\n<data source=\"draft\" id=\"4BF6BA14000008\" kind=\"x_post\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>"
           }
         ]
       },
       "response": {
         "text": "Here's a first draft, Mike. Want a screenshot of auto reply to go with it?",
         "calls": [],
-        "cost_usd": 0.009856,
+        "cost_usd": 0.01006,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -278,8 +282,8 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "94965606bfe7954d",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "2e78928f61bf1c10",
         "messages_sha256": "f902d57b0b10b716",
         "messages": [
           {
@@ -300,18 +304,18 @@
         "text": "",
         "calls": [
           {
-            "id": "toolu_018SoTBeRZX1bbkcUswbzUk3",
+            "id": "toolu_016DJ4rk64oFgqAtGT15e8x3",
             "name": "write_drafts",
             "arguments": {
-              "brief": "Auto reply shipped last week: replies go out in 2 minutes instead of 2 hours, and 40 founders on the beta use it every day. Give three different angles from the earlier draft (e.g. the before/after speed, the daily usage by founders, a build-in-public update).",
+              "brief": "Three different angles on shipping auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 founders on the beta use it every day. Vary the hook and angle from the existing draft.",
               "kind": "x_post",
-              "language": "en",
-              "count": 3
+              "count": 3,
+              "language": "en"
             },
             "bad_arguments": null
           }
         ],
-        "cost_usd": 0.01063,
+        "cost_usd": 0.010622,
         "model": "anthropic/claude-sonnet-5.5"
       }
     },
@@ -325,11 +329,11 @@
         "schema": "DraftsOut",
         "schema_sha256": "ccabe93b84514988",
         "system_sha256": "ae68d4ff7b1a77b6",
-        "messages_sha256": "47fe42da0d32c80f",
+        "messages_sha256": "12bbae9f867eeb75",
         "messages": [
           {
             "role": "user",
-            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">Replies used to take 2 hours. Now they go out in 2 minutes.\n\nAuto reply shipped last week, and 40 founders on the beta use it every day.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 3 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Auto reply shipped last week: replies go out in 2 minutes instead of 2 hours, and 40 founders on the beta use it every day. Give three …"
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 3 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Three different angles on shipping auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 founders on the beta u…"
           }
         ]
       },
@@ -338,16 +342,136 @@
           "drafts": [
             {
               "posts": [
-                "40 founders on the beta use auto reply every day. It's the feature I shipped last week."
+                "40 founders on the beta use auto reply every day.\n\nWe shipped it last week."
               ],
               "fact_ids": [
-                "F1",
-                "F3"
+                "F3",
+                "F1"
               ]
             },
             {
               "posts": [
-                "2 hours vs 2 minutes. That's how long a reply takes now. Auto reply is live."
+                "Auto reply cut our reply time from 2 hours to 2 minutes. Same replies, way faster."
+              ],
+              "fact_ids": [
+                "F2"
+              ]
+            },
+            {
+              "posts": [
+                "We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours."
+              ],
+              "fact_ids": [
+                "F1",
+                "F2"
+              ]
+            }
+          ]
+        },
+        "cost_usd": 0.005856
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "fe49ff5555ce8c89",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">40 founders on the beta use auto reply every day.\n\nWe shipped it last week.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 0.0001014
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "d31b39e35ef20777",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Auto reply cut our reply time from 2 hours to 2 minutes. Same replies, way faster.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": [
+            "Same replies"
+          ]
+        },
+        "cost_usd": 8.88e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "CLAIM_CHECK",
+        "model": "openai/gpt-6-luna",
+        "reasoning": null,
+        "max_tokens": 400,
+        "schema": "ClaimOut",
+        "schema_sha256": "ba0bcd060ff6f8be",
+        "system_sha256": "f976b114f2bc00dd",
+        "messages_sha256": "3b7c021d848a4beb",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours.</data>"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "unsupported": []
+        },
+        "cost_usd": 6.03e-05
+      }
+    },
+    {
+      "request": {
+        "method": "chat_json",
+        "marker": "DRAFT_WRITER",
+        "model": "anthropic/claude-sonnet-5.5",
+        "reasoning": "low",
+        "max_tokens": 4024,
+        "schema": "DraftsOut",
+        "schema_sha256": "ccabe93b84514988",
+        "system_sha256": "ae68d4ff7b1a77b6",
+        "messages_sha256": "9fec4a1b4fc77c2b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "About the app's user:\n<data source=\"context\">Voice: casual and direct, short sentences, a solo founder building in public\nTopics: building in public, SaaS, growing on X\nPatterns that work: \nRecently published (do not repeat):\n- shipped a hook scorer this week. paste a post, get a score and the one line to fix. free, no sign up.\n- week 6 of building in public: 31 paying users, every one of them came from replies. zero ads.</data>\n\nDrafts already shown in this chat (write something new, not a copy):\n<data source=\"draft\">Replies used to go out in 2 hours. Now they go out in 2 minutes.\n\nShipped auto reply last week. 40 founders on the beta use it every day.</data>\n\nKnown facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nKind \"x_post\" (X post: one post for X). Rules: one piece; at most 280 characters; no links; no long dashes (— or –).\nInstructions: Write a post for X in the user's own voice, opening with one of their winning hook shapes\n(the patterns that work) when one fits.\nMake one point, using facts from the list, in plain words.\n\nWrite exactly 3 draft(s) of kind \"x_post\" about what this brief describes, from the known facts only:\n<data source=\"brief\">Three different angles on shipping auto reply last week: replies go out in 2 minutes instead of 2 hours, and 40 founders on the beta u…"
+          }
+        ]
+      },
+      "response": {
+        "value": {
+          "drafts": [
+            {
+              "posts": [
+                "2 hours vs 2 minutes. That's how long a reply takes to go out now. We shipped auto reply last week."
               ],
               "fact_ids": [
                 "F1",
@@ -356,17 +480,24 @@
             },
             {
               "posts": [
-                "Building in public update: we shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day."
+                "Quick question: how fast do your replies go out? Ours now take 2 minutes instead of 2 hours."
+              ],
+              "fact_ids": [
+                "F2"
+              ]
+            },
+            {
+              "posts": [
+                "Auto reply is live on the beta. 40 founders use it every day."
               ],
               "fact_ids": [
                 "F1",
-                "F2",
                 "F3"
               ]
             }
           ]
         },
-        "cost_usd": 0.006126
+        "cost_usd": 0.006246
       }
     },
     {
@@ -379,11 +510,11 @@
         "schema": "ClaimOut",
         "schema_sha256": "ba0bcd060ff6f8be",
         "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "c11f94f3cdfde0e9",
+        "messages_sha256": "82866e8d2090424b",
         "messages": [
           {
             "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">40 founders on the beta use auto reply every day. It's the feature I shipped last week.</data>"
+            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">2 hours vs 2 minutes. That's how long a reply takes to go out now. We shipped auto reply last week.</data>"
           }
         ]
       },
@@ -391,57 +522,7 @@
         "value": {
           "unsupported": []
         },
-        "cost_usd": 0.0001191
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "CLAIM_CHECK",
-        "model": "openai/gpt-6-luna",
-        "reasoning": null,
-        "max_tokens": 400,
-        "schema": "ClaimOut",
-        "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "d00230dd7655209f",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">2 hours vs 2 minutes. That's how long a reply takes now. Auto reply is live.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "unsupported": []
-        },
-        "cost_usd": 0.0001047
-      }
-    },
-    {
-      "request": {
-        "method": "chat_json",
-        "marker": "CLAIM_CHECK",
-        "model": "openai/gpt-6-luna",
-        "reasoning": null,
-        "max_tokens": 400,
-        "schema": "ClaimOut",
-        "schema_sha256": "ba0bcd060ff6f8be",
-        "system_sha256": "f976b114f2bc00dd",
-        "messages_sha256": "22edb0f4d8e617fa",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Known facts:\n<data source=\"user\" fact=\"F1\">We shipped auto reply last week.</data>\n<data source=\"user\" fact=\"F2\">Replies now go out in 2 minutes instead of 2 hours.</data>\n<data source=\"user\" fact=\"F3\">40 founders on the beta use it every day.</data>\n\nThe piece to check:\n<data source=\"draft\">Building in public update: we shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day.</data>"
-          }
-        ]
-      },
-      "response": {
-        "value": {
-          "unsupported": []
-        },
-        "cost_usd": 6.44e-05
+        "cost_usd": 9.77e-05
       }
     },
     {
@@ -456,9 +537,9 @@
           "revise_draft",
           "save_facts"
         ],
-        "tools_sha256": "0deb2c01c55ce074",
-        "system_sha256": "b8ae66d4643492c1",
-        "messages_sha256": "104e4d592f201a61",
+        "tools_sha256": "5232f2abcecbaa9d",
+        "system_sha256": "7a4240286be0c492",
+        "messages_sha256": "d131a32ccfd16048",
         "messages": [
           {
             "role": "user",
@@ -481,14 +562,14 @@
           },
           {
             "role": "tool",
-            "content": "wrote 3 drafts in en; the user already sees them under your reply. Answer in one short sentence in en; don't repeat or describe the drafts.\n<data source=\"draft\" id=\"4BF6BA14000010\" kind=\"x_post\">40 founders on the beta use auto reply every day. It's the feature I shipped last week.</data>\n<data source=\"draft\" id=\"4BF6BA14000011\" kind=\"x_post\">2 hours vs 2 minutes. That's how long a reply takes now. Auto reply is live.</data>\n<data source=\"draft\" id=\"4BF6BA14000012\" kind=\"x_post\">Building in public update: we shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours. 40 founders on the beta use it every day.</data>"
+            "content": "wrote 3 drafts in en; the user already sees them under your reply. Answer in one short sentence in en; don't repeat or describe the drafts.\n<data source=\"draft\" id=\"4BF6BA14000010\" kind=\"x_post\">40 founders on the beta use auto reply every day.\n\nWe shipped it last week.</data>\n<data source=\"draft\" id=\"4BF6BA14000011\" kind=\"x_post\">2 hours vs 2 minutes. That's how long a reply takes to go out now. We shipped auto reply last week.</data>\n<data source=\"draft\" id=\"4BF6BA14000012\" kind=\"x_post\">We shipped auto reply last week. Replies now go out in 2 minutes instead of 2 hours.</data>"
           }
         ]
       },
       "response": {
         "text": "Here are three more takes, Mike. Which one sounds most like you?",
         "calls": [],
-        "cost_usd": 0.010218,
+        "cost_usd": 0.01031,
         "model": "anthropic/claude-sonnet-5.5"
       }
     }
