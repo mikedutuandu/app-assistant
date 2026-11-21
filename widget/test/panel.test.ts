@@ -248,6 +248,10 @@ describe("panel", () => {
     expect($$(".draft")[1].querySelectorAll("li")).toHaveLength(2);
     expect($$(".draft")[1].querySelector("a")!.getAttribute("href")).toBe("https://app.test/e/2");
     expect(($$(".draft")[1].querySelector("button") as HTMLButtonElement).textContent).toBe("Saved");
+    // In the order the turn showed them live (21 Nov 2026: a reload drew the question above the draft): what it kept,
+    // the drafts, then its words.
+    const order = $$(".saved, .draft, .msg.bot, .msg.user").map((e) => e.className.split(" ").pop());
+    expect(order).toEqual(["user", "saved", "draft", "draft", "bot"]);
     expect($$(".saved")[0].textContent).toContain("Shipped dark mode");
     ($$(".draft")[0].querySelector("button") as HTMLButtonElement).click();
     await flush();

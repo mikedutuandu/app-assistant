@@ -1,4 +1,4 @@
-# app-assistant
+# App Assistant
 
 [![CI](https://github.com/mikedutuandu/app-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/mikedutuandu/app-assistant/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@app-assistant/host)](https://www.npmjs.com/package/@app-assistant/host)
