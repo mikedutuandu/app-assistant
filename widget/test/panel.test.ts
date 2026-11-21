@@ -531,8 +531,24 @@ describe("a draft with a time to post", () => {
       [WED, "Wed 7:00 PM"],
     ]);
     expect(select.value).toBe(WED);
-    expect(select.getAttribute("aria-label")).toBe("Time to post");
+    // Any app, any kind of writing: a neutral word unless the app gives its own (data-schedule-label).
+    expect(select.closest("label")!.firstChild!.textContent).toBe("Publish at ");
     expect(buttons(el)).toEqual(["Schedule", "Save draft", "Shorter", "Another angle"]);
+  });
+
+  it("the time's label is the app's own word when it gives one", async () => {
+    const api = {
+      send: vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => [thr, dr()].forEach(on)),
+      act: vi.fn(),
+      thread: vi.fn(async () => ({ messages: [] })),
+      upload: vi.fn(),
+    } as unknown as PanelApi;
+    const p = createPanel({ api, app: "demo", label: "Write", position: "right", scheduleLabel: "Send at" });
+    p.open();
+    (p.root.querySelector("textarea") as HTMLTextAreaElement).value = "hi";
+    (p.root.querySelector(".send") as HTMLElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(p.root.querySelector(".draft label")!.firstChild!.textContent).toBe("Send at ");
   });
 
   it("Schedule sends the chosen time and says when, once the app scheduled it", async () => {

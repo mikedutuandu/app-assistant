@@ -66,7 +66,8 @@ workspace), 404 `app` | `thread` | `draft` | `file` | `upload`, 400 for a bad bo
 `/messages` tells this as a `failed` event in its stream instead).
 
 **The easy way:** `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`
-(optional `data-label`, `data-position="left"`). It does everything below.
+(optional `data-label`, `data-position="left"`, and `data-schedule-label`: the word before a draft's time picker in
+your app's terms, such as `Post at` or `Send at`; default `Publish at`). It does everything below.
 
 ### Send a message: `POST /v1/chat/{app}/messages`
 
@@ -164,8 +165,9 @@ Only `language` (an ISO code such as `en` or `vi`) is required. `credits_left` i
 `null` (or left out) when you don't count credits; at 0 or below, the turn stops with `failed out_of_credits` and your
 `out_of_credits_message`. `kept_facts` are facts the user kept in earlier chats that no post has used yet.
 
-**Scheduling (optional).** If your app can schedule a post, also answer the user's next free times, soonest first (at
-most 10 are read):
+**Scheduling (optional).** If your app can publish what it saves later on its own (a post, a newsletter, a changelog
+entry, a product page: whatever your kinds of writing are), also answer the user's next free times to publish,
+soonest first (at most 10 are read). The fields say `post` for short; they mean any kind of publishing:
 
 ```json
 "post_times": [
