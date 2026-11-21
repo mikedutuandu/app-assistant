@@ -88,7 +88,8 @@ class AppActions(Protocol):
 
 def offered(tools: list[AppTool], pack: AppPack, reserved: set[str]) -> list[AppTool]:
     """The app's tools the model is offered: those the pack allows (all, when it names none), never one that has the
-    name of one of the bot's own tools, at most MAX_TOOLS, in the app's order."""
+    name of one of the bot's own tools, at most MAX_TOOLS: in the pack's order when it names them (most used first:
+    the model sees the first UP_FRONT_TOOLS at once), else in the server's."""
     allowed = set(pack.actions.tools) if pack.actions and pack.actions.tools is not None else None
     out: list[AppTool] = []
     for tool in tools:
@@ -98,6 +99,9 @@ def offered(tools: list[AppTool], pack: AppPack, reserved: set[str]) -> list[App
             log.warning("app %s: tool %r has the name of one of the bot's own, left out", pack.id, tool.name)
             continue
         out.append(tool)
+    if pack.actions and pack.actions.tools is not None:
+        order = {name: i for i, name in enumerate(pack.actions.tools)}
+        out.sort(key=lambda t: order[t.name])
     return out[:MAX_TOOLS]
 
 

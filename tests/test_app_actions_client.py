@@ -8,7 +8,7 @@ import pytest
 from graph_harness import make_pack
 
 from assistant import app_actions
-from assistant.app_actions import RESULT_CHARS, McpAppActions, offered
+from assistant.app_actions import RESULT_CHARS, AppTool, McpAppActions, offered
 from assistant.auth import Session
 from assistant.packs import Actions
 from assistant.tools import ToolError
@@ -236,3 +236,8 @@ async def test_a_result_keeps_what_the_card_is_drawn_from():
         "content": [{"type": "text", "text": "posts: 10"}],
         "structuredContent": {"posts": [{"text": "hi", "views": 79}]},
     }
+
+
+def test_offered_follows_the_packs_order_when_it_names_tools():
+    tools = [AppTool(n, n, "", {"type": "object"}, True) for n in ("a", "b", "c")]
+    assert [t.name for t in offered(tools, pack(tools=["c", "a"]), set())] == ["c", "a"]
