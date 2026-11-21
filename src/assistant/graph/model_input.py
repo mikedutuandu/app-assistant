@@ -67,7 +67,7 @@ def system_prompt(pack: AppPack, state: ChatState, facts: list[Fact], drafts: li
         if ctx.post_times:
             times = "\n".join(f"{t.at}: {t.label}" + (f" ({t.why})" if t.why else "") for t in ctx.post_times)
             parts.append(
-                "Free times the app can post at, soonest first (the user sees the labels; pick by `at`):\n"
+                "Free times the app can publish at, soonest first (the user sees the labels; pick by `at`):\n"
                 + data("context", times)
             )
         if ctx.kept_facts:

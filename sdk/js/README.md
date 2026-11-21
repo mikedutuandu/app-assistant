@@ -129,6 +129,9 @@ import { AssistantChat } from "@app-assistant/host/react";
 <AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />;
 ```
 
+Optional props: `label` (the button, default "Write with AI"), `position` (`"left"`), and `scheduleLabel` (the word
+before a draft's time picker when your `context` sends `post_times`: "Post at", "Send at"; default "Publish at").
+
 It loads the bot's `widget.js` once per page; the widget draws its own floating open button and panel. Optional:
 `label` (the button's words), `position` (`"left"` or `"right"`), and `children` for an open button of your own
 in the page (`className` styles it). `openAssistant()` opens the chat from anywhere.

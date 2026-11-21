@@ -16,6 +16,7 @@ export function mount(script: HTMLScriptElement) {
     api,
     app,
     label: script.dataset.label || "Write with AI",
+    scheduleLabel: script.dataset.scheduleLabel, // the time picker's word: "Post at", "Send at"; default "Publish at"
     position: script.dataset.position === "left" ? "left" : "right",
   });
   window.addEventListener("assistant:open", () => panel.open());

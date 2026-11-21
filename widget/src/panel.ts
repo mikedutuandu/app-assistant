@@ -9,6 +9,8 @@ export interface PanelOptions {
   app: string;
   label: string;
   position: "left" | "right";
+  /** The word before a draft's time picker, in the app's words ("Post at", "Send at"). Default "Publish at". */
+  scheduleLabel?: string;
   parent?: HTMLElement;
 }
 
@@ -298,13 +300,13 @@ export function createPanel(opts: PanelOptions) {
     const note = h("div", { class: "note" });
 
     // The app's free times, when it can schedule (soonest first; ones already past are left out): the bot's pick is
-    // chosen, Schedule saves the draft and asks the app to post it then.
+    // chosen, Schedule saves the draft and asks the app to publish it then (whatever publishing means in that app).
     const labelOf = (at: string) => d.post_times?.find((t) => t.at === at)?.label ?? new Date(at).toLocaleString();
     const times = (d.post_times ?? []).filter((t) => Date.parse(t.at) > Date.now());
     let when: HTMLSelectElement | null = null;
     let schedule: HTMLButtonElement | null = null;
     if (times.length) {
-      when = h("select", { "aria-label": "Time to post" }, ...times.map((t) => h("option", { value: t.at, text: t.label })));
+      when = h("select", {}, ...times.map((t) => h("option", { value: t.at, text: t.label })));
       when.value = times.some((t) => t.at === d.post_at) ? d.post_at! : times[0].at;
       schedule = h("button", { class: "btn", type: "button", text: "Schedule" });
       add.classList.add("ghost");
@@ -388,7 +390,7 @@ export function createPanel(opts: PanelOptions) {
     shorter.addEventListener("click", () => void sendTurn(SHORTER, [], d.id));
     angle.addEventListener("click", () => void sendTurn(ANOTHER_ANGLE, [], d.id));
     row.prepend(...buttons);
-    if (when) el.append(h("label", { class: "when" }, "Post at ", when));
+    if (when) el.append(h("label", { class: "when" }, `${opts.scheduleLabel || "Publish at"} `, when));
     el.append(row, note, err);
     if (d.added && d.scheduled_at) markScheduled(d.scheduled_at, d.edit_url);
     else if (d.added) markAdded(d.edit_url);

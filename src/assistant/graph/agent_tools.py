@@ -61,13 +61,13 @@ _TOOL_SPECS: list[dict] = [
                     "image_file_id": {
                         "type": "string",
                         "description": (
-                            "The file_id of an image the user shared, to post with the drafts: only when they asked "
+                            "The file_id of an image the user shared, to go with the drafts: only when they asked "
                             "for it or said yes when you asked."
                         ),
                     },
                     "post_at": {
                         "type": "string",
-                        "description": "When to post it: the `at` of one of the app's free times, the one that fits best.",
+                        "description": "When to publish it: the `at` of one of the app's free times, the one that fits best.",
                     },
                 },
                 "required": ["brief", "kind", "language"],
@@ -97,7 +97,7 @@ _TOOL_SPECS: list[dict] = [
                     "image_file_id": {
                         "type": "string",
                         "description": (
-                            "The file_id of an image the user shared, to post with it, when they ask to add one. "
+                            "The file_id of an image the user shared, to go with it, when they ask to add one. "
                             "Left out, the draft keeps its own picture."
                         ),
                     },

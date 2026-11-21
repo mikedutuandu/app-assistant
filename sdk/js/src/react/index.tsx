@@ -14,6 +14,8 @@ export interface AssistantChatProps {
   /** The open button's words. The widget's default is "Write with AI". */
   label?: string;
   position?: "left" | "right";
+  /** The draft's time picker, in your app's words ("Post at", "Send at"). Default "Publish at". */
+  scheduleLabel?: string;
   /** An open button of your own, in your page's flow, as well as the widget's floating one. */
   children?: ReactNode;
   /** The class of your open button. */
@@ -28,7 +30,7 @@ export function openAssistant(): void {
 }
 
 /** Adds the widget's script once per page. Later changes to the props don't reload it. */
-function loadWidget({ app, botUrl, sessionUrl, label, position }: AssistantChatProps): void {
+function loadWidget({ app, botUrl, sessionUrl, label, position, scheduleLabel }: AssistantChatProps): void {
   if (document.querySelector(`script[${MARK}]`) || document.getElementById("assistant-widget")) return;
   const script = document.createElement("script");
   script.src = `${botUrl.replace(/\/+$/, "")}/widget.js`;
@@ -38,12 +40,16 @@ function loadWidget({ app, botUrl, sessionUrl, label, position }: AssistantChatP
   script.dataset.sessionUrl = sessionUrl ?? "/api/assistant/session";
   if (label) script.dataset.label = label;
   if (position) script.dataset.position = position;
+  if (scheduleLabel) script.dataset.scheduleLabel = scheduleLabel;
   document.body.appendChild(script);
 }
 
 export function AssistantChat(props: AssistantChatProps) {
-  const { app, botUrl, sessionUrl, label, position, children, className } = props;
-  useEffect(() => loadWidget({ app, botUrl, sessionUrl, label, position }), [app, botUrl, sessionUrl, label, position]);
+  const { app, botUrl, sessionUrl, label, position, scheduleLabel, children, className } = props;
+  useEffect(
+    () => loadWidget({ app, botUrl, sessionUrl, label, position, scheduleLabel }),
+    [app, botUrl, sessionUrl, label, position, scheduleLabel],
+  );
   if (children === undefined || children === null) return null;
   return (
     <button type="button" className={className} onClick={openAssistant}>
