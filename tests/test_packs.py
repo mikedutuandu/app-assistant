@@ -42,7 +42,7 @@ def test_loads_demo_pack():
     assert pack.files.voice_seconds == 60
     assert pack.demo is True
     assert pack.message_usd_cap == 0.10  # one write with a rewrite on Sonnet, then the reply after it
-    assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
+    assert [w.kind for w in pack.writes] == ["changelog_entry", "x_post"]
     assert pack.api_base == "http://testserver/demo/api/assistant" and pack.mcp_url is None and pack.tools is None
 
 
@@ -125,13 +125,19 @@ def test_pack_models_have_chat_and_writer():
 
 
 def test_x_thread_spec_loads():
-    for pack_id in ("hookplaybook", "demo"):
-        pack = load_packs(Path("apps"), base_url="http://testserver")[pack_id]
-        assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
-        post, thread = pack.writes
-        assert (post.count, post.max_chars, post.max_posts) == (1, 280, None)
-        assert (thread.count, thread.max_chars, thread.max_posts) == (1, 280, 8)
-        assert thread.no_links and thread.no_dashes and thread.may_carry_image
+    pack = load_packs(Path("apps"), base_url="http://testserver")["hookplaybook"]
+    assert [w.kind for w in pack.writes] == ["x_post", "x_thread"]
+    post, thread = pack.writes
+    assert (post.count, post.max_chars, post.max_posts, post.parts) == (1, 280, None, "one")
+    assert (thread.count, thread.max_chars, thread.max_posts, thread.parts) == (1, 280, 8, "several")
+    assert thread.no_links and thread.no_dashes and thread.may_carry_image
+
+
+def test_the_demo_writes_changelog_entries_and_x_posts_on_request():
+    pack = load_packs(Path("apps"), base_url="http://testserver")["demo"]
+    entry, post = pack.writes
+    assert (entry.kind, entry.name, entry.parts, entry.max_chars) == ("changelog_entry", "Changelog entry", "one", 600)
+    assert (post.kind, post.name) == ("x_post", "X post") and "when they ask" in (post.about or "")
 
 
 def test_guide_replaces_interview_guide(tmp_path):
@@ -140,7 +146,7 @@ def test_guide_replaces_interview_guide(tmp_path):
         load_packs(tmp_path, base_url="http://testserver")
 
 
-def test_a_write_kind_must_be_a_post_or_a_thread(tmp_path):
+def test_a_write_kind_of_the_apps_own_needs_a_name(tmp_path):
     text = _pack_yaml("a").replace("  - kind: x_post", "  - kind: changelog")
     (tmp_path / "a.yaml").write_text(text)
     with pytest.raises(PackError, match="a.yaml"):

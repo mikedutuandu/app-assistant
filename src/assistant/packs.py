@@ -30,15 +30,42 @@ class FileCaps(BaseModel):
     kinds: list[Literal["image", "pdf", "voice"]] = ["image", "pdf", "voice"]
 
 
+# What X's two kinds mean when a pack names nothing else about them (packs written before kinds had names).
+_X_KINDS: dict[str, dict[str, str]] = {
+    "x_post": {"name": "X post", "parts": "one", "about": "one post for X"},
+    "x_thread": {
+        "name": "X thread",
+        "parts": "several",
+        "about": "a thread for X, only when the user asks for a thread",
+    },
+}
+
+
 class WriteSpec(BaseModel):
-    kind: Literal["x_post", "x_thread"]
+    """One kind of writing the app wants: a changelog entry, a LinkedIn post, a product description, an X thread.
+    The chat model chooses among them by `name` and `about`; the writer follows `instructions` and the rules."""
+
+    kind: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")  # the kind's id, sent back with each draft
+    name: str | None = Field(None, min_length=1, max_length=60)  # what the app calls it; required but for X's kinds
+    about: str | None = Field(None, max_length=200)  # one line: what it is, and when to write it
+    parts: Literal["one", "several"] | None = None  # one piece, or several in order (a thread, a carousel)
     count: int = 1  # the default number of drafts
-    max_posts: int | None = None  # threads: the most posts in one thread
-    max_chars: int | None = None
+    max_posts: int | None = None  # several parts: the most parts in one draft
+    max_chars: int | None = None  # per part
     no_links: bool = False
     no_dashes: bool = False
     may_carry_image: bool = False
     instructions: str
+
+    @model_validator(mode="after")
+    def _named(self) -> "WriteSpec":
+        known = _X_KINDS.get(self.kind, {})
+        self.name = self.name or known.get("name")
+        self.about = self.about or known.get("about")
+        self.parts = self.parts or known.get("parts", "one")  # type: ignore[assignment]
+        if not self.name:
+            raise ValueError(f'writes {self.kind!r}: give it a name (what the app calls it, e.g. "Changelog entry")')
+        return self
 
 
 class Models(BaseModel):

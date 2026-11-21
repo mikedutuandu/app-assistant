@@ -7,13 +7,24 @@ demo: true
 message_usd_cap: 0.10  # a write with one rewrite on Sonnet costs about $0.05; leaves room for the reply after it
 
 guide: |
-  Shipnote turns what a small team shipped into a launch post for X, or a short thread when there is more to tell.
-  A good story has what was shipped, who it is for or why it matters to them, and one number or result
+  Shipnote turns what a small team shipped into an entry for its public changelog, or a launch post for X when they
+  ask for one. A good story has what was shipped, who it is for or why it matters to them, and one number or result
   (how many, how fast, what changed) when there is one. What is coming next is a nice extra.
   Only use what the person tells you or shows you. Never invent a number or a result.
 
 writes:
+  - kind: changelog_entry
+    name: Changelog entry
+    about: an entry for the product's public changelog; the default
+    count: 1
+    max_chars: 600
+    no_links: true
+    may_carry_image: true
+    instructions: |
+      Write a changelog entry in the voice of a small team talking to its users: a short title line, then one or
+      two plain sentences on what changed and who it helps, each a fact from the list.
   - kind: x_post
+    about: a launch post for X, only when they ask for a post
     count: 1
     max_chars: 280
     no_links: true
@@ -22,17 +33,6 @@ writes:
     instructions: |
       Write a launch post for X in the voice of a small team talking to its users.
       Short, plain and warm. Say what shipped and why it matters, using one fact from the list.
-  - kind: x_thread
-    count: 1
-    max_chars: 280
-    max_posts: 8
-    no_links: true
-    no_dashes: true
-    may_carry_image: true
-    instructions: |
-      Write a thread for X in the same voice: a hook in the first post, then one point per post,
-      each in plain words and each a fact from the list. The first post may carry the image.
-
 models:
   chat: anthropic/claude-sonnet-5.5
   chat_reasoning: low  # Sonnet 5.5 always thinks; low is its fastest

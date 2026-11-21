@@ -2,7 +2,7 @@
 
 export interface Draft {
   id: string;
-  kind: "x_post" | "x_thread" | string;
+  kind: string; // one of the app's kinds of writing (its pack's `writes`), e.g. "changelog_entry" or "x_thread"
   posts: string[];
   image_file_id?: string | null;
   /** Only on a draft read back from a thread. */

@@ -20,13 +20,13 @@ from pydantic import ValidationError
 from assistant.checks import Fact, nfc, numbers_in, unsupported_numbers
 from assistant.db import new_id
 from assistant.graph.agent_tools import (
-    TOOL_SPECS,
     PreparedCall,
     ReviseDraftArgs,
     SaveFactsArgs,
     WriteDraftsArgs,
     invalid_arguments,
     prepare_calls,
+    tool_specs,
 )
 from assistant.graph.model_input import (
     MAX_DRAFTS_SHOWN,
@@ -101,7 +101,7 @@ class AgentTurn:
         sent = (
             self.messages if with_tools else final_messages(self.messages[: self.start], self.reply.parts, self.results)
         )
-        out = await turn.chat_tools(sent, TOOL_SPECS if with_tools else [], CHAT_TOKENS, self.reply.forward)
+        out = await turn.chat_tools(sent, tool_specs(turn.pack) if with_tools else [], CHAT_TOKENS, self.reply.forward)
         self.rounds += 1
         if not self.reply.said and out.text.strip():
             await self.reply.forward(out.text)  # text the stream never handed over
@@ -219,6 +219,9 @@ class AgentTurn:
         )
 
     async def _write(self, args: WriteDraftsArgs, turn: Turn) -> str:
+        kinds = [w.kind for w in turn.pack.writes]
+        if args.kind not in kinds:  # the app's own kinds only (tool_specs lists them)
+            return f"error: invalid arguments (kind: must be one of {', '.join(kinds)}); nothing was done"
         turn.gate()
         writer = self._writer(turn, args.kind, set())
         result = await write_drafts(writer, args.brief, args.kind, args.count, args.language)

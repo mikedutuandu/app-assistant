@@ -85,7 +85,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `text` | `{delta}`: the reply, piece by piece |
 | `transcript` | `{file_id, text}`: what a voice note said |
 | `note` | `{text}`: a short line about what the bot did |
-| `draft` | `{id, kind, posts, image_file_id?}`: `kind` is `x_post` or `x_thread`; show it with an Add button |
+| `draft` | `{id, kind, posts, image_file_id?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); show it with an Add button |
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
 | `done` | `{message_id, cost_usd}` |
@@ -240,8 +240,9 @@ keeps the last good copy, so your chats keep working while this route is down. T
   "allowed_origins": ["https://shipnote.app"],
   "guide": "A good story is one change a user can feel, with one number from the user.",
   "writes": [
-    {"kind": "x_post", "count": 1, "max_chars": 280, "no_links": true, "may_carry_image": true,
-     "instructions": "A short launch post in the user's voice."},
+    {"kind": "changelog_entry", "name": "Changelog entry", "about": "an entry for the public changelog; the default",
+     "max_chars": 600, "no_links": true, "may_carry_image": true,
+     "instructions": "A title line, then what changed and who it helps, in the user's voice."},
     {"kind": "x_thread", "count": 1, "max_posts": 4, "max_chars": 280, "instructions": "A short thread."}
   ],
   "models": {

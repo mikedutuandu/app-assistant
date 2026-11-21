@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage
 from assistant.files.read import FileReading
 from assistant.graph import prompts
 from assistant.graph.agent import MAX_TOOL_ROUNDS
-from assistant.graph.agent_tools import TOOL_SPECS
+from assistant.graph.agent_tools import tool_specs
 from assistant.graph.model_input import REPLY_RULE
 from assistant.llm import LlmError, ToolCall
 from assistant.tools import ToolError
@@ -60,7 +60,7 @@ async def test_hi_gets_a_reply_and_no_draft():
     assert h.of("status") == [{"step": "thinking"}]
     assert llm.names() == ["CONVERSE"]
     [c] = llm.calls
-    assert c["model"] == "chat/model" and c["tools"] == TOOL_SPECS
+    assert c["model"] == "chat/model" and c["tools"] == tool_specs(h.pack)
     assert c["reasoning"] == "low" and c["temperature"] is None  # the pack's defaults
     assert c["max_tokens"] == 1200 + 1024  # thinking counts toward max_tokens
     assert isinstance(state["messages"][-1], AIMessage)
@@ -336,7 +336,7 @@ async def test_a_missing_or_odd_language_falls_back_to_the_apps(language):
 
 
 def test_the_drafting_tools_ask_for_the_language():
-    specs = {s["function"]["name"]: s["function"]["parameters"] for s in TOOL_SPECS}
+    specs = {s["function"]["name"]: s["function"]["parameters"] for s in tool_specs(make_pack())}
     for name in ("write_drafts", "revise_draft"):
         assert "language" in specs[name]["properties"] and "language" in specs[name]["required"]
 
