@@ -4,3 +4,4 @@
 # this file when set.
 apps:
   - {id: hookplaybook, site: https://hookplaybook.com, secret_env: HOOKPLAYBOOK_SESSION_SECRET}
+  - {id: streakplan, site: https://streakplan.com, secret_env: STREAKPLAN_SESSION_SECRET}
