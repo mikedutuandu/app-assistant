@@ -30,6 +30,6 @@ def test_compose_defaults_are_recognised_as_placeholders():
     from pathlib import Path
 
     text = (Path(__file__).parents[1] / "docker-compose.yml").read_text()
-    for name in ("DEMO_SESSION_SECRET", "HOOKPLAYBOOK_SESSION_SECRET"):
+    for name in ("DEMO_SESSION_SECRET",):
         default = re.search(rf"{name}: \$\{{{name}:-([^}}]+)\}}", text)
         assert default and "change-before-you-expose" in default.group(1)

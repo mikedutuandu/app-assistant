@@ -67,7 +67,7 @@ production database and bucket, so only deploy previews you trust.
 | `OPENROUTER_API_KEY` | your OpenRouter key |
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | set by the Neon integration |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the bucket above |
-| `PUBLIC_BASE_URL` | the production domain, `https://bot.example.com` (no trailing slash); set it after the first deploy, then redeploy |
+| `PUBLIC_BASE_URL` | the bot's address, no trailing slash: `https://<project>.vercel.app` when you deploy, your own domain later (then redeploy) |
 | `DEMO_SESSION_SECRET` | `openssl rand -hex 32` (the `/demo` page) |
 | `<APP>_SESSION_SECRET` | one per app you register (`apps/registry.yaml` or `APPS`), shared with that app |
 | `CRON_SECRET` | `openssl rand -hex 32`: Vercel Cron sends it to `/internal/cleanup`, which refuses everything else (off while unset) |

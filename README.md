@@ -12,7 +12,7 @@ It runs as its own service (FastAPI + LangGraph, Postgres, any S3-compatible buc
 your app talks to it through a small, versioned contract: one token, four HTTPS endpoints, and a JSON "pack" that
 describes what to write.
 
-**In production:** it is the "Write with me" page of [HookPlaybook](https://hookplaybook.com), an X growth app.
+**In production:** it is the "Write with HookPlaybook" page of [HookPlaybook](https://hookplaybook.com), an X growth app.
 
 ## How it works
 
@@ -105,8 +105,8 @@ cp .env.example .env                                    # then fill it in
 uv run uvicorn assistant.main:create_app --factory --reload
 ```
 
-Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` and `DEMO_SESSION_SECRET` (`openssl rand -hex 32`),
-then open <http://localhost:8000/demo>. Files go on local disk (`DATA_DIR`) unless you set `S3_*`. An app whose secret
+Set `DATABASE_URL=postgresql://test:test@localhost:54329/test`, then open <http://localhost:8000/demo> (the
+`.env.example` demo secret works on localhost only; set your own with `openssl rand -hex 32` before going online). Files go on local disk (`DATA_DIR`) unless you set `S3_*`. An app whose secret
 variable is unset is off (the log says which); with none set, the server does not start.
 
 ## Develop
@@ -114,8 +114,8 @@ variable is unset is off (the log says which); with none set, the server does no
 ```bash
 TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
 uv run ruff check . && uv run ruff format --check .
-cd widget && npm ci && npm test        # the chat window behind the script tag
-cd sdk/js && npm ci && npm test        # @app-assistant/host
+(cd widget && npm ci && npm test)      # the chat window behind the script tag
+(cd sdk/js && npm ci && npm test)      # @app-assistant/host
 ```
 
 The built `src/assistant/static/widget.js` is committed, so the server needs no Node; after changing `widget/`, run

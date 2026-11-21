@@ -116,7 +116,7 @@ def test_app_py_shim_imports_with_a_clean_path():
 
 
 def test_env_example_leaves_supabase_upload_settings_empty():
-    """After `cp .env.example .env`, local uploads must use the S3 path (MinIO), not sign at a placeholder project."""
+    """After `cp .env.example .env`, local uploads must not sign at a placeholder Supabase project."""
     lines = dict(
         line.split("=", 1) for line in (ROOT / ".env.example").read_text().splitlines() if line and line[0] != "#"
     )

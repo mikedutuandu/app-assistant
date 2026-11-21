@@ -1,4 +1,4 @@
-"""Wires the nodes into the graph of the spec:
+"""Wires the nodes into the bot's graph:
 
 read_files → load_context → converse → END
 

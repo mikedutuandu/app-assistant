@@ -17,8 +17,8 @@ cp .env.example .env                                # then fill it in
 ```bash
 TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
 uv run ruff check . && uv run ruff format --check .
-cd widget && npm ci && npm test
-cd sdk/js && npm ci && npm test && npm run typecheck
+(cd widget && npm ci && npm test)
+(cd sdk/js && npm ci && npm test && npm run typecheck)
 ```
 
 CI runs the same on every pull request.
