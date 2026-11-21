@@ -403,6 +403,11 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
             (session.app, session.workspace, thread_id),
         )
         saved_rows = await cur.fetchall()
+        cur = await conn.execute(
+            "select id, kind from files where app = %s and workspace = %s and thread_id = %s and kind <> %s",
+            (session.app, session.workspace, thread_id, PENDING),
+        )
+        kinds = dict(await cur.fetchall())  # the thread's finished files: a message lists only those still here
     # The turn's message id is the app's charge ref: it only groups rows here and never leaves the bot (the browser
     # first sees it in `done`, after the charge).
     drafts: dict[str, list[dict]] = {}
@@ -436,6 +441,9 @@ async def thread(thread_id: str, request: Request, auth: Auth) -> dict:
         if msg["role"] == "user":
             close()
             current, shown = m.additional_kwargs.get("turn"), None
+            files = [{"id": f, "kind": kinds[f]} for f in m.additional_kwargs.get("file_ids") or [] if f in kinds]
+            if files:
+                msg["files"] = files
             out.append(msg)
         else:
             if shown is None:

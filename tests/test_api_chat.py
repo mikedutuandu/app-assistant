@@ -1267,3 +1267,16 @@ async def test_a_file_link_is_404_for_another_thread_workspace_or_an_unfinished_
     )
     assert r.status_code == 404
     assert r.json() == {"error": "file"}
+
+
+# A reloaded chat shows what each message sent (the widget, 21 Nov 2026: a picture showed only until the page reloaded,
+# and a voice note never played): the thread lists each user message's files, by id and kind.
+async def test_a_reloaded_thread_lists_each_messages_files(api: Api):
+    up = (await api.upload(PNG)).json()
+    tid = up["thread_id"]
+    api.llm.script = happy_script()
+    api.llm.add("IMAGE_READER", {"text": "a screenshot", "unsure": []})
+    await api.send(FACT, thread=tid, file_ids=[up["file_id"]])
+    r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
+    users = [m for m in r.json()["messages"] if m["role"] == "user"]
+    assert users[0]["files"] == [{"id": up["file_id"], "kind": "image"}]
