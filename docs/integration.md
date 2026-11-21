@@ -371,7 +371,8 @@ same card works in any MCP Apps host. The bot declares the extension (`io.modelc
 
 The bot reads your page once every 5 minutes, shows at most 6 cards in a message, and keeps each with the thread (a
 thread read lists a message's `views`). The model is told the user sees the card, so its words point to it instead
-of listing it again. The page runs with no origin of its own (`sandbox="allow-scripts"`) under a policy made only
+of listing it again. The same answer read again in the same chat (the model often reads a list again for an id) is
+not drawn a second time; the model is told the user already saw it. A new answer is drawn. The page runs with no origin of its own (`sandbox="allow-scripts"`) under a policy made only
 from the domains you declared: it can't reach the page around it.
 
 ## The registry entry (the bot owner adds it)

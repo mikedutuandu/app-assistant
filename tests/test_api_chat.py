@@ -1467,6 +1467,36 @@ async def test_another_workspaces_change_is_not_found(api: Api):
 # ---- MCP Apps: a read's card (Mike, 21 Nov 2026: "show the data as SuperX does, not only text") ----
 
 
+async def test_the_same_card_is_not_shown_again_in_a_chat_and_the_model_is_told(api: Api):
+    """Mike, 21 Nov 2026: "every time I chat it always shows the panel of 3 sites": the model reads the sites again
+    each turn (for their ids), and each read drew the same card. A card already in the chat, with the same answer,
+    is not drawn again; a new answer is."""
+    from assistant.app_actions import ActionResult, AppTool, AppView
+
+    acting(api)
+    raw = {"content": [{"type": "text", "text": "sites: 3"}], "structuredContent": {"data": [{"id": "s1"}]}}
+    api.actions.tools.append(
+        AppTool("list_sites", "List sites", "Sites.", {"type": "object"}, True, "ui://cards/sites")
+    )
+    api.actions.answers["list_sites"] = ActionResult("sites: 3", False, raw)
+    api.actions.pages["ui://cards/sites"] = AppView("<p>sites</p>", None, None)
+    api.llm.script = {"CONVERSE": [Reply(calls=[call("list_sites")]), "You have 3 sites."]}
+    first = await api.send("my sites?")
+    assert len(of(first, "view")) == 1
+    tid = of(first, "thread")[0]["thread_id"]
+    api.llm.script = {"CONVERSE": [Reply(calls=[call("list_sites")]), "SiteSeed is the first."]}
+    again = await api.send("which one is first?", thread=tid)
+    assert of(again, "view") == []
+    assert "already saw this answer as a card" in str(api.llm.calls[-1])
+    # Another chat draws it, and a changed answer draws it again here.
+    api.llm.script = {"CONVERSE": [Reply(calls=[call("list_sites")]), "3 sites."]}
+    assert len(of(await api.send("my sites?"), "view")) == 1
+    api.actions.answers["list_sites"] = ActionResult("sites: 4", False, {**raw, "structuredContent": {"data": []}})
+    api.llm.script = {"CONVERSE": [Reply(calls=[call("list_sites")]), "Now 4."]}
+    assert len(of(await api.send("and now?", thread=tid), "view")) == 1
+    assert await api.count("app_views") == 3
+
+
 async def test_a_reads_card_is_sent_kept_read_back_and_deleted_with_the_workspace(api: Api):
     from assistant.app_actions import ActionResult, AppTool, AppView
 

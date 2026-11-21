@@ -32,6 +32,7 @@ from assistant.files.intake import FileRecord, UploadError
 from assistant.files.read import FileReading, Meter, read_file, read_link
 from assistant.graph.agent import confirm_lines
 from assistant.graph.build import build_graph, thread_id
+from assistant.graph.turn import SEEN_VIEW
 from assistant.limits import (
     DEMO_MESSAGES_PER_IP_DAY,
     DEMO_USD_KEY,
@@ -392,6 +393,25 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         nonlocal views_shown
         if actions is None or views_shown >= MAX_VIEWS:
             return None
+        # The same answer already drawn in this chat (the model reads a list again for an id): not drawn again, and
+        # the model is told so (Mike, 21 Nov 2026: "every time I chat it shows the panel of 3 sites").
+        async with state.pool.connection() as conn:
+            seen = await (
+                await conn.execute(
+                    "select 1 from app_views where app = %s and workspace = %s and thread_id = %s and tool = %s"
+                    " and input = %s and result = %s limit 1",
+                    (
+                        t.session.app,
+                        t.session.workspace,
+                        chat_id,
+                        read["tool"],
+                        Jsonb(read["input"]),
+                        Jsonb(read["result"]),
+                    ),
+                )
+            ).fetchone()
+        if seen is not None:
+            return SEEN_VIEW
         page = await actions.view(read["uri"])
         if page is None:
             return None

@@ -34,6 +34,10 @@ class Capped(Exception):
     """The message's cost cap was reached before a model call."""
 
 
+# on_view's answer for a card this chat already shows with the same answer: not drawn again.
+SEEN_VIEW: dict = {"seen": True}
+
+
 @dataclass
 class Deps:
     pack: AppPack
@@ -49,7 +53,8 @@ class Deps:
     agent: Any = None  # the conversation agent's work this turn (agent.AgentTurn), shared by call_model and run_tools
     actions_factory: Callable[[], Any] | None = None  # the app's actions (app_actions.AppActions), or None
     on_pending: Callable[[dict], Awaitable[str]] | None = None  # keeps a change waiting for the user's tap
-    on_view: Callable[[dict], Awaitable[dict | None]] | None = None  # a read's card (MCP Apps) to show, kept; or None
+    # a read's card (MCP Apps) to show, kept; SEEN_VIEW when this chat already shows the same answer; or None
+    on_view: Callable[[dict], Awaitable[dict | None]] | None = None
     app_tools: list = field(default_factory=list)  # the app's tools offered this turn (app_actions.AppTool)
     app_actions: Any = None  # the client that listed them, reused for this turn's calls
     timer: TurnTimer = field(default_factory=lambda: current.get() or TurnTimer())  # where this turn's time goes
