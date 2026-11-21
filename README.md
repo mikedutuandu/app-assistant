@@ -1,243 +1,55 @@
 # app-assistant
 
-A private chat bot that any web app adds with one script tag. It talks with the user like a person, asks one thing at a time about what they did, and writes a post or a thread from what they said or showed it, never inventing a number. The app decides where a draft goes. The bot never publishes anything.
+[![CI](https://github.com/mikedutuandu/app-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/mikedutuandu/app-assistant/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@app-assistant/host)](https://www.npmjs.com/package/@app-assistant/host)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Adding it to an app:** [docs/integration.md](docs/integration.md) is the contract (version 1): the token, the chat API, the four endpoints, the pack the app serves at `/.well-known/app-assistant.json`, and the registry entry. `tests/contract/` checks the bot against a fake app built only from that page; its `scenarios.json` is language-neutral, so the JS package's tests reuse it.
+A writing assistant you add to your web app. It chats with your users like a person, asks one thing at a time about
+what they actually did, and turns it into a post or a thread in their voice, **never inventing a number**. Users can
+attach screenshots, PDFs and voice notes. Your app decides where a draft goes; the bot never publishes anything.
+
+It runs as its own service (FastAPI + LangGraph, Postgres, any S3-compatible bucket, models through OpenRouter), and
+your app talks to it through a small, versioned contract: one token, four HTTPS endpoints, and a JSON "pack" that
+describes what to write.
+
+**In production:** it is the "Write with me" page of [HookPlaybook](https://hookplaybook.com), an X growth app.
 
 ## How it works
 
-1. The app's page loads `widget.js`; the widget asks the app's own server for a session token.
-2. The app signs a short-lived token (up to 1 hour) for the signed-in user's workspace and hands it to the widget.
-3. The widget talks to this service with that token. The service sends the same token to the app's four HTTPS endpoints (`/context`, `/drafts`, `/material`, `/charge`: read context, save a draft, save material, report the cost). An app that still uses MCP exposes the same four as MCP tools.
-4. A chat model (`models.chat`) holds the conversation and has tools to keep what the user says as facts and to ask a writer model (`models.writer`) for a draft. Every number and claim in a draft must come from the facts the user gave or a file showed; the draft is checked in code, written once more if it fails, then dropped. What the bot kept shows in the chat as a "Saved" line.
-5. Saving a draft to the app happens only when the user taps Add (the `add_draft` action). The bot has no tool that publishes.
-
-A message streams back these events (`POST /v1/chat/{app}/messages`, which also takes the `draft_id` of the draft a tap such as "Make it shorter" is about; one that is not a draft of the thread is a 404): `thread` (a new chat's id and title), `status` (what the bot is doing: reading, listening, thinking, writing, checking), `text` (the reply, in deltas), `transcript` (a voice note's words), `draft` (`{id, kind, posts, image_file_id?}`: `kind` is `x_post` or `x_thread`, shown with its Add button), `saved` (`{kind: "facts", items}`: facts the bot kept from the message; stored, so a reload shows it), `failed` (`{error, message}`), then `done`. `GET /v1/chat/{app}/threads/{id}` returns the messages, each assistant one with its `drafts` (`id, kind, posts, added, edit_url`) and `saved` lines, so a reload shows what the stream did.
-
-A host app can choose its own chat's id: `POST /v1/chat/{app}/messages` and `POST /v1/chat/{app}/uploads` take `new_thread: true` with a `thread_id` (26 characters, `0-9A-Z`, else 400 `thread`). A thread with that id is created for the workspace (a message then streams the usual `thread` event) or, when it is already that workspace's, continued; one that belongs to another workspace or app is a 404 `thread`. Messages also take `context`, the chat's other turns that the app's own assistant answered: up to 10 `{role: "user"|"assistant", text}` (each up to 2,000 characters, else 400 `too_long`), shown to the model for that turn only and never stored. `DELETE /v1/chat/{app}/threads/{id}` (the chat session token, 60 an hour per workspace) removes one thread with its checkpoints, files, drafts, saved lines and stored objects and answers `{"deleted": true}`; another workspace's or an unknown thread is a 404.
-
-One action: `POST /v1/chat/{app}/threads/{id}/actions` with `{action_id, kind: "add_draft", draft_id}` saves that draft to the app through `save_draft` (`posts[0]` as `text`, `posts[1:]` as `thread`, the picture on the first post) and its facts through `save_material`. It runs once per `action_id`; a repeat gets the same result. (The old `keep_facts` action is gone: facts are kept by the bot as the chat goes.)
-
-FastAPI and LangGraph, Postgres for state (in its own schema), files in an S3-compatible bucket or on local disk, OpenRouter for the models. Deployed on Vercel with the data on Supabase.
-
-## Run locally
-
-You need Python 3.12 with [uv](https://docs.astral.sh/uv/) and a Postgres. Files go on local disk (`DATA_DIR`) unless you set `S3_*` (any S3 endpoint works, MinIO included).
-
-```bash
-docker compose -f docker-compose.test.yml up -d        # Postgres on localhost:54329 (user, password and db: test)
-uv sync
-cp .env.example .env                                    # then fill it in
-uv run uvicorn assistant.main:create_app --factory --reload
+```
+your page ── chat window (script tag or React) ──► app-assistant ──► OpenRouter (chat + writer models)
+   │                                                     │
+   └─ your server signs a short-lived token              └─ calls your app: /context  /drafts  /material  /charge
 ```
 
-Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` to use that Postgres. Every variable is explained in `.env.example`. Open `http://localhost:8000/demo` for the Shipnote demo. Set `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` in `.env` first (any long random strings, for example from `openssl rand -hex 32`): the server will not start without them.
+1. Your server signs a short-lived token (HS256, up to 1 hour) for the signed-in user's workspace.
+2. The chat window talks to the bot with that token; the bot sends the same token to your app's four endpoints: read
+   context (the user's voice, recent posts), save a draft, keep facts the user told it, report what a message cost.
+3. A chat model holds the conversation and keeps what the user says as facts; a writer model drafts from those facts
+   only. Every number and claim in a draft is checked against what the user gave or a file showed: a draft that fails
+   is rewritten once, then dropped.
+4. A draft reaches your app only when the user taps **Add**. There is no tool that publishes.
 
-## Run with Docker
+## Try it in two minutes (Docker)
 
-No cloud account needed: the bot, Postgres 16 and the files on local disk (a Docker volume).
+No cloud account needed: the bot, Postgres 16 and files on local disk.
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-...    # needed for real replies; without it the bot starts but every turn fails
+git clone https://github.com/mikedutuandu/app-assistant && cd app-assistant
+export OPENROUTER_API_KEY=sk-or-...    # needed for real replies
 docker compose up --build
 ```
 
-Open `http://localhost:8000/demo` for the Shipnote demo, and `http://localhost:8000/health` answers `{"ok": true}`. Migrations run at start. Your data stays in the `assistant-data` (files) and `postgres-data` volumes until you remove them (`docker compose down -v`).
+Open <http://localhost:8000/demo> for **Shipnote**, a demo app built on the same contract (`apps/demo.yaml`,
+`src/assistant/demo/`). `http://localhost:8000/health` answers `{"ok": true}`. Your data stays in Docker volumes until
+`docker compose down -v`.
 
-- **Files.** With no `S3_*` and no `SUPABASE_*` the bot keeps files under `DATA_DIR` (`/data` in the container) and serves them itself: the browser uploads with a short-lived signed `PUT /v1/files/...` link and an app reads a picture from a 5-minute signed `GET` link, both on `PUBLIC_BASE_URL` (HMAC-SHA256 over `method:key:expiry`). The signing key is `FILES_SIGNING_KEY`; unset, one is generated once and kept in the database (the `settings` table). Set `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (and `S3_ENDPOINT`) to use a bucket instead.
-- **`PUBLIC_BASE_URL`** must be an address the browser and your app can reach (`http://localhost:8000` on your machine; your domain when it is online): upload and picture links are built from it.
-- **Secrets.** The compose file gives `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` throwaway defaults so the demo starts. They are public, so the bot **refuses to start** with them when `PUBLIC_BASE_URL`'s host is not `localhost`, `127.0.0.1` or `::1` (the error names the variable). The port is published on `127.0.0.1` only; to reach the bot from other machines, set your own secrets (`openssl rand -hex 32`) in the shell or a `.env` next to `docker-compose.yml`, set `PUBLIC_BASE_URL`, and change the port mapping to `8000:8000` (behind HTTPS).
-- **Your own app.** Add a pack under `apps/` (rebuild the image) or list the app in `APPS`, as in [docs/integration.md](docs/integration.md).
-- **One instance, or a shared volume.** Local files live on one machine's disk: run one bot container (or mount the same volume in each). Use a bucket when the bot runs on several machines.
+## Add it to your app
 
-## Deploy with Vercel
+The whole contract is one page: **[docs/integration.md](docs/integration.md)** (version 1).
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant&project-name=app-assistant&repository-name=app-assistant&env=OPENROUTER_API_KEY,PUBLIC_BASE_URL,DEMO_SESSION_SECRET,HOOKPLAYBOOK_SESSION_SECRET,CRON_SECRET,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY,S3_SECRET_KEY&envDescription=OpenRouter%20key,%20the%20bot%27s%20public%20URL,%20two%20secrets%20%28openssl%20rand%20-hex%2032%29,%20and%20a%20bucket%20for%20files&envLink=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant%23deploy-with-vercel)
-
-The button clones this repository into your Vercel account and asks for the variables below. **It works once the repository is public** (Vercel cannot clone a private one for someone else). For the full walk-through, with Supabase and the Function Region, see [Deploy on Vercel](#deploy-on-vercel) and [docs/DEPLOY.md](docs/DEPLOY.md).
-
-- **Database: Neon.** Add the Neon integration from the Vercel Marketplace (Storage tab, **Create database**) before the first deploy; the button's link can require it for you by adding `integration-ids=<Neon's integration id>` from your [Integrations Console](https://vercel.com/dashboard/integrations/console) ([how](https://vercel.com/docs/deploy-button/integrations)). Neon sets `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), or the same names with a `NEON_` prefix when you choose a custom prefix; the bot reads both spellings and uses the direct one for everything.
-- **Variables to fill in:** `OPENROUTER_API_KEY`; `PUBLIC_BASE_URL` (the project's domain, no trailing slash; set it after the first deploy, then redeploy); `DEMO_SESSION_SECRET` and `HOOKPLAYBOOK_SESSION_SECRET` (`openssl rand -hex 32` each); `CRON_SECRET` (the same, so the daily cleanup is on).
-- **Files need a bucket on Vercel.** A function's disk is temporary, so the local backend is for Docker and your own server. Set `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` (Neon Object Storage, Cloudflare R2, S3, or Supabase as described below). Left empty, uploads would be lost between requests.
-
-## Test
-
-```bash
-TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
-uv run ruff check . && uv run ruff format --check .
-cd widget && npm install && npm test
-```
-
-### Conversation tests
-
-`tests/conversations/cases.yaml` holds about 20 real chats (Mike's "hi", "my name mike", "just write it", a screenshot with a number, Vietnamese, "say we have 10k users"...), each with `expect` notes a judge model decides and `hard` rules checked in code (drafts and saved facts on the last turn, at most one question per reply, the language, words that must or must never come back). Each case runs through the whole bot (`run_turn`) in the HookPlaybook pack, with FakeTools and the context at the top of the file, on a fresh schema of `TEST_DATABASE_URL`.
-
-```bash
-export TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test
-OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live            # the real models, then the judge (anthropic/claude-sonnet-5.5)
-OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --record   # and save each case to tests/conversations/recorded/
-OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --case hi  # one case (repeat --case for more)
-uv run python scripts/converse_eval.py                                          # replay the recordings, hard rules only, no key
-```
-
-It prints a table (case, PASS or FAIL, hard rules, judge, what the bot spent, why) and exits non-zero when any case fails. Every case also has a hard rule that is on by default: each number in a draft must be one the user gave in the case (in a message, or in what an attached file shows).
-
-Run it live before every release that changes the prompts, the tools or the models. When a case fails, fix the prompt or the tools, not the case, and run it again. `--record` saves only a case that passed every hard rule and every judge note. A failing case is saved in your temp folder (`converse_eval_failed/`) for you to look at, and the table says where. Commit `tests/conversations/recorded/`: CI then replays each recording through the bot (`tests/test_conversations.py`) with no key. It checks that each case's hard rules hold and that every note held when the case was recorded.
-
-A recording holds the chat as the bot showed it, the judge's verdicts, the pack's models, and every model call in order (a request summary with hashes, and the raw response). The replay fails with "re-record this case" when any of these changed since the recording:
-
-- a prompt (any of them, with what is built into it)
-- the conversation
-- a model or its settings
-- the case's turns or notes
-
-So run `--live --record` again after any such change.
-
-`REQUIRE_CONVERSATION_RECORDINGS=1` makes an empty `recorded/` fail instead of being skipped. Set it in CI once the first recordings are committed.
-
-## Build the widget
-
-The built file `src/assistant/static/widget.js` is committed, so the server and the Vercel build need no Node. After changing `widget/`:
-
-```bash
-cd widget && npm run build
-```
-
-## Deploy on Vercel
-
-The service runs on Vercel as one Python Function (Fluid compute), built from the repo's `pyproject.toml` and `vercel.json`; the entrypoint is the root-level `app.py`, which imports the app from `src/assistant/asgi.py`. Its data lives on **Supabase**: Postgres through the Session pooler, files in a private Supabase Storage bucket. Files go from the browser straight to Supabase (Vercel caps a request body at 4.5 MB); the bot only issues the upload link and then checks the stored file.
-
-*20 Nov 2026: hosting moved from Cloud Run to Vercel.*
-
-Cold start: `import assistant.asgi` takes about 1.08 s before and 1.07 s after the PDF and image libraries (`pypdf`, `pypdfium2`, Pillow) moved to load only when a file arrives (best of 3 fresh interpreters); the difference is within the 0.05 s noise. Most of the time is LangGraph, loaded through `assistant.graph.build`. Re-measure with `uv run python scripts/cold_start.py`.
-
-**1. Postgres on Supabase.** In the Supabase dashboard, open **Connect** and copy the **Session pooler** string. It looks like `postgresql://postgres.REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres`; that is `DATABASE_URL`. If the password has characters such as `@ : / ? # %`, percent-encode them (`@` is `%40`).
-
-- On Neon (Vercel Marketplace), set `DATABASE_URL_UNPOOLED` (the direct URL): every pool and the startup migration use it, because a transaction pooler would lose `search_path` and advisory locks between statements; `DATABASE_URL` is then not used. At the switch to Neon, also set Settings → Functions → Function Region → Washington, D.C. (iad1) in the Vercel project (not in `vercel.json`, so nothing moves before the database does).
-- Not the **Transaction pooler** (port 6543): migrations hold a session advisory lock and psycopg uses prepared statements; both need a session of their own, which the transaction pooler does not give.
-- Not the **direct** host `db.REF.supabase.co`: on most plans it has only an IPv6 address, and a Vercel Function reaches the internet over IPv4.
-
-**Keep the tables private.** Supabase serves the schemas listed under Project Settings → Data API → **Exposed schemas** (`public` by default) to anyone holding the project's public key. The bot keeps every table, LangGraph's checkpoints included, in its own schema, `DB_SCHEMA` (default `assistant`), which it creates on its first start. **Never add that schema to Exposed schemas**, and never set `DB_SCHEMA=public`. After the first deploy, the Table Editor shows the bot's tables under the `assistant` schema and nothing new under `public`.
-
-**2. Files in Supabase Storage.**
-
-1. Storage → **New bucket**: give it a name (`BUCKET`) and leave **Public bucket** off. Set its **file size limit** to `25 MB` (`file_size_limit` 26214400: the largest cap of any kind, a voice note) and its **allowed MIME types** (`allowed_mime_types`) to the kinds the bot accepts, with no wildcard:
-
-   ```text
-   image/png, image/jpeg, image/jpg, image/pjpeg, image/webp, image/gif,
-   application/pdf,
-   audio/webm, audio/ogg, audio/opus, audio/mp4, audio/m4a, audio/x-m4a, audio/mpeg, audio/mp3, audio/wav, audio/x-wav, audio/wave,
-   video/mp4, video/webm,
-   application/octet-stream
-   ```
-
-   The bot sniffs the stored bytes and deletes anything that is not an image, a PDF or a voice format (webm, ogg, mp4/m4a, mp3, wav); the bucket's list is a second fence in front of it. (`application/octet-stream` is for a browser that does not know a file's type.) The per-app caps (image 10 MB, PDF 20 MB, voice 25 MB) are enforced by the bot, not by the bucket.
-2. Storage's **S3** settings page (`https://supabase.com/dashboard/project/REF/storage/s3`): make sure the S3 connection is enabled; it shows the endpoint and the region.
-3. Create an **access key** there: it shows an access key id and a secret once. They give full access to every bucket of the project (they bypass Storage's row-level policies), so they go into Vercel environment variables only (mark them Sensitive).
-4. From Project Settings → API Keys: the project URL (`SUPABASE_URL`, `https://REF.supabase.co`) and a **secret key** (`sb_secret_…`, as `SUPABASE_SERVICE_KEY`). Use the new secret key, not the legacy `service_role` JWT: Supabase retires the legacy keys at the end of 2026. The bot uses them to ask Supabase for the signed upload links.
-
-> **Warning.** If either `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing, uploads **silently fall back to the S3 presigned PUT** (see "Alternative: another S3-compatible store"). Nothing fails at startup, and on Supabase's S3 endpoint that fallback may not work from a browser. Set both. The startup log names the one in use: `uploads: supabase` or `uploads: s3`.
-
-The S3 values are `S3_ENDPOINT=` the endpoint shown there (`https://REF.supabase.co/storage/v1/s3`; the `https://REF.storage.supabase.co/storage/v1/s3` form works too), `S3_REGION=` the region shown there (for example `ap-southeast-1`), `S3_BUCKET=BUCKET`, and the key id and secret as `S3_ACCESS_KEY` and `S3_SECRET_KEY`. The bot still reads, checks and deletes files through them.
-
-**3. Connection budget.** Each instance keeps one connection open for its own queries and one for LangGraph's checkpoints for as long as it is alive, idle or suspended ones included (Fluid compute does not run idle timeouts while an instance is suspended, and instances of the previous deployment linger for a while). When busy it opens up to `DB_POOL_MAX` (default 2) plus `SAVER_POOL_MAX` (default 1): 3. So the budget is **instances alive × 2, up to × 3 when busy**. Fluid compute runs many requests on one instance, so a demo's traffic is a few instances at most, but Vercel can start more under load. Keep that number under the Session pooler's pool size (Database settings → Connection pooling; 15 by default on every compute size up to Medium: about 5 busy instances). To go beyond that, raise the pool size (a larger compute) or lower `DB_POOL_MAX` first. Each connection is checked (one round trip) before use, so one the pooler dropped while the instance slept is replaced instead of failing a request, and extra idle connections close after a minute.
-
-**4. Import the project.** In Vercel: **Add New → Project**, import the GitHub repo. The framework preset is **FastAPI**; Python 3.12 comes from `.python-version`. Leave the build and output settings alone: `vercel.json` sets the function (300 s, test files left out) and the daily clean-up cron.
-
-Then put the function next to the database: Settings → Functions → **Function Region**, the Vercel region closest to the database (`iad1`, Washington, D.C., for Neon in AWS US East; on Supabase, the region of the project, for example `sin1` for `ap-southeast-1`, shown under Project Settings → General). A function far from its database pays that distance on every query, checkpoint write and storage call, dozens of times per turn, and a cold start gains seconds. Hobby allows one region. The repo leaves the region out of `vercel.json` because the right one depends on where your database is. To move the bot's data to Neon, follow [docs/DEPLOY.md](docs/DEPLOY.md).
-
-**5. Environment variables.** Settings → Environment Variables, for Production and Preview (mark every secret Sensitive); without them a Preview deployment fails at start. A Preview then uses the production database and bucket, so only deploy previews you trust. Everything in `.env.example`:
-
-| Variable | Value |
-|---|---|
-| `OPENROUTER_API_KEY` | the OpenRouter key |
-| `DATABASE_URL` | the Supabase **Session pooler** string (port 5432) |
-| `DATABASE_URL_UNPOOLED` | on Neon, the direct URL (Vercel injects it): set it and the bot uses the direct connection for everything (app queries, checkpoints, migrations). Leave unset on Supabase |
-| `DB_SCHEMA`, `DB_POOL_MAX`, `SAVER_POOL_MAX` | leave unset for `assistant`, 2 and 1 |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | the Supabase S3 values above |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | the project URL and the secret key (`sb_secret_…`), for the signed upload links |
-| `CRON_SECRET` | `openssl rand -hex 32`: Vercel Cron sends it as `Authorization: Bearer ...` to `/internal/cleanup`, which refuses everything else (and is off while it is unset) |
-| `PUBLIC_BASE_URL` | the production domain, `https://bot.example.com` (no trailing slash) |
-| `DEMO_SESSION_SECRET` | `openssl rand -hex 32` |
-| `HOOKPLAYBOOK_SESSION_SECRET` | the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`; the service refuses to start without it |
-
-Do not set `RUN_LIFESPAN=false` in production (it skips the database and storage). `SHUTDOWN_DRAIN_SECONDS` stays at `0.4`: Vercel gives a function about 500 ms at shutdown.
-
-**6. Deploy.** Deploy once; after that every push to `main` redeploys. A change to an environment variable applies from the next deployment (redeploy to pick it up). On a cold start the bot's migrations and LangGraph's checkpoint setup both run under one Postgres advisory lock, so several instances starting together (the first deploy, or an upgrade that adds a migration) run them once while the others wait.
-
-**7. Check.** `curl https://<domain>/health` answers `{"ok":true}`; then open `https://<domain>/demo` on a phone. If a pack's secret variable is missing, the function fails to start and the logs say which one. In the first deploy's build log, confirm Vercel used `app.py` as the entrypoint (the root-level `app.py` imports the app from `src/assistant/asgi.py`); if it says it found no entrypoint, or the function limits (300 s) are not applied, fix that before anything else.
-
-**Limits on the Hobby plan.** A function runs at most 300 s per request (a chat turn is one streamed response, so a turn is cut at 5 minutes); request bodies are at most 4.5 MB (files do not pass through the function); a cron runs at most once a day, which is why the demo's clean-up (`GET /internal/cleanup`, deleting the demo's data older than a day and every app's expired, unfinished uploads) is daily at 03:00 UTC. Nothing in the bot relies on work continuing after a response ends: every model call is charged as soon as it finishes, and there is no background loop. A scanned PDF is read as images, one model call per page, 4 pages at a time; each page is charged as it ends and the message's cost cap is checked before the next one, and HookPlaybook's pack reads at most 10 pages (`pdf_pages`) so a message with files stays well inside the 300 s. If a stream is cut anyway, the widget says "The answer was cut off. Try again."
-
-**Check the bucket once.** Before the first real user, run this from your machine with the real `S3_*` values (and the rest of the settings) in `.env`. It does each call the service makes, against the real bucket, then cleans up (the bytes are stored as `image/png` so the bucket's MIME list accepts them; the bot's own content check is not involved):
-
-```bash
-uv run python - <<'PY'
-import httpx
-from assistant.config import get_settings
-from assistant.files.storage import Storage
-
-s = Storage(get_settings())
-s.put("check/hello.png", b"hello", "image/png")                            # 1. put
-assert s.get("check/hello.png") == b"hello"                                # 2. get
-url = s.signed_url("check/hello.png", 60)
-assert httpx.get(url).content == b"hello"                                  # 3. signed GET (how images reach the app)
-assert httpx.get(url.split("?")[0]).status_code in (400, 401, 403, 404)    # 4. unsigned GET refused: the bucket is private
-assert s.delete_prefix("check/") == 1                                      # 5. delete
-print("bucket ok")
-PY
-```
-
-It prints `bucket ok`. Any error names the call that failed; fix the bucket or keys before going on.
-
-**Then test one upload in a browser.** Open `https://<domain>/demo`, attach a small photo and send it with a message. The browser's network tab shows `POST /v1/chat/demo/uploads`, then a `PUT` straight to `https://REF.supabase.co/storage/v1/object/upload/sign/...` (not to the bot), then `POST .../uploads/.../finish`. If the `PUT` goes to an S3 address instead, `SUPABASE_URL` or `SUPABASE_SERVICE_KEY` is missing in Vercel. Also try a `.txt` file renamed to `.png`: the bot must refuse it.
-
-Note on the demo's per-IP limit: the client IP is `x-vercel-forwarded-for`, then `x-real-ip`, then the rightmost `x-forwarded-for` entry. They are set by Vercel's edge, which replaces what a visitor sends. Putting another proxy in front (a CDN, say) changes what they hold and needs a code change in `client_ip`.
-
-### Neon Object Storage
-
-Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_REGION` from the Neon console, and leave `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` unset. Uploads then use an S3 presigned PUT (the startup log says `uploads: s3`), and at startup the bot sets the bucket's CORS itself (`PutBucketCors`: every app's `allowed_origins` and `PUBLIC_BASE_URL`'s origin; `GET` and `PUT`; headers `content-type` and `if-none-match`). If that call fails the bot logs one warning (`could not set the bucket's CORS`) and starts anyway: set the CORS by hand then. At switch-over, check on the real bucket that the browser's `PUT` from the widget and from `/demo` passes CORS, and that a second `PUT` to the same link is refused (the `if-none-match` write-once header): Neon does not document that header. On the Supabase backend the bot does not touch CORS.
-
-### Alternative: another S3-compatible store
-
-Without `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` the bot issues an S3 presigned PUT instead (Cloudflare R2, AWS S3, MinIO). The browser sends `content-type` and `if-none-match: *` on that PUT (the link writes once), so the bucket's **CORS** (set by the bot at startup on this path) must allow your app's origins (the pack's `allowed_origins`, and `PUBLIC_BASE_URL` for the demo) with:
-
-- methods `PUT` (and `GET` if you read from the browser);
-- allowed headers `if-none-match` and `content-type`.
-
-For example, on S3 or R2:
-
-```json
-[{"AllowedOrigins": ["https://hookplaybook.com", "https://bot.example.com"], "AllowedMethods": ["PUT"], "AllowedHeaders": ["if-none-match", "content-type"], "MaxAgeSeconds": 600}]
-```
-
-Set `S3_ENDPOINT`, `S3_REGION` (`auto` for R2), `S3_BUCKET`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` for it, and run the bucket check above against it too. The store must honour `If-None-Match` on a PUT, or an upload link could replace a file already checked.
-
-## Apps
-
-| Pack | App | Secret variable |
-|---|---|---|
-| `apps/demo.yaml` | Shipnote, the public demo at `/demo` | `DEMO_SESSION_SECRET` |
-| `apps/hookplaybook.yaml` | HookPlaybook (hookplaybook.com), "Write with me" in its dashboard | `HOOKPLAYBOOK_SESSION_SECRET` |
-
-The service refuses to start while any pack's secret variable is unset.
-
-### HookPlaybook
-
-HookPlaybook's side is in its own repo (`products/hookplaybook`): the four tools on its MCP (`https://hookplaybook.com/api/v1/mcp`), the session route `/api/assistant/session`, and the call that deletes a workspace's data here when the workspace is deleted there.
-
-- **The secret.** Generate one value (`openssl rand -hex 32`). Set it as `HOOKPLAYBOOK_SESSION_SECRET` in the bot's **Vercel project settings** (Settings → Environment Variables, for Production and Preview), and the same value as HookPlaybook's `ASSISTANT_TOKEN_SECRET`. Redeploy the bot after adding it.
-- **Origin.** Only `https://hookplaybook.com` (the dashboard is at `/dashboard` on it) may use the widget.
-- **Posts.** The pack writes an `x_post` or an `x_thread` (up to 8 posts), each post at most 280 characters, no links, no long dashes, the first may carry one of the user's pictures. Saving goes through `save_draft`, which copies the picture into the draft.
-- **Kept facts.** `assistant_context` returns `kept_facts` (up to 10 facts the user kept earlier and no post has told yet). The chat's first question offers them; one the user picks counts as their own fact and is kept with the kept fact's own id and exact text, so `save_material` sends HookPlaybook the text it stored.
-- **Charge.** `assistant_charge` is called once per model call, as it ends, with the ref `"<message id>:<n>"` (n counts the message's calls from 1), and charges once per `ref`: a message makes several charges. The browser first sees the message id in the `done` event, after every charge.
-
-## Add the assistant to your app in 3 steps
-
-Your app needs no change to this bot. The whole contract is one page: [`docs/integration.md`](docs/integration.md).
-
-1. **Register the app.** The bot's owner adds it to `apps/registry.yaml` and sets its secret as an environment
-   variable (shared with the app, never in git):
+1. **Register the app** on your bot, in `apps/registry.yaml` (or the `APPS` variable), with its shared secret in an
+   environment variable (never in git):
 
    ```yaml
    apps:
@@ -246,110 +58,91 @@ Your app needs no change to this bot. The whole contract is one page: [`docs/int
        secret_env: SHIPNOTE_SESSION_SECRET
    ```
 
-2. **Serve the pack and the four endpoints.** The pack is a JSON file at `{site}/.well-known/app-assistant.json`; the
-   endpoints are `POST {api_base}/context`, `/drafts`, `/material` and `/charge`, each checking the user's token. In a
-   JavaScript app, `@app-assistant/host/server` does both from four functions you write (`sdk/js/README.md`); in any
-   other language, follow the page above, whose scenarios (`tests/contract/scenarios.json`) check your app.
-3. **Put the chat window on the page.** `<AssistantChat app="shipnote" botUrl="https://bot.example.com"
-   sessionUrl="/api/assistant/session" />` (`@app-assistant/host/react`), or one script tag:
-   `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`.
-   Your session route signs the token for the signed-in user.
+2. **Serve the pack and the four endpoints.** The pack is JSON at `{site}/.well-known/app-assistant.json`; the
+   endpoints are `POST {api_base}/context`, `/drafts`, `/material` and `/charge`. In a JavaScript app,
+   [`@app-assistant/host`](sdk/js/README.md) does both from four functions you write:
 
-HookPlaybook is registered this way (`apps/registry.yaml`), and `apps/hookplaybook.yaml` stays as its fallback (MCP),
-used only while no remote copy was ever fetched. The first chat for `hookplaybook` after a start fetches the pack (at most
-5 s). While HookPlaybook does not serve it yet (404), the bot answers from the YAML over MCP and tries again every 60 s;
-once fetched, the pack is used over REST, kept 5 minutes in memory and in Postgres for the next cold start.
+   ```bash
+   npm install @app-assistant/host
+   ```
 
-The bot's own demo (`/demo`) is built this way too: `apps/demo.yaml` has `api_base: {base}/demo/api/assistant`, and
-`src/assistant/demo/api.py` serves the four endpoints.
+   In any other language, follow the contract; its scenarios (`tests/contract/scenarios.json`) check your app.
 
-## Add an app (a pack file, or MCP)
+3. **Put the chat window on a page**, with a session route that signs the token for the signed-in user:
 
-The 3 steps above are the way for a new app. This section is the pack file's fields, and the older way an app can be
-reached: over MCP (`mcp_url`, with four tools).
+   ```tsx
+   <AssistantChat app="shipnote" botUrl="https://bot.example.com" sessionUrl="/api/assistant/session" />
+   ```
 
-### 1. A pack: `apps/<id>.yaml`
+   or one script tag:
 
-`apps/demo.yaml` is a complete example. Fields:
+   ```html
+   <script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>
+   ```
 
-| Field | Meaning |
+A pack file kept on the bot, and apps reached over MCP instead of HTTPS: [docs/packs.md](docs/packs.md).
+
+## Deploy
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant&project-name=app-assistant&repository-name=app-assistant&env=OPENROUTER_API_KEY,PUBLIC_BASE_URL,DEMO_SESSION_SECRET,CRON_SECRET,S3_ENDPOINT,S3_REGION,S3_BUCKET,S3_ACCESS_KEY,S3_SECRET_KEY&envDescription=OpenRouter%20key,%20the%20bot%27s%20public%20URL,%20two%20secrets%20%28openssl%20rand%20-hex%2032%29,%20and%20a%20bucket%20for%20files&envLink=https%3A%2F%2Fgithub.com%2Fmikedutuandu%2Fapp-assistant%2Fblob%2Fmain%2Fdocs%2FDEPLOY.md)
+
+- **Vercel:** the button clones the repo into your account. Add Neon from the Vercel Marketplace for Postgres, and an
+  S3-compatible bucket for files (Neon Object Storage, Cloudflare R2, S3).
+- **Your own server:** the Docker setup above, with your own secrets and domain.
+
+Step by step, with the checks to run after: **[docs/DEPLOY.md](docs/DEPLOY.md)**. Every variable is explained in
+[`.env.example`](.env.example). As the bot's owner you set ceilings over every app: a message's spend cap
+(`MAX_MESSAGE_USD`), the models an app may use (`ALLOWED_MODELS`) and one app's daily spend (`MAX_APP_DAILY_USD`).
+
+## Run locally without Docker
+
+You need Python 3.12 with [uv](https://docs.astral.sh/uv/) and a Postgres.
+
+```bash
+docker compose -f docker-compose.test.yml up -d        # a Postgres on localhost:54329 (user, password and db: test)
+uv sync
+cp .env.example .env                                    # then fill it in
+uv run uvicorn assistant.main:create_app --factory --reload
+```
+
+Set `DATABASE_URL=postgresql://test:test@localhost:54329/test` and `DEMO_SESSION_SECRET` (`openssl rand -hex 32`),
+then open <http://localhost:8000/demo>. Files go on local disk (`DATA_DIR`) unless you set `S3_*`. An app whose secret
+variable is unset is off (the log says which); with none set, the server does not start.
+
+## Develop
+
+```bash
+TEST_DATABASE_URL=postgresql://test:test@localhost:54329/test uv run pytest
+uv run ruff check . && uv run ruff format --check .
+cd widget && npm ci && npm test        # the chat window behind the script tag
+cd sdk/js && npm ci && npm test        # @app-assistant/host
+```
+
+The built `src/assistant/static/widget.js` is committed, so the server needs no Node; after changing `widget/`, run
+`npm run build` there. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
+
+**Conversation tests.** `tests/conversations/cases.yaml` holds about 20 real chats ("hi", "just write it", a screenshot
+with a number, Vietnamese, "say we have 10k users"...), each with notes a judge model decides and hard rules checked in
+code (at most one question per reply, the language, every number in a draft given by the user). Recordings in
+`tests/conversations/recorded/` replay in CI with no key; re-record after changing a prompt, a model or a case:
+
+```bash
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live            # real models, then the judge
+OPENROUTER_API_KEY=... uv run python scripts/converse_eval.py --live --record   # and save the cases that pass
+uv run python scripts/converse_eval.py                                          # replay the recordings, no key
+```
+
+## Layout
+
+| Path | What it is |
 |---|---|
-| `id` | App id. It is the `iss` claim of the app's tokens and the `data-app` of the script tag. |
-| `name` | Name shown in the widget. |
-| `api_base` | The app's four endpoints of contract 1 (`{api_base}/context`, `/drafts`, `/material`, `/charge`). `{base}` becomes `PUBLIC_BASE_URL`. Set this or `mcp_url`, not both. |
-| `mcp_url` | Or the app's MCP endpoint. `{base}` becomes `PUBLIC_BASE_URL`. |
-| `secret_env` | Name of the environment variable holding the app's signing secret. Set it here and in the app. |
-| `allowed_origins` | Origins allowed to use the widget; the `Origin` header is checked on every `/v1` request. |
-| `guide` | What a good story from this app has, in plain words, and what the bot must never do (`interview_guide` is the old name and is refused). It steers the conversation and the writer. |
-| `writes` | What to write: per item `kind` (`x_post` or `x_thread`), `count`, `instructions`, and optional `max_posts` (threads), `max_chars`, `no_links`, `no_dashes`, `may_carry_image`. |
-| `tools` | With `mcp_url` only: the app's tool names for `context`, `save_draft`, `save_material`, `charge`. |
-| `models` | OpenRouter ids: `chat` (the conversation) with `chat_reasoning` (`none` or `low`; default `low`) and optional `chat_temperature`, `writer` (the drafts) with `writer_reasoning` (`none` or `low`), `main`, `cheap`, `vision`, and optional `fallbacks`. A model whose thinking is mandatory (Sonnet 5.5) thinks at high effort when sent `none`: use `low`. |
-| `files` | Optional caps: `image_mb`, `pdf_mb`, `pdf_pages`, `voice_seconds`, `per_message`, `kinds` (image, pdf, voice). |
-| `message_usd_cap` | Most the bot may spend on one message. |
-| `demo` | `true` only for the public demo (daily caps, files deleted after a day). |
+| `src/assistant/` | the service: chat API, LangGraph agent, tools, file intake, storage, the demo app |
+| `apps/` | packs kept on the bot (`demo.yaml`; `hookplaybook.yaml`, a real one), and `registry.yaml`: the apps that serve their own pack |
+| `widget/` | the chat window behind the script tag |
+| `sdk/js/` | `@app-assistant/host`: the contract for JavaScript apps, and the React chat window |
+| `docs/` | the contract, its JSON schema, deployment, packs |
+| `tests/contract/` | language-neutral scenarios any app can be checked against |
 
-### 2. Four tools on the app's MCP
+## License
 
-- `assistant_context`: what the bot may know about the workspace: `voice`, `topics`, `recent_posts`, `patterns`, `credits_left`, `out_of_credits_message`, `language`, and optionally `kept_facts` (`[{"id", "text"}]`, facts the user kept earlier and has not used, offered when the chat opens).
-- `save_draft`: saves a draft the user tapped: `{text, thread?, media?}`. `text` is the first post; `thread` is the posts after it (a list of strings, left out for a single post); `media` is `[{url, alt?}]` and the picture stays on the first post.
-- `save_material`: keeps facts for later, with `draft_id` when the facts came with a draft (the tap that adds a draft marks its facts told this way).
-- `assistant_charge`: records the cost of one model call, once per `ref` (`"<message id>:<n>"`). A message makes several calls, so it is charged several times, each ref once; a retry with the same ref adds nothing.
-
-The app's MCP accepts the session token as `Authorization: Bearer` and treats it as a "draft" key for that workspace only.
-
-### 3. A session endpoint in the app
-
-The widget calls `POST <data-session-url>` with `credentials: "include"`, `content-type: application/json` and the body `{}`, so the endpoint is authenticated by the app's own sign-in cookie. It answers JSON `{"token": "<jwt>"}`:
-
-```json
-{ "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
-```
-
-A 401 or 403 (or a 2xx without a `token`, such as a redirect to a sign-in page) makes the widget show "Please sign in again." and stop. A network error or any other status (a 5xx while the app restarts) shows "Couldn't reach the app. Try again." and the next tap tries again; a message that could not be sent stays in the box with its files. The token is HS256, signed with the pack's secret, with claims `iss` (the app id), `sub` (the workspace id: letters, digits and `: _ . -`, up to 200), `access: "draft"`, `iat`, and `exp` at most 1 hour after `iat`.
-
-```python
-import time, jwt
-
-# SECRET: the value of the pack's `secret_env` environment variable, shared with the bot.
-
-
-def mint(workspace_id: str) -> str:
-    now = int(time.time())
-    return jwt.encode(
-        {"iss": "myapp", "sub": workspace_id, "access": "draft", "iat": now, "exp": now + 3600},
-        SECRET,
-        algorithm="HS256",
-    )
-```
-
-```ts
-import jwt from "jsonwebtoken";
-
-// SECRET: the value of the pack's `secret_env` environment variable, shared with the bot.
-
-export const mint = (workspaceId: string) => {
-  const now = Math.floor(Date.now() / 1000);
-  return jwt.sign({ iss: "myapp", sub: workspaceId, access: "draft", iat: now, exp: now + 3600 }, SECRET, {
-    algorithm: "HS256",
-  });
-};
-```
-
-Then add the script tag to the page:
-
-```html
-<script src="https://<bot-domain>/widget.js" data-app="myapp" data-session-url="/api/assistant/session" data-label="Write with me"></script>
-```
-
-The widget shows its own button. A page that has its own button opens the panel with `window.dispatchEvent(new CustomEvent("assistant:open"))`.
-
-### 4. Delete a workspace's data
-
-When a workspace is deleted in the app, call this from the app's server:
-
-```
-DELETE https://<bot-domain>/v1/apps/<app-id>/workspaces/<workspace-id>
-Authorization: Bearer <token>
-```
-
-The token is minted like the session token, but with `access: "delete"` and the same `sub` as the workspace. It removes the workspace's threads, checkpoints and stored files, and answers `{"deleted_threads": n}`.
+[MIT](LICENSE). Security issues: please report them privately, as [SECURITY.md](SECURITY.md) says.

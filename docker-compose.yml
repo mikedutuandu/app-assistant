@@ -9,7 +9,7 @@ services:
   bot:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"  # this machine only; see README to publish it
+      - "127.0.0.1:8000:8000"  # this machine only; see docs/DEPLOY.md to publish it
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DATABASE_URL: postgresql://assistant:assistant@postgres:5432/assistant
