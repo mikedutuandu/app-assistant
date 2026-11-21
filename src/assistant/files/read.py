@@ -104,8 +104,13 @@ def _extract_pdf_text(data: bytes) -> tuple[str, int]:
     import pypdf  # imported here: most messages carry no file, and a cold start should not pay for it
 
     reader = pypdf.PdfReader(io.BytesIO(data))
-    text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
-    return text, len(reader.pages)
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    return _no_nul(text).strip(), len(reader.pages)
+
+
+def _no_nul(text: str) -> str:
+    """Some PDFs extract with NUL characters, which Postgres refuses in JSON (the reading, the checkpoint)."""
+    return text.replace("\x00", "")
 
 
 def _render_pages(data: bytes, limit: int) -> list[bytes]:
@@ -209,6 +214,8 @@ async def read_file(rec: FileRecord, pack: AppPack, llm: Llm, storage: Storage, 
     else:
         reading = await _read_pdf(rec, data, pack, llm, meter)
 
+    # Whatever produced it (a PDF's text, a model's answer), no NUL character reaches Postgres's JSON.
+    reading = reading.model_copy(update={"text": _no_nul(reading.text), "unsure": [_no_nul(u) for u in reading.unsure]})
     async with pool.connection() as conn:
         await conn.execute("update files set reading = %s where id = %s", (Jsonb(reading.model_dump()), rec.id))
     return reading
