@@ -1,6 +1,6 @@
 {
   "name": "@app-assistant/host",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Host the app-assistant writing bot in a JavaScript app: the contract's four endpoints, its pack and tokens on Web Request/Response, and the chat window for React.",
   "license": "MIT",
   "homepage": "https://github.com/mikedutuandu/app-assistant/tree/main/sdk/js#readme",
