@@ -17,12 +17,14 @@ signed-in user. The bot's tests check its side of this page against a fake app b
               POST {api_base}/drafts      save a draft the user tapped Add on
               POST {api_base}/material    keep the facts that draft was written from
               POST {api_base}/charge      what a model call cost, to take from the user's credits
+ the bot ── optional, with the same token ──►  your MCP server (the pack's actions.mcp_url)
+              tools/list, tools/call    read the user's data; change things after they tap Confirm
 
  the bot ── every 5 minutes at most ──►  GET {site}/.well-known/app-assistant.json   (your pack)
 ```
 
-- The bot never reads your database and never publishes anything. It can do only what these four endpoints let it do,
-  as the signed-in user.
+- The bot never reads your database and never publishes anything. It can do only what these four endpoints (and, if
+  you give it actions, your own MCP server's tools) let it do, as the signed-in user.
 - You decide where a draft goes (your editor, a schedule) and how credits work.
 - Your app needs: an **app id** (lowercase, e.g. `shipnote`), a **shared secret** (`openssl rand -hex 32`), your
   **site** (e.g. `https://shipnote.app`) and your **api_base** (e.g. `https://shipnote.app/api/assistant`, on the
@@ -82,12 +84,13 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | Event | Data |
 |---|---|
 | `thread` | `{thread_id, title}`: a new chat was opened |
-| `status` | `{step}`: `reading`, `listening`, `thinking`, `writing`, `checking` |
+| `status` | `{step}`: `reading`, `listening`, `thinking`, `writing`, `checking`, `reading_app` (one of your read tools) |
 | `text` | `{delta}`: the reply, piece by piece |
 | `transcript` | `{file_id, text}`: what a voice note said |
 | `note` | `{text}`: a short line about what the bot did |
 | `draft` | `{id, kind, posts, image_file_id?, post_at?, post_times?}`: `kind` is one of your pack's `writes`; `posts` holds its parts (one for a kind of one piece); `image_file_id` a picture the user sent that goes with it; `post_times` your free times when you sent some, `post_at` the bot's pick; show it with an Add button (and Schedule with `post_times`) |
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
+| `confirm` | `{id, tool, title, lines}`: a change waiting for the user's tap (see Actions); show `title`, the `lines`, and Confirm / Cancel |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
 | `done` | `{message_id, cost_usd}` |
 
@@ -287,6 +290,43 @@ keeps the last good copy, so your chats keep working while this route is down. T
 - `message_usd_cap`: the most one message may spend on models, in US dollars.
 - Fields the bot doesn't know are ignored, so you can serve a newer pack to an older bot. Never put a secret in it: it
   is public.
+
+## Actions (optional): your MCP server
+
+Give the assistant your app's own actions and it becomes an app assistant: it answers questions from the user's real
+data and does things for them, each change only after they tap **Confirm**. The standard is MCP (Model Context
+Protocol), so the server is one you may already have; nothing here is specific to the bot.
+
+1. **Have an MCP server for your users** (Streamable HTTP: `initialize`, `tools/list`, `tools/call`, answered as JSON
+   or an event stream). Build one with the official SDKs (modelcontextprotocol.io); the bot needs nothing else.
+2. **Accept the assistant's token on it.** The bot calls it as the signed-in user with `Authorization: Bearer
+   <token>`, the same token as your four endpoints. With the package: `verifyAssistantToken(request, secret, appId)`
+   gives `{workspaceId}` or `null`. Show the assistant only the tools you want it to use, as you would for a key.
+3. **Mark your tools** with MCP's annotations. `readOnlyHint: true` runs at once (its result goes to the model as
+   your data, cut at 12,000 characters). Anything else may change something, so the bot never runs it by itself: it
+   shows a card with the tool's `title` and the arguments, and runs the tool once, with `Idempotency-Key:
+   confirm:<card id>`, when the user taps Confirm. A card not confirmed within 24 hours expires.
+4. **Point your pack at it**:
+
+```json
+"actions": {
+  "mcp_url": "https://shipnote.app/api/mcp",
+  "tools": ["list_entries", "get_stats", "delete_entry"],
+  "starters": ["What did I ship this month?", "Write a changelog entry"]
+}
+```
+
+- `mcp_url` must be on your site's own origin, like `api_base`.
+- `tools` (optional): the ones the assistant may use; left out, every tool your server lists for the user. A tool
+  with the name of one of the bot's own (`write_drafts`, `revise_draft`, `save_facts`) is left out. At most 40.
+- `starters` (optional, at most 6): one-tap messages the chat window shows on an empty chat (`GET
+  /v1/chat/{app}/config` answers them).
+- `writes` may be `[]` when the assistant only reads and acts; your four endpoints still give it the user's
+  language (`/context`) and take what it costs (`/charge`).
+
+The chat API's actions take a card's tap: `{"action_id", "kind": "confirm" | "cancel", "pending_id": <the card's
+id>}` answers `{"state": "done" | "failed" | "cancelled", "result"}` (a repeat answers the same; 410 `expired`).
+A thread read back lists each message's `confirms` with their `state`.
 
 ## The registry entry (the bot owner adds it)
 

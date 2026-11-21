@@ -78,6 +78,8 @@ stream to the browser, and what the turn has spent. `graph/turn.py` (`bind`) ada
 | The bot never publishes | there is no publishing tool: a draft reaches the app only when the user taps Save |
 | One workspace never sees another's | `auth.py` (signed session tokens), and every query is scoped by app and workspace |
 | A message's spending has a ceiling | `graph/turn.py` (`gate`), checked before every model call |
+| An app's change runs only after the user's tap | `graph/agent.py` (`_app_call`): a tool that isn't read-only is kept in `pending_actions` and shown as a card; `api/chat.py` (`_confirm`) runs it once |
+| The app's own tools are reached as the user | `app_actions.py`: the app's MCP server, called with the user's token; its answers go to the model as data |
 
 ## Reading order
 
