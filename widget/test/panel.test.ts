@@ -450,6 +450,13 @@ describe("panel", () => {
       const css = p.root.querySelector("style")!.textContent!;
       expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\.dot[^}]*animation: none/s);
     });
+
+    // Mike, 21 Nov 2026: on StreakPlan's phone layout the open button sat on the app's tab bar.
+    it("lets the host lift the open button above its own bottom bar", () => {
+      const { p } = setup();
+      const css = p.root.querySelector("style")!.textContent!;
+      expect(css).toMatch(/\.launcher \{[^}]*bottom: calc\(20px \+ var\(--assistant-bottom, 0px\)\)/);
+    });
   });
 });
 
@@ -680,6 +687,34 @@ describe("the app's own tools", () => {
     await flush();
     expect(api.send.mock.calls[0][1]).toBe("How did I do?");
     expect($$(".starter")).toHaveLength(0);
+  });
+
+  it("an answer the cap cut short offers Continue, which sends Continue and goes away", async () => {
+    const send = vi.fn(async (_t: any, _x: string, _f: string[], on: (e: BotEvent) => void) => {
+      on(thr);
+      on({ event: "text", data: { delta: "I stopped here." } } as BotEvent);
+      on({ event: "done", data: { message_id: "m1", cost_usd: 0.1, capped: true } } as BotEvent);
+    });
+    const { $$, api, say, flush } = setup({ send } as any);
+    await say("how did I do?");
+    const [b] = $$(".continue");
+    expect(b.textContent).toBe("Continue");
+    b.click();
+    await flush();
+    expect(api.send.mock.calls[1][1]).toBe("Continue");
+  });
+
+  it("a reloaded thread offers Continue only under its last answer, when that one was cut short", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({
+      messages: [
+        { role: "user", text: "how did I do?" },
+        { role: "assistant", text: "I stopped here.", capped: true },
+      ],
+    }));
+    const { $$, flush } = setup({ thread } as any);
+    await flush();
+    expect($$(".continue")).toHaveLength(1);
   });
 
   it("says it is checking the app while a read runs", async () => {

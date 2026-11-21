@@ -1,8 +1,8 @@
 """The app's own tools in a conversation (the pack's `actions`): a read runs at once and its answer reaches the model
 as the app's data; a change waits for the user's tap on a card; nothing here names any app or platform."""
 
-from fakes import FakeActions, FakeLlm, Reply, call
-from graph_harness import Harness, make_pack, system_of, tool_results
+from fakes import FakeActions, FakeLlm, Out, Reply, call
+from graph_harness import CAP_TEXT, Harness, make_pack, system_of, tool_results
 
 from assistant.app_actions import ActionResult
 from assistant.packs import Actions
@@ -146,3 +146,37 @@ async def test_an_unknown_tool_name_lists_this_turns_tools():
     llm = FakeLlm({"CONVERSE": [Reply(calls=[call("delete_everything")]), "Sorry."]})
     await Harness(llm, pack=acting_pack(writes=False), actions=FakeActions()).send("x")
     assert told(llm) == "error: unknown tool 'delete_everything'; the tools are list_items, get_stats, move_item"
+
+
+# ---- a message the cap cut short (Mike, 21 Nov 2026: "we need a way to let the user know") ----
+
+
+async def test_a_capped_message_says_so_and_its_reads_carry_into_continue():
+    actions = FakeActions(answers={"get_stats": "posts: 10, best: 732 views", "list_items": "item A, item B"})
+    # one call reads both and reaches the cap, so the answer's call never runs
+    both = Out(Reply(calls=[call("get_stats"), call("list_items")]), cost=0.06)
+    llm = FakeLlm({"CONVERSE": [both, "From what I read: 10 posts.", "You're welcome."]})
+    h = Harness(llm, pack=acting_pack(writes=False).model_copy(update={"message_usd_cap": 0.05}), actions=actions)
+    state = await h.send("how did I do?")
+    assert state["capped"] is True and h.text().endswith(CAP_TEXT)
+    assert "continue" in CAP_TEXT.lower()
+    assert [r[0] for r in state["carried"]] == ["get_stats", "list_items"]
+    [ai] = [m for m in state["messages"] if m.type == "ai"]
+    assert ai.additional_kwargs.get("capped") is True  # a reload of the thread knows it was cut short
+
+    state = await h.send("Continue")
+    system = system_of(llm.calls[-1])
+    assert "posts: 10, best: 732 views" in system and "item A, item B" in system  # what it read, kept
+    assert [c[0] for c in actions.calls] == ["get_stats", "list_items"]  # not read again
+    assert state["capped"] is False and state["carried"] == []
+    await h.send("thanks")
+    assert "item A, item B" not in system_of(llm.calls[-1])  # only the message right after
+
+
+async def test_a_message_that_was_not_cut_short_carries_nothing():
+    llm = FakeLlm({"CONVERSE": [Reply(calls=[call("get_stats")]), "10 posts.", "Sure."]})
+    h = Harness(llm, pack=acting_pack(writes=False), actions=FakeActions(answers={"get_stats": "posts: 10"}))
+    state = await h.send("how did I do?")
+    assert state["capped"] is False and state.get("carried", []) == []
+    await h.send("ok")
+    assert "Cut short" not in system_of(llm.calls[-1]) and "posts: 10" not in system_of(llm.calls[-1])

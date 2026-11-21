@@ -80,6 +80,13 @@ def system_prompt(
         if ctx.kept_facts:
             kept = "\n".join(data("kept", k.text, id=k.id) for k in ctx.kept_facts)
             parts.append("Facts they kept in an earlier chat, not used in a post yet:\n" + kept)
+    carried = state.get("carried") or []
+    if carried:
+        read = "\n".join(f"- {name}: {result}" for name, result in carried)
+        parts.append(
+            "Your last message was cut short (it took more work than one message allows). What you had read for it, "
+            "still true now: use it rather than reading it again, then finish what they asked:\n" + data("app", read)
+        )
     ask = state.get("ask") or []
     if ask:
         turns = "\n".join(f"{role}: {text}" for role, text in ask)

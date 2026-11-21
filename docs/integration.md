@@ -69,7 +69,9 @@ workspace), 404 `app` | `thread` | `draft` | `file` | `upload`, 400 for a bad bo
 
 **The easy way:** `<script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session"></script>`
 (optional `data-label`, `data-position="left"`, and `data-schedule-label`: the word before a draft's time picker in
-your app's terms, such as `Post at` or `Send at`; default `Publish at`). It does everything below.
+your app's terms, such as `Post at` or `Send at`; default `Publish at`). It does everything below. Its look follows your
+CSS variables `--assistant-accent`, `--assistant-radius` and `--assistant-font`; `--assistant-bottom` lifts its open
+button above a bar of your own at the bottom of the screen (a phone's tab bar: `html { --assistant-bottom: 4.75rem }`).
 
 ### Send a message: `POST /v1/chat/{app}/messages`
 
@@ -92,7 +94,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `confirm` | `{id, tool, title, lines}`: a change waiting for the user's tap (see Actions); show `title`, the `lines`, and Confirm / Cancel |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
-| `done` | `{message_id, cost_usd}` |
+| `done` | `{message_id, cost_usd, capped?}`: `capped: true` when the pack's `message_usd_cap` cut the answer short (its last line says so). Offer a **Continue** button that sends `Continue`: the next message goes on from what this one read. A thread read marks such an answer `capped: true` too |
 
 `failed` errors: `unavailable` (your app or pack could not be reached), `unauthorized`, `out_of_credits`, `refused`
 (your endpoint said no or answered something the bot could not read), `limit`, `resting` (the bot owner's daily cap
