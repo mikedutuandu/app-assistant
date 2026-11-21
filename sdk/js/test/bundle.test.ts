@@ -33,6 +33,12 @@ describe("the built ./server bundle", () => {
     expect(types).toContain("createAssistantHost");
   });
 
+  it("./view imports nothing (an app's card, MCP Apps, in any chat)", () => {
+    const code = readFileSync(`${root}/dist/view/index.js`, "utf8");
+    expect(code).not.toMatch(/\bfrom\s*["']/);
+    expect(code).toContain("mountAppView");
+  });
+
   it("./react imports only react and is a client component", () => {
     const code = readFileSync(`${root}/dist/react/index.js`, "utf8");
     expect(code.trimStart().startsWith('"use client"')).toBe(true);

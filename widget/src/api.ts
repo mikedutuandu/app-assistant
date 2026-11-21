@@ -1,4 +1,5 @@
 /** The bot's HTTP API: session tokens, SSE over fetch, direct uploads to storage (XHR), actions and reads. */
+import type { AppViewData } from "../../sdk/js/src/view/index";
 
 export interface Draft {
   id: string;
@@ -30,6 +31,7 @@ export type BotEvent =
   | { event: "text"; data: { delta: string } }
   | { event: "draft"; data: Draft }
   | { event: "confirm"; data: Confirm }
+  | { event: "view"; data: AppViewData }
   | { event: "saved"; data: { kind: "facts"; items: string[] } }
   | { event: "note"; data: { text: string } }
   | { event: "done"; data: { message_id: string; cost_usd: number; capped?: boolean } }
@@ -301,6 +303,8 @@ export class BotApi {
       saved?: string[];
       files?: SentFileRef[];
       confirms?: Confirm[];
+      /** The app's cards (MCP Apps) this answer showed. */
+      views?: AppViewData[];
       /** The message's cost cap cut this answer short: Continue goes on from what it read. */
       capped?: boolean;
     }[];

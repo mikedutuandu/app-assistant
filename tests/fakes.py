@@ -191,6 +191,10 @@ class FakeActions:
         self.answers = answers or {}
         self.calls: list[tuple[str, dict, str | None]] = []
         self.listed = 0
+        self.pages: dict = {}  # a tool card's ui:// uri -> its page (app_actions.AppView)
+
+    async def view(self, uri: str):
+        return self.pages.get(uri)
 
     async def list_tools(self):
         self.listed += 1

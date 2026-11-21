@@ -154,6 +154,25 @@ Not on React? The same thing is one script tag:
 <script src="https://bot.example.com/widget.js" data-app="shipnote" data-session-url="/api/assistant/session" async></script>
 ```
 
+## Your app's cards (MCP Apps)
+
+When the pack has `actions`, a read tool can show its result as a card the app draws itself: the tool names a
+`ui://` page in `_meta.ui.resourceUri` and the app's MCP server serves it (`text/html;profile=mcp-app`), as the
+[MCP Apps](https://modelcontextprotocol.io/seps/1865-mcp-apps-interactive-user-interfaces-for-mcp) extension says.
+The same card then shows in Claude, ChatGPT and any other MCP Apps host. The bot's chat window draws it by itself.
+In a chat of your own, draw the bot's `view` event (and a thread read's `views`) with `AppView`:
+
+```tsx
+import { AppView } from "@app-assistant/host/react";
+
+<AppView view={view} onMessage={(text) => send(text)} />;
+```
+
+The page runs in a frame with no origin of its own (`sandbox="allow-scripts"`), under a Content-Security-Policy made
+only from the domains its resource declared (`_meta.ui.csp`). It gets `ui/initialize`, then the tool's input and
+result; it may set its height, open an http(s) link and send a message as the user. Calling the app's tools from a
+card isn't supported yet. Not on React: `mountAppView(container, view, options)` from `@app-assistant/host/view`.
+
 ## More on the server
 
 - `assistant.signToken(workspaceId, "draft" | "delete", ttlSeconds?)`: a token, 1 hour at most (the default).

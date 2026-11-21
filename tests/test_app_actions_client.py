@@ -36,6 +36,7 @@ TOOLS = [
 @pytest.fixture(autouse=True)
 def fresh_cache():
     app_actions._lists.clear()
+    app_actions._views.clear()
 
 
 def pack(tools=None):
@@ -63,6 +64,8 @@ class Server:
             result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "x"}}
         elif method == "tools/list":
             result = {"tools": TOOLS}
+        elif method == "resources/read":
+            result = self.answers.get(body["params"]["uri"], {"contents": []})
         else:
             result = self.answers.get(body["params"]["name"], {"content": [{"type": "text", "text": "done"}]})
         message = {"jsonrpc": "2.0", "id": body["id"], "result": result}
@@ -163,3 +166,73 @@ def test_offered_keeps_the_packs_choice_and_the_bots_names():
     tools = [AppTool(n, n, "", {"type": "object"}, True) for n in ("a", "b", "save_facts")]
     assert [t.name for t in offered(tools, pack(), {"save_facts"})] == ["a", "b"]
     assert [t.name for t in offered(tools, pack(tools=["b"]), {"save_facts"})] == ["b"]
+
+
+# ---- MCP Apps: a tool's card (Mike, 21 Nov 2026: show the app's data as SuperX does, not only text) ----
+
+CARD = "<!doctype html><html><body><div id=card></div></body></html>"
+
+
+async def test_the_client_says_it_shows_cards_and_reads_each_tools_card():
+    server = Server()
+    TOOLS.append(
+        {
+            "name": "list_posts",
+            "description": "Posts.",
+            "inputSchema": {"type": "object"},
+            "annotations": {"readOnlyHint": True},
+            "_meta": {"ui": {"resourceUri": "ui://cards/posts"}},
+        }
+    )
+    TOOLS.append(
+        {"name": "card_only", "description": "x", "_meta": {"ui": {"resourceUri": "ui://x", "visibility": ["app"]}}}
+    )
+    try:
+        tools = await McpAppActions(pack(), session(), client(server)).list_tools()
+    finally:
+        del TOOLS[-2:]
+    init = json.loads(server.seen[0].content)
+    assert init["params"]["capabilities"] == {
+        "extensions": {"io.modelcontextprotocol/ui": {"mimeTypes": ["text/html;profile=mcp-app"]}}
+    }
+    by_name = {t.name: t for t in tools}
+    assert by_name["list_posts"].ui_uri == "ui://cards/posts"
+    assert by_name["get_stats"].ui_uri is None
+    assert "card_only" not in by_name  # only the card itself may call it, never the model
+
+
+async def test_a_cards_page_is_read_once_and_kept():
+    server = Server()
+    meta = {"ui": {"csp": {"resourceDomains": ["https://pbs.example"]}, "prefersBorder": True}}
+    server.answers["ui://cards/posts"] = {
+        "contents": [{"uri": "ui://cards/posts", "mimeType": "text/html;profile=mcp-app", "text": CARD, "_meta": meta}]
+    }
+    actions = McpAppActions(pack(), session(), client(server))
+    page = await actions.view("ui://cards/posts")
+    assert page is not None and page.html == CARD and page.prefers_border is True
+    assert page.csp == {"resourceDomains": ["https://pbs.example"]}
+    assert await actions.view("ui://cards/posts") == page
+    assert [json.loads(r.content).get("method") for r in server.seen].count("resources/read") == 1
+
+
+async def test_a_card_that_isnt_html_or_is_too_big_is_left_out():
+    server = Server()
+    server.answers["ui://a"] = {"contents": [{"uri": "ui://a", "mimeType": "application/json", "text": "{}"}]}
+    big = "x" * (app_actions.VIEW_HTML_BYTES + 1)
+    server.answers["ui://b"] = {"contents": [{"uri": "ui://b", "mimeType": "text/html;profile=mcp-app", "text": big}]}
+    actions = McpAppActions(pack(), session(), client(server))
+    assert await actions.view("ui://a") is None
+    assert await actions.view("ui://b") is None
+
+
+async def test_a_result_keeps_what_the_card_is_drawn_from():
+    server = Server()
+    server.answers["get_stats"] = {
+        "content": [{"type": "text", "text": "posts: 10"}],
+        "structuredContent": {"posts": [{"text": "hi", "views": 79}]},
+    }
+    result = await McpAppActions(pack(), session(), client(server)).call("get_stats", {})
+    assert result.raw == {
+        "content": [{"type": "text", "text": "posts: 10"}],
+        "structuredContent": {"posts": [{"text": "hi", "views": 79}]},
+    }

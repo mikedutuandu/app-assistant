@@ -13,6 +13,7 @@ Streamable HTTP, as the official MCP SDKs serve it: one `initialize` per client 
 when the server gives one), then JSON-RPC requests answered as JSON or as an event stream with one message.
 """
 
+import base64
 import itertools
 import json
 import logging
@@ -35,6 +36,12 @@ MAX_TOOLS = 40  # an app's tools offered to the model
 RESULT_CHARS = 12_000  # a tool's result as the model reads it
 DESCRIPTION_CHARS = 1_000
 LIST_TTL_SECONDS = 300  # an app's tool list is asked again after this
+# MCP Apps (the `io.modelcontextprotocol/ui` extension): a tool may name a `ui://` page that shows its result as a card.
+UI_EXTENSION = "io.modelcontextprotocol/ui"
+UI_MIME = "text/html;profile=mcp-app"
+VIEW_HTML_BYTES = 300_000  # a card's page, at most
+VIEW_RESULT_BYTES = 100_000  # the result a card is drawn from, at most
+VIEW_TTL_SECONDS = 300  # a card's page is read again after this
 _NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -45,18 +52,31 @@ class AppTool:
     description: str
     input_schema: dict
     read_only: bool  # MCP's `readOnlyHint: true`: runs without asking
+    ui_uri: str | None = None  # MCP Apps: the `ui://` page that shows this tool's result as a card
+
+
+@dataclass(frozen=True)
+class AppView:
+    """A tool's card page (MCP Apps), as the app serves it."""
+
+    html: str
+    csp: dict | None = None
+    prefers_border: bool | None = None
 
 
 @dataclass(frozen=True)
 class ActionResult:
     text: str  # the result's text content, cut to RESULT_CHARS
     is_error: bool
+    raw: dict | None = None  # the result as the app sent it (content, structuredContent), for a card; None if too big
 
 
 class AppActions(Protocol):
     async def list_tools(self) -> list[AppTool]: ...
 
     async def call(self, name: str, arguments: dict, key: str | None = None) -> ActionResult: ...
+
+    async def view(self, uri: str) -> AppView | None: ...
 
 
 def offered(tools: list[AppTool], pack: AppPack, reserved: set[str]) -> list[AppTool]:
@@ -91,6 +111,12 @@ def _tool(raw: Any) -> AppTool | None:
     if not isinstance(schema, dict) or schema.get("type") != "object":
         schema = {"type": "object", "properties": {}}
     notes = raw.get("annotations") if isinstance(raw.get("annotations"), dict) else {}
+    meta = raw.get("_meta") if isinstance(raw.get("_meta"), dict) else {}
+    ui = meta.get("ui") if isinstance(meta.get("ui"), dict) else {}
+    uri = ui.get("resourceUri", meta.get("ui/resourceUri"))
+    visibility = ui.get("visibility")
+    if isinstance(visibility, list) and "model" not in visibility:
+        return None  # a tool only the card itself may call: never the model's
     title = raw.get("title") or notes.get("title") or raw["name"].replace("_", " ").capitalize()
     description = raw.get("description") if isinstance(raw.get("description"), str) else ""
     return AppTool(
@@ -99,6 +125,7 @@ def _tool(raw: Any) -> AppTool | None:
         description=description,
         input_schema=schema,
         read_only=notes.get("readOnlyHint") is True,
+        ui_uri=uri if isinstance(uri, str) and uri.startswith("ui://") and len(uri) <= 500 else None,
     )
 
 
@@ -113,10 +140,38 @@ def result_of(body: Any) -> ActionResult:
     text = text or "(done, no text)"
     if len(text) > RESULT_CHARS:
         text = text[:RESULT_CHARS] + " (cut)"
-    return ActionResult(text, body.get("isError") is True)
+    raw = {k: body[k] for k in ("content", "structuredContent", "_meta") if k in body}
+    too_big = len(json.dumps(raw, ensure_ascii=False).encode()) > VIEW_RESULT_BYTES
+    return ActionResult(text, body.get("isError") is True, None if too_big else raw)
+
+
+def view_of(body: Any, uri: str) -> AppView | None:
+    """A `resources/read` answer as a card's page: its first HTML entry for `uri`, within VIEW_HTML_BYTES."""
+    if not isinstance(body, dict):
+        return None
+    for c in body.get("contents") or []:
+        if not isinstance(c, dict) or c.get("uri") != uri:
+            continue
+        if not str(c.get("mimeType", "")).startswith("text/html"):
+            continue
+        html = c.get("text")
+        if not isinstance(html, str) and isinstance(c.get("blob"), str):
+            try:
+                html = base64.b64decode(c["blob"]).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                html = None
+        if not isinstance(html, str) or not html.strip() or len(html.encode()) > VIEW_HTML_BYTES:
+            return None
+        meta = c.get("_meta") if isinstance(c.get("_meta"), dict) else {}
+        ui = meta.get("ui") if isinstance(meta.get("ui"), dict) else {}
+        csp = ui.get("csp") if isinstance(ui.get("csp"), dict) else None
+        border = ui.get("prefersBorder")
+        return AppView(html=html, csp=csp, prefers_border=border if isinstance(border, bool) else None)
+    return None
 
 
 _lists: dict[tuple[str, str], tuple[float, list[AppTool]]] = {}  # (app, workspace) -> (when, tools)
+_views: dict[tuple[str, str], tuple[float, AppView | None]] = {}  # (app, uri) -> (when, page)
 
 
 class McpAppActions:
@@ -155,6 +210,21 @@ class McpAppActions:
         body = await self._rpc("tools/call", {"name": name, "arguments": arguments}, key)
         return result_of(body)
 
+    async def view(self, uri: str) -> AppView | None:
+        """A tool's card page (`resources/read` of its `ui://` uri), kept VIEW_TTL_SECONDS per app; None when the app
+        can't give one (the card is then left out, the words still come)."""
+        key = (self.pack.id, uri)
+        kept = _views.get(key)
+        if kept and 0 <= time.monotonic() - kept[0] < VIEW_TTL_SECONDS:
+            return kept[1]
+        try:
+            found = view_of(await self._rpc("resources/read", {"uri": uri}), uri)
+        except ToolError as e:
+            log.warning("app %s: card %s could not be read (%s)", self.pack.id, uri, e.kind)
+            return None
+        _views[key] = (time.monotonic(), found)
+        return found
+
     async def _rpc(self, method: str, params: dict, key: str | None = None) -> Any:
         if self.timer is None:
             return await self._send(method, params, key)
@@ -168,7 +238,8 @@ class McpAppActions:
                 "initialize",
                 {
                     "protocolVersion": PROTOCOL_VERSION,
-                    "capabilities": {},
+                    # MCP Apps: this client shows a tool's `ui://` page as a card
+                    "capabilities": {"extensions": {UI_EXTENSION: {"mimeTypes": [UI_MIME]}}},
                     "clientInfo": {"name": "app-assistant", "version": "1"},
                 },
                 None,

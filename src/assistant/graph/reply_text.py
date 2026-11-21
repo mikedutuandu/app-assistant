@@ -19,6 +19,7 @@ BUBBLE_ENDS = (
     "draft",
     "saved",
     "confirm",
+    "view",
 )  # events the widget shows outside a text bubble: the next text starts anew
 
 

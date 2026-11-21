@@ -1,6 +1,7 @@
 /** The button and the chat panel, in a shadow root. Server and user text only ever goes in through textContent. */
 import { type ActionBody, ApiError, AuthLost, type BotApi, type BotEvent, type Confirm, type Draft } from "./api";
 import { startRecording, type Recording } from "./recorder";
+import { mountAppView, type AppViewData, type MountedView } from "../../sdk/js/src/view/index";
 import { icon, type IconName } from "./icons";
 import { renderMarkdown } from "./markdown";
 import { CSS } from "./styles";
@@ -223,6 +224,16 @@ export function createPanel(opts: PanelOptions) {
     m.after(h("div", { class: "acts" }, copy));
   }
 
+  // An app's card (MCP Apps): its own page in a sandboxed frame, given what its tool read. Drawn before the words that
+  // follow it; a message it asks to send is sent as the user's.
+  const views = new Set<MountedView>();
+  function renderView(v: AppViewData) {
+    const box = h("div", { class: `view${v.prefers_border === false ? "" : " framed"}` });
+    list.append(box);
+    views.add(mountAppView(box, v, { onMessage: (text) => void sendTurn(text, []), maxHeight: 520 }));
+    scroll();
+  }
+
   // A picture, full size over the chat; Escape or a tap closes it.
   function viewImage(src: string, alt: string) {
     const closeView = iconButton("view-close", "close", "Close picture", 20);
@@ -339,6 +350,8 @@ export function createPanel(opts: PanelOptions) {
   // ---- a new chat, and the past ones ----
   /** An empty chat on screen (the thread is kept by the bot; Past chats opens it again). */
   function clearChat() {
+    for (const v of views) v.destroy();
+    views.clear();
     list.replaceChildren();
     syncers.clear();
     startersEl = null;
@@ -434,6 +447,7 @@ export function createPanel(opts: PanelOptions) {
         // card comes after the words that explain it).
         if (m.saved?.length) renderSaved(m.saved);
         for (const d of m.drafts ?? []) renderDraft(d);
+        for (const v of m.views ?? []) renderView(v);
         if (m.text) addActions(addBot(m.text));
         for (const c of m.confirms ?? []) renderConfirm(c);
       }
@@ -849,6 +863,11 @@ export function createPanel(opts: PanelOptions) {
           hideWorking();
           bubble = null;
           renderConfirm(d);
+          break;
+        case "view":
+          hideWorking();
+          bubble = null;
+          renderView(d);
           break;
         case "saved":
           hideWorking();

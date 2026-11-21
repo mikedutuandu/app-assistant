@@ -189,6 +189,20 @@ async def _save_draft(pool, t: TurnInput, chat_id: str, message_id: str, draft: 
 
 
 PENDING_HOURS = 24  # a change not confirmed by then can't be any more
+MAX_VIEWS = 6  # an app's cards in one message, at most
+
+
+def view_event(
+    view_id: str, tool: str, html: str, csp: dict | None, border: bool | None, input_: dict, result: dict
+) -> dict:
+    """A card as the chat gets it (the `view` event, and a thread read's `views`): the app's page, what the tool was
+    asked and what it answered. The chat draws the page in a sandboxed frame (MCP Apps)."""
+    out: dict = {"id": view_id, "tool": tool, "html": html, "input": input_, "result": result}
+    if csp is not None:
+        out["csp"] = csp
+    if border is not None:
+        out["prefers_border"] = border
+    return out
 
 
 async def _save_change(pool, t: TurnInput, chat_id: str, message_id: str, change: dict) -> str:
@@ -371,6 +385,40 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
             state.pool, t, chat_id, message_id, {**change, "lines": confirm_lines(change["arguments"])}
         )
 
+    views_shown = 0
+
+    async def on_view(read: dict) -> dict | None:
+        """A read's card (MCP Apps): the app's page for it, kept with the thread, as the `view` event to show."""
+        nonlocal views_shown
+        if actions is None or views_shown >= MAX_VIEWS:
+            return None
+        page = await actions.view(read["uri"])
+        if page is None:
+            return None
+        views_shown += 1
+        view_id = new_id()
+        async with state.pool.connection() as conn:
+            await conn.execute(
+                "insert into app_views (id, app, workspace, thread_id, message_id, tool, html, csp, prefers_border,"
+                " input, result) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    view_id,
+                    t.session.app,
+                    t.session.workspace,
+                    chat_id,
+                    message_id,
+                    read["tool"],
+                    page.html,
+                    Jsonb(page.csp) if page.csp is not None else None,
+                    page.prefers_border,
+                    Jsonb(read["input"]),
+                    Jsonb(read["result"]),
+                ),
+            )
+        return view_event(
+            view_id, read["tool"], page.html, page.csp, page.prefers_border, read["input"], read["result"]
+        )
+
     actions = state.actions_for(t.pack, t.session) if t.pack.actions is not None else None
     if actions is not None and hasattr(actions, "timer"):
         actions.timer = timer
@@ -386,6 +434,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         on_cost,
         actions_factory=(lambda: actions) if actions is not None else None,
         on_pending=on_pending,
+        on_view=on_view,
     )
     config = {"configurable": {"thread_id": thread_id(t.session.app, t.session.workspace, chat_id)}}
     failure: Exception | None = None

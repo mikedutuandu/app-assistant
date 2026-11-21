@@ -62,16 +62,19 @@ def build_graph(
     on_cost: Callable[[float, int], Awaitable[None]] | None = None,
     actions_factory: Callable[[], AppActions | None] | None = None,
     on_pending: Callable[[dict], Awaitable[str]] | None = None,
+    on_view: Callable[[dict], Awaitable[dict | None]] | None = None,
 ) -> CompiledStateGraph:
     """One graph per request (compiling is cheap). Invoke it with `{"messages": [HumanMessage(text)], "file_ids":
     [...], "draft_id": <the draft the message is about, or None>}` and the config `{"configurable": {"thread_id": thread_id(app, workspace, chat_id)}}`.
 
     `on_cost(cost_usd, n)` is awaited as each model call ends (n counts the turn's calls from 1) and must not raise.
     `actions_factory` reaches the app's MCP server (the pack's `actions`); `on_pending(change)` keeps a change waiting
-    for the user's tap and returns its id (`{"tool", "title", "arguments"}`)."""
+    for the user's tap and returns its id (`{"tool", "title", "arguments"}`); `on_view(read)` keeps a read's card
+    (MCP Apps: `{"tool", "uri", "input", "result"}`) and returns the `view` event to show, or None."""
     deps = Deps(pack, llm, tools_factory, on_event, read_files, read_link, on_cost or _no_cost)
     deps.actions_factory = actions_factory
     deps.on_pending = on_pending
+    deps.on_view = on_view
     graph = StateGraph(ChatState)
     for node in (nodes.read_files, nodes.load_context, nodes.call_model, nodes.run_tools):
         graph.add_node(node.__name__, bind(node, deps))

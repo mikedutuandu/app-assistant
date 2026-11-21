@@ -53,6 +53,12 @@ class Harness:
         self.links: dict[str, FileReading | Exception] = {}
         self.link_calls: list[str] = []
         self.costs: list[tuple[float, int]] = []
+        self.views: list[dict] = []  # the reads shown as cards (on_view)
+        self.view_shown = True  # False: the app gave no card page
+
+    async def on_view(self, read: dict) -> dict | None:
+        self.views.append(read)
+        return {"id": f"v{len(self.views)}", "tool": read["tool"], "html": "<p>card</p>"} if self.view_shown else None
 
     async def on_pending(self, change: dict) -> str:
         self.changes.append(change)
@@ -100,6 +106,7 @@ class Harness:
             self.on_cost,
             actions_factory=(lambda: self.actions) if self.actions is not None else None,
             on_pending=self.on_pending,
+            on_view=self.on_view,
         )
         config = {"configurable": {"thread_id": thread_id(self.pack.id, "ws1", chat)}}
         state = {

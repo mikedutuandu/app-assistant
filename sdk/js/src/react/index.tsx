@@ -2,7 +2,10 @@
  * `@app-assistant/host/react`: the chat window. Loads the bot's `widget.js` once per page with the data attributes
  * it reads; the widget draws its own floating open button and panel.
  */
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { mountAppView, type AppViewData, type AppViewOptions } from "../view/index";
+
+export type { AppViewData, AppViewOptions } from "../view/index";
 
 export interface AssistantChatProps {
   /** Your app id. */
@@ -56,4 +59,33 @@ export function AssistantChat(props: AssistantChatProps) {
       {children}
     </button>
   );
+}
+
+export interface AppViewProps extends AppViewOptions {
+  /** A card from the bot (a `view` event, or one of a thread read's `views`). */
+  view: AppViewData;
+  className?: string;
+}
+
+/**
+ * An app's card in your own chat (MCP Apps): its page in a sandboxed frame, given the tool's input and result. Draw
+ * it where the bot sent it, before the words that follow. `onMessage` sends what the card asks as the user's message.
+ */
+export function AppView({ view, className, onMessage, onOpenLink, maxHeight, locale }: AppViewProps) {
+  const box = useRef<HTMLDivElement>(null);
+  const handlers = useRef({ onMessage, onOpenLink });
+  handlers.current = { onMessage, onOpenLink };
+  useEffect(() => {
+    if (!box.current) return;
+    const mounted = mountAppView(box.current, view, {
+      onMessage: (text) => handlers.current.onMessage?.(text),
+      onOpenLink: handlers.current.onOpenLink ? (url) => handlers.current.onOpenLink?.(url) : undefined,
+      maxHeight,
+      locale,
+    });
+    return () => mounted.destroy();
+    // A card's page never changes once shown: draw it again only for another card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.id, view.html, maxHeight, locale]);
+  return <div ref={box} className={className} data-app-view={view.tool} />;
 }

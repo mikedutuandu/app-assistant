@@ -1,7 +1,7 @@
 {
   "name": "@app-assistant/host",
-  "version": "0.3.1",
-  "description": "Host the app-assistant writing bot in a JavaScript app: the contract's four endpoints, its pack and tokens on Web Request/Response, and the chat window for React.",
+  "version": "0.4.0",
+  "description": "Host the app-assistant writing bot in a JavaScript app: the contract's four endpoints, its pack and tokens on Web Request/Response, the chat window for React, and an app's cards (MCP Apps) in your own chat.",
   "license": "MIT",
   "homepage": "https://github.com/mikedutuandu/app-assistant/tree/main/sdk/js#readme",
   "bugs": "https://github.com/mikedutuandu/app-assistant/issues",
@@ -23,6 +23,10 @@
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
+    },
+    "./view": {
+      "types": "./dist/view/index.d.ts",
+      "import": "./dist/view/index.js"
     },
     "./package.json": "./package.json"
   },
