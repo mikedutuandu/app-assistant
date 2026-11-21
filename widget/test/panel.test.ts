@@ -64,7 +64,7 @@ describe("panel", () => {
     await say("hi");
     const el = $$(".draft")[0];
     expect(el.querySelector(".post")!.textContent).toBe("Dark mode is live.");
-    expect(Array.from(el.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Add to Schedule", "Shorter", "Another angle"]);
+    expect(Array.from(el.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Save draft", "Shorter", "Another angle"]);
   });
 
   it("renders a thread as numbered posts", async () => {
@@ -108,7 +108,7 @@ describe("panel", () => {
     expect(add.disabled || shorter.disabled).toBe(false);
   });
 
-  it("Add to Schedule becomes Added with an Edit link", async () => {
+  it("Save draft becomes Saved with an Edit link", async () => {
     const saved: string[] = [];
     window.addEventListener("assistant:saved", (e) => saved.push((e as CustomEvent).detail.draft_id));
     let release!: () => void;
@@ -121,7 +121,7 @@ describe("panel", () => {
     expect(add.disabled).toBe(true);
     release();
     await flush();
-    expect(add.textContent).toBe("Added to your Schedule");
+    expect(add.textContent).toBe("Saved");
     expect(saved).toEqual(["sch1"]);
     const edit = $$(".draft")[0].querySelector("a") as HTMLAnchorElement;
     expect(edit.href).toBe("https://app.test/edit/d1");
@@ -138,12 +138,12 @@ describe("panel", () => {
     const label = () => add.getAttribute("aria-label") ?? "";
     expect(label().startsWith(add.textContent!)).toBe(true);
     add.click();
-    expect(label()).toMatch(/^Adding/);
+    expect(label()).toMatch(/^Saving/);
     release();
     await flush();
-    expect(add.textContent).toBe("Added to your Schedule");
-    expect(label().startsWith("Added to your Schedule")).toBe(true);
-    expect(label()).not.toMatch(/^Add /);
+    expect(add.textContent).toBe("Saved");
+    expect(label().startsWith("Saved")).toBe(true);
+    expect(label()).not.toMatch(/^Save /);
   });
 
   it("no Edit link when edit_url is null; retry after failure reuses the action id", async () => {
@@ -159,14 +159,15 @@ describe("panel", () => {
     await flush();
     expect(act.mock.calls[0][1].action_id).toBe(act.mock.calls[1][1].action_id);
     expect($$(".draft")[0].querySelector("a")).toBeNull();
-    expect(add.textContent).toBe("Added to your Schedule");
+    expect(add.textContent).toBe("Saved");
   });
 
   it("renders a saved line quietly", async () => {
-    const { $$, say } = setup({}, [thr(), { event: "saved", data: { kind: "facts", items: ["Shipped dark mode", "120 users"] } } as BotEvent]);
+    const { $$, say } = setup({}, [thr(), { event: "saved", data: { kind: "facts", items: ["Shipped dark mode.", "120 users"] } } as BotEvent]);
     await say("hi");
     const line = $$(".saved")[0];
     expect(line.textContent).toContain("Shipped dark mode; 120 users");
+    expect(line.textContent).not.toMatch(/[.;]{2}/);
     expect(line.querySelector("svg")).not.toBeNull();
     expect(line.querySelector("button, input")).toBeNull();
     expect(line.classList.contains("msg")).toBe(false);
@@ -246,7 +247,7 @@ describe("panel", () => {
     expect($$(".draft")).toHaveLength(2);
     expect($$(".draft")[1].querySelectorAll("li")).toHaveLength(2);
     expect($$(".draft")[1].querySelector("a")!.getAttribute("href")).toBe("https://app.test/e/2");
-    expect(($$(".draft")[1].querySelector("button") as HTMLButtonElement).textContent).toBe("Added to your Schedule");
+    expect(($$(".draft")[1].querySelector("button") as HTMLButtonElement).textContent).toBe("Saved");
     expect($$(".saved")[0].textContent).toContain("Shipped dark mode");
     ($$(".draft")[0].querySelector("button") as HTMLButtonElement).click();
     await flush();
@@ -447,3 +448,54 @@ describe("panel", () => {
     });
   });
 });
+
+// A message shows what it sent (21 Nov 2026: a picture showed only until a reload, a voice note never played).
+describe("a message's files", () => {
+  it("a sent picture, voice note and PDF show in the message at once, from the browser's own copies", async () => {
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: (f: File) => `blob:${f.name}` }));
+    const upload = vi
+      .fn()
+      .mockResolvedValueOnce({ file_id: "i1", kind: "image", thread_id: "t1" })
+      .mockResolvedValueOnce({ file_id: "v1", kind: "voice", thread_id: "t1" })
+      .mockResolvedValueOnce({ file_id: "p1", kind: "pdf", thread_id: "t1" });
+    const { $, $$, say, flush } = setup({ upload } as any, [{ event: "thread", data: { thread_id: "t1", title: "" } } as BotEvent]);
+    const input = $("input[type=file]") as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        new File(["x"], "shot.png", { type: "image/png" }),
+        new File(["x"], "voice.webm", { type: "audio/webm" }),
+        new File(["x"], "deck.pdf", { type: "application/pdf" }),
+      ],
+    });
+    input.dispatchEvent(new Event("change"));
+    await flush();
+    await flush();
+    await say("look");
+    const mine = $$(".msg.user")[0];
+    expect(mine.querySelector("img")!.getAttribute("src")).toBe("blob:shot.png");
+    expect(mine.querySelector("audio")!.getAttribute("src")).toBe("blob:voice.webm");
+    expect(mine.querySelector("a.file")!.getAttribute("href")).toBe("blob:deck.pdf");
+    expect(mine.textContent).toContain("look");
+  });
+
+  it("after a reload, each message's files come back through the bot's short links", async () => {
+    sessionStorage.setItem("assistant:thread:demo", "t1");
+    const thread = vi.fn(async () => ({
+      messages: [
+        { role: "user", text: "look", files: [{ id: "i1", kind: "image" }, { id: "v1", kind: "voice" }, { id: "p1", kind: "pdf" }] },
+        { role: "assistant", text: "Nice." },
+      ],
+    }));
+    const fileLink = vi.fn(async (_t: string, id: string) => ({ url: `https://files.test/${id}`, mime: "x", kind: "x" }));
+    const { $$, flush } = setup({ thread, fileLink } as any);
+    await flush();
+    await flush();
+    const mine = $$(".msg.user")[0];
+    expect(fileLink).toHaveBeenCalledWith("t1", "i1");
+    expect(mine.querySelector("img")!.getAttribute("src")).toBe("https://files.test/i1");
+    expect(mine.querySelector("audio")!.getAttribute("src")).toBe("https://files.test/v1");
+    expect(mine.querySelector("a.file")!.getAttribute("href")).toBe("https://files.test/p1");
+  });
+});
+

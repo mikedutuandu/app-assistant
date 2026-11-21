@@ -11,7 +11,7 @@ export interface AssistantChatProps {
   botUrl: string;
   /** Your route that answers `{token}` for the signed-in user. Default `/api/assistant/session`. */
   sessionUrl?: string;
-  /** The open button's words. The widget's default is "Write with me". */
+  /** The open button's words. The widget's default is "Write with AI". */
   label?: string;
   position?: "left" | "right";
   /** An open button of your own, in your page's flow, as well as the widget's floating one. */

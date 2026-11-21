@@ -334,8 +334,10 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
     failure: Exception | None = None
     capped = False
     try:
-        # the turn's id rides on the user's message, so a reload can show each turn's drafts under its reply
-        human = HumanMessage(t.text, additional_kwargs={"turn": message_id})
+        # the turn's id rides on the user's message, so a reload can show each turn's drafts under its reply; its files
+        # too, so a reload can show them with the message
+        extra: dict = {"turn": message_id, **({"file_ids": list(t.file_ids)} if t.file_ids else {})}
+        human = HumanMessage(t.text, additional_kwargs=extra)
         inputs = {"messages": [human], "file_ids": t.file_ids, "draft_id": t.draft_id, "ask": t.ask}
         final = await graph.ainvoke(inputs, config)
         cost = float(final.get("cost_usd", 0.0) or 0.0)
