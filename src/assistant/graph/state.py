@@ -27,6 +27,7 @@ class ChatState(TypedDict, total=False):
 
     ask: list[tuple[str, str]]  # the chat's other turns (role, text) from the host, for this turn only
     changes: list[dict]  # the changes asked in this chat and what became of them ({title, state, result}), this turn
+    carried: list[tuple[str, str]]  # (tool, result) read by the last message before the cap cut it short; next only
 
     # This turn's work (reset by read_files)
     cost_usd: float

@@ -92,7 +92,7 @@ The answer is a Server-Sent Events stream. Each event's `data` is JSON:
 | `saved` | `{kind: "facts", items}`: facts the bot kept from this message |
 | `confirm` | `{id, tool, title, lines}`: a change waiting for the user's tap (see Actions); show `title`, the `lines`, and Confirm / Cancel |
 | `failed` | `{error, message}`: the turn stopped; show `message` |
-| `done` | `{message_id, cost_usd}` |
+| `done` | `{message_id, cost_usd, capped?}`: `capped: true` when the pack's `message_usd_cap` cut the answer short (its last line says so). Offer a **Continue** button that sends `Continue`: the next message goes on from what this one read. A thread read marks such an answer `capped: true` too |
 
 `failed` errors: `unavailable` (your app or pack could not be reached), `unauthorized`, `out_of_credits`, `refused`
 (your endpoint said no or answered something the bot could not read), `limit`, `resting` (the bot owner's daily cap

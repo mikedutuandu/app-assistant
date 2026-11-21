@@ -6,9 +6,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from assistant.files.read import FileReading, Meter
 from assistant.graph.build import build_graph, serializer, thread_id
+from assistant.graph.turn import CAP_TEXT  # noqa: F401 - the tests read the bot's own words
 from assistant.packs import AppPack, Models, WriteSpec
 
-CAP_TEXT = "That's as far as I can go on this message. Send another to continue."
 RULES = {"max_chars": 280, "no_links": True, "no_dashes": True, "may_carry_image": True}
 
 

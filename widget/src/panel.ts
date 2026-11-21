@@ -276,6 +276,8 @@ export function createPanel(opts: PanelOptions) {
         for (const c of m.confirms ?? []) renderConfirm(c);
         if (m.text) addMsg("msg bot", m.text);
       }
+      const last = t.messages[t.messages.length - 1];
+      if (last?.role === "assistant" && last.capped) showContinue();
     } catch (e) {
       if (e instanceof AuthLost) stop(SIGN_IN);
       else if (e instanceof ApiError && e.status === 404) store.set(null); // the thread is gone: start fresh
@@ -311,6 +313,21 @@ export function createPanel(opts: PanelOptions) {
   const dropStarters = () => {
     startersEl?.remove();
     startersEl = null;
+  };
+
+  // ---- Continue, under an answer the message's cost cap cut short ----
+  let continueEl: HTMLElement | null = null;
+  function showContinue() {
+    dropContinue();
+    const b = h("button", { class: "starter continue", type: "button", text: "Continue" });
+    b.addEventListener("click", () => void sendTurn("Continue", []));
+    continueEl = h("div", { class: "starters" }, b);
+    list.append(continueEl);
+    scroll();
+  }
+  const dropContinue = () => {
+    continueEl?.remove();
+    continueEl = null;
   };
 
   // ---- a change waiting for the user's OK ----
@@ -601,6 +618,7 @@ export function createPanel(opts: PanelOptions) {
   async function sendTurn(text: string, sent: Chip[], draftId?: string) {
     if (busy || signedOut) return;
     dropStarters();
+    dropContinue();
     const fromComposer = draftId === undefined;
     busy = true;
     refresh();
@@ -673,6 +691,9 @@ export function createPanel(opts: PanelOptions) {
         case "failed":
           hideWorking();
           showError(d.message || "Something went wrong. Please try again.");
+          break;
+        case "done":
+          if (d.capped) showContinue();
           break;
       }
     };

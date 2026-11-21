@@ -32,7 +32,7 @@ export type BotEvent =
   | { event: "confirm"; data: Confirm }
   | { event: "saved"; data: { kind: "facts"; items: string[] } }
   | { event: "note"; data: { text: string } }
-  | { event: "done"; data: { message_id: string; cost_usd: number } }
+  | { event: "done"; data: { message_id: string; cost_usd: number; capped?: boolean } }
   | { event: "failed"; data: { error: string; message: string } }
   | { event: string; data: any };
 
@@ -301,6 +301,8 @@ export class BotApi {
       saved?: string[];
       files?: SentFileRef[];
       confirms?: Confirm[];
+      /** The message's cost cap cut this answer short: Continue goes on from what it read. */
+      capped?: boolean;
     }[];
   }> {
     return this.request("GET", `/threads/${encodeURIComponent(id)}`);

@@ -412,6 +412,18 @@ async def test_charge_failure_still_ends_done(api: Api):
     assert api.tools.calls.count("charge") == 4  # all four model calls tried to charge; the failures were only logged
 
 
+async def test_a_capped_message_is_marked_in_done_and_in_the_thread(api: Api):
+    api.llm.script = {"CONVERSE": [Out(Reply(calls=[call("save_facts", facts=[{"text": FACT}])]), cost=0.06)]}
+    events = await api.send(FACT)
+    [done] = of(events, "done")
+    assert done["capped"] is True
+    tid = of(events, "thread")[0]["thread_id"]
+    r = await api.client.get(f"/v1/chat/real/threads/{tid}", headers=api.headers())
+    [user, bot] = r.json()["messages"]
+    assert bot["capped"] is True and "continue" in bot["text"].lower()
+    assert "capped" not in user
+
+
 async def test_user_cap_fails_before_anything(api: Api):
     assert await hit(
         api.pool, user_key("real", "ws1"), timedelta(hours=1), USER_MESSAGES_PER_HOUR, USER_MESSAGES_PER_HOUR

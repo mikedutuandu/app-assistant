@@ -533,7 +533,8 @@ async def test_the_cap_is_checked_before_a_drafting_tool():
     assert state["capped"] is True
     assert shown(h)[-3:] == [("text", "On it."), ("saved", ""), ("text", CAP_TEXT)]  # a new bubble: no blank lines
     assert [f.text for f in state["facts"]] == [FACT1, FACT2]  # what the turn did before the cap is kept
-    assert state["messages"][-1].content == "On it."
+    assert state["messages"][-1].content == f"On it.\n\n{CAP_TEXT}"  # as the user saw it
+    assert state["messages"][-1].additional_kwargs == {"capped": True}
 
 
 async def test_tool_rounds_stop_while_the_cap_still_leaves_room_for_the_answer():

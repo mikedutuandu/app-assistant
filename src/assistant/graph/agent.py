@@ -42,7 +42,7 @@ from assistant.graph.model_input import (
 from assistant.graph.prompts import data
 from assistant.graph.reply_text import ReplyText
 from assistant.graph.state import ChatState
-from assistant.graph.turn import Turn
+from assistant.graph.turn import CAP_TEXT, Turn
 from assistant.tools import AppContext, ToolError
 from assistant.writer import Draft, DraftResult, WriterDeps, fmt, image_allowed, revise_draft, write_drafts
 
@@ -75,6 +75,7 @@ class AgentTurn:
     ids: set[str] = field(default_factory=set)  # the tool call ids sent back this turn
     asked: bool = False  # a change is waiting for the user's tap: one per message
     last_cost: float = 0.0  # what the last chat call cost: tools stop while the answer still fits under the cap
+    carried: list[tuple[str, str]] = field(default_factory=list)  # what the last message read before its cap
 
     @classmethod
     def begin(cls, state: ChatState, turn: Turn) -> "AgentTurn":
@@ -82,6 +83,7 @@ class AgentTurn:
         agent.facts = list(state.get("facts", []))
         agent.drafts = list(state.get("drafts", []))
         agent.family = dict(state.get("draft_family", {}))
+        agent.carried = list(state.get("carried") or [])
         agent.messages = [{"role": "system", "content": ""}, *history(state, agent.about())]
         agent.start = len(agent.messages)
         return agent
@@ -379,13 +381,33 @@ class AgentTurn:
         if done:
             out["draft_id"] = None
             out["ask"] = []
-            if self.reply.parts:
+            # what this message read, kept for the next one only when the cap cut it short (it goes on from there)
+            out["carried"] = carry(self.results) if capped else []
+            if capped:  # the reply as the user saw it, cap line included, marked for a thread read's Continue
+                said = "\n\n".join(p for p in (self.reply.reply, CAP_TEXT) if p)
+                out["messages"] = [AIMessage(content=said, additional_kwargs={"capped": True})]
+            elif self.reply.parts:
                 out["messages"] = [AIMessage(content=self.reply.reply)]
         if capped:
             out["capped"] = True
         if failed:
             out["failed"] = True
         return out
+
+
+MAX_CARRIED_CHARS = 24_000  # what a capped message read, kept for the next one: newest results first
+
+
+def carry(results: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """A capped message's tool results kept for the next message, newest kept first within `MAX_CARRIED_CHARS`."""
+    kept: list[tuple[str, str]] = []
+    room = MAX_CARRIED_CHARS
+    for name, result in reversed(results):
+        if len(result) > room:
+            break
+        kept.append((name, result))
+        room -= len(result)
+    return list(reversed(kept))
 
 
 def confirm_lines(arguments: dict) -> list[str]:

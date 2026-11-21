@@ -23,7 +23,11 @@ from assistant.tools import AppTools
 
 CHAT_THINKING_TOKENS = 1024  # added to a chat call's max_tokens when it thinks (thinking counts toward it)
 
-CAP_TEXT = "That's as far as I can go on this message. Send another to continue."
+# Said when the message's cost cap stops it (`done` carries `capped`, so an app can offer a Continue button that
+# sends "Continue"); what the turn's tools read is kept for the next message (`carried`), so it goes on from there.
+CAP_TEXT = (
+    "This took more work than one message allows, so I stopped here. Say continue and I'll pick up where I left off."
+)
 
 
 class Capped(Exception):

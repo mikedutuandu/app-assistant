@@ -475,7 +475,10 @@ def _message(m) -> dict | None:
         if isinstance(m.content, str)
         else " ".join(p.get("text", "") for p in m.content if isinstance(p, dict))
     )
-    return {"role": role, "text": text}
+    out = {"role": role, "text": text}
+    if role == "assistant" and m.additional_kwargs.get("capped"):
+        out["capped"] = True  # the cap cut it short: the app may offer Continue under it
+    return out
 
 
 @router.get("/threads/{thread_id}")

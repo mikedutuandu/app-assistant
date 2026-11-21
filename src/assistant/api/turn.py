@@ -421,7 +421,7 @@ async def run_turn(state: Any, t: TurnInput, emit: Emit) -> None:
         log.info(
             "turn done app=%s thread=%s message=%s cost=%.6f took=%.2fs", t.pack.id, chat_id, message_id, cost, took
         )
-        await emit("done", {"message_id": message_id, "cost_usd": cost})
+        await emit("done", {"message_id": message_id, "cost_usd": cost, **({"capped": True} if capped else {})})
     elif isinstance(failure, ToolError):
         log.warning("turn failed app=%s message=%s kind=%s cost=%.6f", t.pack.id, message_id, failure.kind, cost)
         await emit("failed", tool_failure(failure))
