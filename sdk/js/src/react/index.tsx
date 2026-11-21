@@ -71,7 +71,7 @@ export interface AppViewProps extends AppViewOptions {
  * An app's card in your own chat (MCP Apps): its page in a sandboxed frame, given the tool's input and result. Draw
  * it where the bot sent it, before the words that follow. `onMessage` sends what the card asks as the user's message.
  */
-export function AppView({ view, className, onMessage, onOpenLink, maxHeight, locale }: AppViewProps) {
+export function AppView({ view, className, onMessage, onOpenLink, maxHeight, locale, theme }: AppViewProps) {
   const box = useRef<HTMLDivElement>(null);
   const handlers = useRef({ onMessage, onOpenLink });
   handlers.current = { onMessage, onOpenLink };
@@ -82,10 +82,11 @@ export function AppView({ view, className, onMessage, onOpenLink, maxHeight, loc
       onOpenLink: handlers.current.onOpenLink ? (url) => handlers.current.onOpenLink?.(url) : undefined,
       maxHeight,
       locale,
+      theme,
     });
     return () => mounted.destroy();
     // A card's page never changes once shown: draw it again only for another card.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.id, view.html, maxHeight, locale]);
+  }, [view.id, view.html, maxHeight, locale, theme]);
   return <div ref={box} className={className} data-app-view={view.tool} />;
 }

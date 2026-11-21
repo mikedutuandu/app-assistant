@@ -33,6 +33,8 @@ export interface AppViewOptions {
   /** The card's tallest, in pixels (it scrolls inside past that). Default 560. */
   maxHeight?: number;
   locale?: string;
+  /** Light or dark, as the card is told (`hostContext.theme`). Default: the device's setting. */
+  theme?: "light" | "dark";
 }
 
 export interface MountedView {
@@ -86,6 +88,12 @@ const safeUrl = (url: unknown): string | null => {
   }
 };
 
+/** The device's light or dark setting (light where it can't be read). */
+const deviceTheme = (): "light" | "dark" =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+
 /** Draws `view` in `container`. Call `destroy()` when the card leaves the chat. */
 export function mountAppView(container: HTMLElement, view: AppViewData, opts: AppViewOptions = {}): MountedView {
   const maxHeight = opts.maxHeight ?? 560;
@@ -118,7 +126,7 @@ export function mountAppView(container: HTMLElement, view: AppViewData, opts: Ap
           hostInfo: HOST_INFO,
           hostContext: {
             toolInfo: { tool: { name: view.tool } },
-            theme: "light",
+            theme: opts.theme ?? deviceTheme(),
             displayMode: "inline",
             availableDisplayModes: ["inline"],
             containerDimensions: { maxHeight },

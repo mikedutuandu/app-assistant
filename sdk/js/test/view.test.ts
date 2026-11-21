@@ -56,6 +56,19 @@ describe("the card's messages", () => {
     ]);
   });
 
+  it("tells the card light or dark: the host's choice, else the device's", () => {
+    // jsdom has no matchMedia: a device set to dark.
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
+    const device = mounted();
+    device.fromCard({ jsonrpc: "2.0", id: 1, method: "ui/initialize", params: {} });
+    expect(device.sent[0].result.hostContext.theme).toBe("dark");
+    device.view.destroy();
+    const chosen = mounted({ theme: "light" });
+    chosen.fromCard({ jsonrpc: "2.0", id: 1, method: "ui/initialize", params: {} });
+    expect(chosen.sent[0].result.hostContext.theme).toBe("light");
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
   it("takes its height (up to the most), opens http(s) links only, and passes a message on", () => {
     const onMessage = vi.fn();
     const onOpenLink = vi.fn();
