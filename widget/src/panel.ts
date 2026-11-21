@@ -128,6 +128,10 @@ export function createPanel(opts: PanelOptions) {
   // ---- shell ----
   const host = h("div", { id: "assistant-widget" });
   const root = host.attachShadow({ mode: "open" });
+  // Keys typed in the chat stay in the chat. Outside a shadow root a page sees them with our host element as their
+  // target, not the textarea, so its "not while typing" checks miss and its shortcuts fire (Mike, 21 Nov 2026: "c" in
+  // Ask StreakPlan opened the board's New video). Our own handlers, inside, have run by then.
+  for (const type of ["keydown", "keypress", "keyup"]) root.addEventListener(type, (e) => e.stopPropagation());
   const wrap = h("div", { class: opts.position === "left" ? "left" : "right" });
   // An icon button: the icon is ours (a fixed string), its name is for screen readers and the tooltip.
   const iconButton = (cls: string, name: IconName, label: string, size = 18) => {
