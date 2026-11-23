@@ -81,12 +81,24 @@ class _Partial(Exception):
         self.cost = cost
 
 
+def _number(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
 def _cost(usage: Any) -> float:
-    if isinstance(usage, dict):
-        value = usage.get("cost")
-        if isinstance(value, int | float):
-            return float(value)
-    return 0.0
+    """What a call cost in US dollars, from OpenRouter's `usage`; 0 when it does not say.
+
+    A call on our own provider key (OpenRouter's BYOK: Claude on the Anthropic key, paid from the Claude plan's
+    monthly API credits) comes back with `cost` as OpenRouter's fee alone, often 0, and what the provider charged in
+    `cost_details.upstream_inference_cost`. Both are added, so the user is charged what the call cost, whichever key
+    paid for it. On OpenRouter's credits `cost` holds everything and the upstream cost is part of it, never more.
+    """
+    if not isinstance(usage, dict):
+        return 0.0
+    cost = _number(usage.get("cost")) or 0.0
+    details = usage.get("cost_details")
+    upstream = (_number(details.get("upstream_inference_cost")) if isinstance(details, dict) else None) or 0.0
+    return cost + upstream if usage.get("is_byok") is True else max(cost, upstream)
 
 
 def _error_message(body: Any) -> str:
